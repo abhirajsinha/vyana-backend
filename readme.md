@@ -1,6 +1,6 @@
 # Vyana Backend
 
-Express + Prisma backend for Vyana (cycle tracking, daily logs, and AI-powered insights).
+Express + Prisma backend for Vyana (cycle tracking, daily logs, AI-powered insights, and chat).
 
 ## Tech Stack
 
@@ -81,6 +81,7 @@ npm run start
 ### Cycle
 
 - `GET /api/cycle/current` (auth required)
+- `GET /api/cycle/calendar?month=YYYY-MM` (auth required)
 
 ### Logs
 
@@ -90,6 +91,11 @@ npm run start
 ### Insights
 
 - `GET /api/insights` (auth required)
+
+### Chat
+
+- `POST /api/chat` (auth required)
+- `GET /api/chat/history` (auth required)
 
 ## Auth Usage
 
@@ -134,8 +140,51 @@ Create log:
   "exercise": "none",
   "symptoms": ["headache"],
   "pain": "moderate",
+  "padsChanged": 7,
   "cravings": "high",
   "fatigue": "medium"
+}
+```
+
+Chat request:
+
+```json
+{
+  "message": "I feel very tired today, is this normal?",
+  "history": [
+    { "role": "user", "content": "I had cramps yesterday." },
+    { "role": "assistant", "content": "That can happen during menstrual days." }
+  ]
+}
+```
+
+Cycle calendar request:
+
+```text
+GET /api/cycle/calendar?month=2026-03
+```
+
+Insights response shape:
+
+```json
+{
+  "mode": "personalized",
+  "confidence": "medium",
+  "aiEnhanced": true,
+  "basedOn": {
+    "phase": "menstrual",
+    "recentLogsCount": 5,
+    "trends": ["Sleep decreasing", "Stress increasing"],
+    "reasoning": ["..."]
+  },
+  "insights": {
+    "physicalInsight": "...",
+    "mentalInsight": "...",
+    "emotionalInsight": "...",
+    "whyThisIsHappening": "...",
+    "solution": "...",
+    "recommendation": "..."
+  }
 }
 ```
 
@@ -145,6 +194,7 @@ Create log:
 - Rule-based logic is always available
 - If `OPENAI_API_KEY` is set, GPT rewrites insights for tone and personalization
 - If AI call fails, service automatically falls back to rule-based output
+- Menstrual bleeding load uses `padsChanged` to improve weakness/strain guidance
 
 ## Current Scope
 
@@ -152,12 +202,14 @@ Implemented:
 
 - Auth + JWT middleware
 - Cycle engine + current cycle endpoint
+- Monthly cycle calendar endpoint
 - Daily log save/read
 - Insight context + trend detection + personalized/fallback modes
+- Insight outputs with cause (`whyThisIsHappening`) and action (`solution`)
 - Optional GPT-enhanced phrasing for insights
+- AI chat endpoint + chat history
 
 Planned next:
 
-- AI chat endpoint + history
 - Notifications (FCM)
-- Calendar endpoint
+- Cron-based daily check-in scheduling
