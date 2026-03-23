@@ -11,7 +11,7 @@ function sanitize(text: string): string {
   return text.trim().replace(/\s+/g, " ");
 }
 
-export async function rewriteInsightsWithGpt(
+export async function generateInsightsWithGpt(
   context: InsightContext,
   draft: DailyInsights,
   userName?: string
@@ -19,23 +19,33 @@ export async function rewriteInsightsWithGpt(
   if (!client) return draft;
 
   const systemPrompt = [
-    "You are Vyana, a warm and science-aligned menstrual health companion.",
-    "Rewrite insights to be supportive, concise, and personalized.",
-    "Use only provided context. Do not diagnose or make medical claims.",
-    "Each field must be max 2 short lines.",
-    "Avoid generic wording and repetitive phrasing.",
-    "Return JSON only with keys: physicalInsight, mentalInsight, emotionalInsight, whyThisIsHappening, solution, recommendation.",
+    "You are Vyana, a supportive menstrual health companion.",
+    "Generate insight content from structured context, not from assumptions.",
+    "Use trends, interactions, phase deviation, baseline deviation, and confidence score.",
+    "Prioritize the primary driver first, then optionally incorporate secondary drivers.",
+    "If mode is fallback, clearly state insights are based on general patterns and personalization will improve with more logs.",
+    "Keep outputs concise and actionable. No diagnosis or medical certainty claims.",
+    "Each field must be maximum 2 short lines. No filler or generic advice.",
+    "Return strict JSON only with keys: physicalInsight, mentalInsight, emotionalInsight, whyThisIsHappening, solution, recommendation.",
   ].join(" ");
+
+  const primaryDriver = context.priorityDrivers[0] || "none";
+  const secondaryDrivers = context.priorityDrivers.slice(1, 3);
+  const priorityReason =
+    context.reasoning.find((line) => line.startsWith("Insight priority drivers:")) || "No explicit priority reason available.";
 
   const payload = {
     userName: userName || "User",
     context,
-    draft,
+    primaryDriver,
+    secondaryDrivers,
+    priorityReason,
+    draftFallback: draft,
   };
 
   const response = await client.chat.completions.create({
     model: OPENAI_MODEL,
-    temperature: 0.5,
+    temperature: 0.4,
     response_format: { type: "json_object" },
     messages: [
       { role: "system", content: systemPrompt },

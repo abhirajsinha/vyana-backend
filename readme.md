@@ -26,6 +26,10 @@ prisma/
   schema.prisma
 ```
 
+## Core Design Docs
+
+- `INSIGHTS_SYSTEM.md` - Complete architecture and logic for the insights + forecast engine
+
 ## Environment Variables
 
 Create `.env` from `.env.example`:
