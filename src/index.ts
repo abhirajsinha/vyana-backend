@@ -6,6 +6,7 @@ import userRoutes from "./routes/user";
 import cycleRoutes from "./routes/cycle";
 import logRoutes from "./routes/logs";
 import insightsRoutes from "./routes/insights";
+import chatRoutes from "./routes/chat";
 import { errorHandler, notFound } from "./middleware/errorHandler";
 
 const app = express();
@@ -23,6 +24,7 @@ app.use("/api/user", userRoutes);
 app.use("/api/cycle", cycleRoutes);
 app.use("/api/logs", logRoutes);
 app.use("/api/insights", insightsRoutes);
+app.use("/api/chat", chatRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

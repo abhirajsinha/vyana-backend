@@ -17,6 +17,7 @@ export async function saveLog(req: Request, res: Response): Promise<void> {
     social,
     cravings,
     fatigue,
+    padsChanged,
   } = req.body;
 
   const log = await prisma.dailyLog.create({
@@ -36,6 +37,7 @@ export async function saveLog(req: Request, res: Response): Promise<void> {
       social,
       cravings,
       fatigue,
+      padsChanged,
     },
   });
 

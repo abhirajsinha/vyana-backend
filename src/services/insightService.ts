@@ -9,6 +9,7 @@ interface SignalState {
   moodState: "low" | "neutral" | "positive" | "unknown";
   exerciseState: "sedentary" | "light" | "active" | "unknown";
   symptomState: string[];
+  bleedingLoad: "light" | "moderate" | "heavy" | "unknown";
   physicalState: "high_strain" | "low_recovery" | "stable" | "unknown";
   mentalState: "stressed" | "balanced" | "fatigued" | "unknown";
   emotionalState: "loaded" | "stable" | "uplifted" | "unknown";
@@ -25,6 +26,7 @@ export interface InsightContext {
   physical_state: SignalState["physicalState"];
   mental_state: SignalState["mentalState"];
   emotional_state: SignalState["emotionalState"];
+  bleeding_load: SignalState["bleedingLoad"];
   symptoms: string[];
   trends: string[];
   mode: "personalized" | "fallback";
@@ -36,6 +38,8 @@ export interface DailyInsights {
   physicalInsight: string;
   mentalInsight: string;
   emotionalInsight: string;
+  whyThisIsHappening: string;
+  solution: string;
   recommendation: string;
 }
 
@@ -75,10 +79,18 @@ function getSymptoms(log?: DailyLog): string[] {
   if (!log) return [];
   const out: string[] = [];
   if (log.pain) out.push(`${log.pain} cramps`);
+  if (typeof log.padsChanged === "number") out.push(`pads changed: ${log.padsChanged}`);
   if (log.cravings) out.push(`${log.cravings} cravings`);
   if (log.fatigue) out.push(`${log.fatigue} fatigue`);
   if (Array.isArray(log.symptoms) && log.symptoms.length > 0) out.push(...log.symptoms);
   return out;
+}
+
+function getBleedingLoad(padsChanged?: number | null): SignalState["bleedingLoad"] {
+  if (typeof padsChanged !== "number") return "unknown";
+  if (padsChanged >= 7) return "heavy";
+  if (padsChanged >= 4) return "moderate";
+  return "light";
 }
 
 function numberTrend(values: number[]): Trend {
@@ -101,10 +113,12 @@ function buildSignals(logs: DailyLog[]): SignalState {
   const moodState = normalizeMood(latest?.mood);
   const exerciseState = normalizeExercise(latest?.exercise);
   const symptomState = getSymptoms(latest);
+  const bleedingLoad = getBleedingLoad(latest?.padsChanged);
 
   let physicalState: SignalState["physicalState"] = "stable";
   if (
     sleepState === "poor" ||
+    bleedingLoad === "heavy" ||
     symptomState.some((s) => s.toLowerCase().includes("severe")) ||
     (exerciseState === "sedentary" && stressState === "elevated")
   ) {
@@ -127,6 +141,7 @@ function buildSignals(logs: DailyLog[]): SignalState {
     moodState,
     exerciseState,
     symptomState,
+    bleedingLoad,
     physicalState,
     mentalState,
     emotionalState,
@@ -180,6 +195,7 @@ export function buildInsightContext(phase: Phase, recentLogs: DailyLog[]): Insig
     `Physical state mapped to ${signals.physicalState}`,
     `Mental state mapped to ${signals.mentalState}`,
     `Emotional state mapped to ${signals.emotionalState}`,
+    `Bleeding load mapped to ${signals.bleedingLoad}`,
     trendList.length ? `Trends: ${trendList.join(", ")}` : "Not enough trend data yet",
   ];
 
@@ -188,6 +204,7 @@ export function buildInsightContext(phase: Phase, recentLogs: DailyLog[]): Insig
     physical_state: signals.physicalState,
     mental_state: signals.mentalState,
     emotional_state: signals.emotionalState,
+    bleeding_load: signals.bleedingLoad,
     symptoms: signals.symptomState,
     trends: trendList,
     mode,
@@ -199,6 +216,9 @@ export function buildInsightContext(phase: Phase, recentLogs: DailyLog[]): Insig
 function buildPhysicalInsight(ctx: InsightContext): string {
   if (ctx.mode === "fallback") {
     return `In the ${ctx.phase} phase, energy shifts are common; a lighter routine can support recovery.`;
+  }
+  if (ctx.bleeding_load === "heavy") {
+    return `Your bleeding looks heavier today, which can increase weakness and body strain.`;
   }
   if (ctx.physical_state === "high_strain") {
     return `Your body shows high strain today, likely from combined recovery load and symptoms.`;
@@ -230,6 +250,9 @@ function buildEmotionalInsight(ctx: InsightContext): string {
 }
 
 function buildRecommendation(ctx: InsightContext): string {
+  if (ctx.bleeding_load === "heavy") {
+    return `Prioritize hydration and iron-rich meals today, and reduce exertion while bleeding is heavier.`;
+  }
   if (ctx.physical_state === "high_strain") {
     return `Try one recovery action now: hydration, a warm compress, or a 20-minute low-intensity walk.`;
   }
@@ -242,11 +265,30 @@ function buildRecommendation(ctx: InsightContext): string {
   return `Keep your current rhythm and add one anchor habit today (sleep timing or movement) for consistency.`;
 }
 
+function buildWhyThisIsHappening(ctx: InsightContext): string {
+  if (ctx.bleeding_load === "heavy") {
+    return `Higher pad usage suggests heavier bleeding, which can temporarily lower energy and increase weakness.`;
+  }
+  if (ctx.physical_state === "high_strain") {
+    return `Your recent signals combine into high body strain, likely from recovery load, symptoms, and sleep/stress mix.`;
+  }
+  if (ctx.mental_state === "stressed") {
+    return `Stress has stayed elevated across recent logs, which can amplify fatigue and discomfort in this phase.`;
+  }
+  if (ctx.trends.length > 0) {
+    return `Recent trends (${ctx.trends.join(", ")}) indicate your body and mood are responding to day-to-day changes.`;
+  }
+  return `Cycle-related hormonal shifts can naturally influence energy, mood, and symptoms even with limited logs.`;
+}
+
 export function generateRuleBasedInsights(ctx: InsightContext): DailyInsights {
+  const solution = buildRecommendation(ctx);
   return {
     physicalInsight: buildPhysicalInsight(ctx),
     mentalInsight: buildMentalInsight(ctx),
     emotionalInsight: buildEmotionalInsight(ctx),
-    recommendation: buildRecommendation(ctx),
+    whyThisIsHappening: buildWhyThisIsHappening(ctx),
+    solution,
+    recommendation: solution,
   };
 }

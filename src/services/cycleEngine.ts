@@ -8,8 +8,15 @@ export interface CycleInfo {
 }
 
 export function calculateCycleInfo(lastPeriodStart: Date, cycleLength: number = 28): CycleInfo {
-  const today = new Date();
-  const diffMs = today.getTime() - new Date(lastPeriodStart).getTime();
+  return calculateCycleInfoForDate(lastPeriodStart, new Date(), cycleLength);
+}
+
+export function calculateCycleInfoForDate(
+  lastPeriodStart: Date,
+  targetDate: Date,
+  cycleLength: number = 28
+): CycleInfo {
+  const diffMs = new Date(targetDate).getTime() - new Date(lastPeriodStart).getTime();
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
   const normalized = ((diffDays % cycleLength) + cycleLength) % cycleLength;
   const currentDay = normalized + 1;
@@ -61,7 +68,7 @@ export function getPhaseInsight(phase: Phase): string {
 
 export function getPhaseLogFields(phase: Phase): string[] {
   const fields: Record<Phase, string[]> = {
-    menstrual: ["pain", "energy", "mood"],
+    menstrual: ["padsChanged", "pain", "energy", "mood"],
     follicular: ["energy", "motivation", "focus"],
     ovulation: ["mood", "energy", "social"],
     luteal: ["mood", "cravings", "fatigue"],

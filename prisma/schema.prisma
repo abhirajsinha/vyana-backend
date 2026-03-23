@@ -48,6 +48,7 @@ model DailyLog {
   social      String?
   cravings    String?
   fatigue     String?
+  padsChanged Int?
 
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
