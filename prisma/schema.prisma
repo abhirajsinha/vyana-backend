@@ -1,0 +1,78 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              String         @id @default(uuid())
+  name            String
+  age             Int
+  height          Float
+  weight          Float
+  cycleLength     Int            @default(28)
+  lastPeriodStart DateTime
+  fcmToken        String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  logs            DailyLog[]
+  chatMessages    ChatMessage[]
+  refreshTokens   RefreshToken[]
+}
+
+model DailyLog {
+  id          String   @id @default(uuid())
+  userId      String
+  date        DateTime @default(now())
+  mood        String?
+  energy      String?
+  sleep       Float?
+  stress      String?
+  diet        String?
+  exercise    String?
+  activity    String?
+  symptoms    String[]
+  focus       String?
+  motivation  String?
+  pain        String?
+  social      String?
+  cravings    String?
+  fatigue     String?
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, date(sort: Desc)])
+}
+
+model ChatMessage {
+  id        String   @id @default(uuid())
+  userId    String
+  role      String
+  content   String
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  revokedAt DateTime?
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt(sort: Desc)])
+}
