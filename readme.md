@@ -29,6 +29,7 @@ prisma/
 ## Core Design Docs
 
 - `INSIGHTS_SYSTEM.md` - Complete architecture and logic for the insights + forecast engine
+- `SYSTEM_DESIGN.md` - End-to-end backend system design (architecture, flows, data, security, ops)
 
 ## Environment Variables
 

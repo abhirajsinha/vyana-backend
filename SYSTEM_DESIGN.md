@@ -1,0 +1,480 @@
+# Vyana Backend - System Design Document
+
+## 1. Purpose and Scope
+
+This document describes the end-to-end system design of the Vyana backend API.
+
+It covers:
+- runtime architecture and module boundaries
+- request/response lifecycle across major APIs
+- database schema and data flows
+- authentication and authorization model
+- AI/insights integration design and fallbacks
+- reliability, performance, and scaling strategy
+- deployment, operations, and future evolution
+
+This document complements `INSIGHTS_SYSTEM.md`, which goes deeper into the insight engine internals.
+
+---
+
+## 2. System Overview
+
+Vyana backend is a TypeScript + Express service backed by PostgreSQL (via Prisma). It supports:
+- user onboarding and token-based authentication
+- cycle-phase computation and cycle calendar generation
+- daily wellness logging
+- deterministic + optional AI-enhanced insights
+- AI chat with persisted history
+
+### 2.1 High-level Context
+
+```text
+Mobile/Web Client
+      |
+      v
+Express API (Node.js, TypeScript)
+  - Auth middleware (JWT)
+  - Controllers
+  - Domain services (cycle, insights, AI)
+      |
+      v
+Prisma ORM
+      |
+      v
+PostgreSQL
+```
+
+External dependency:
+- OpenAI API (optional): insight phrasing enhancement + chat responses
+
+---
+
+## 3. Goals and Non-Goals
+
+### 3.1 Goals
+- Provide stable and explainable wellness insights with graceful degradation.
+- Keep API surface simple for client integration.
+- Maintain clean separation between transport (`routes/controllers`) and domain logic (`services`).
+- Ensure auth-protected access to user-specific data.
+- Preserve deterministic behavior even when AI services are unavailable.
+
+### 3.2 Non-Goals (current scope)
+- No password-based identity model (current login uses `userId`).
+- No background jobs/schedulers yet (notifications/check-ins planned).
+- No multi-region deployment, sharding, or read replicas yet.
+- No advanced observability stack (tracing/metrics pipelines not yet implemented).
+
+---
+
+## 4. Runtime Architecture
+
+## 4.1 Service Topology
+
+Single deployable API service:
+- HTTP entrypoint in `src/index.ts`
+- route modules under `src/routes`
+- controllers under `src/controllers`
+- domain logic under `src/services`
+- persistence via `src/lib/prisma.ts`
+- auth and errors in `src/middleware`
+
+## 4.2 Layered Structure
+
+1) **Routes Layer**
+- Defines endpoint paths + middleware composition.
+- No business logic.
+
+2) **Controller Layer**
+- Parses/validates request input.
+- Coordinates DB queries + service calls.
+- Shapes response DTOs.
+
+3) **Domain Services Layer**
+- `cycleEngine`: phase/day math and phase suggestions.
+- `insightService`: deterministic context building + insight generation.
+- `aiService`: OpenAI integration for insights/chat with strict fallback behavior.
+
+4) **Persistence Layer**
+- Prisma models map to PostgreSQL tables.
+- Controllers perform direct Prisma calls (service repository abstraction not yet introduced).
+
+---
+
+## 5. Module and Responsibility Map
+
+### 5.1 Entry and Middleware
+- `src/index.ts`: bootstraps server, middleware, routes, and global handlers.
+- `src/middleware/auth.ts`: validates Bearer JWT and populates `req.userId`.
+- `src/middleware/errorHandler.ts`: catch-all JSON 404/500 behavior.
+- `src/types/express.d.ts`: request type augmentation for `userId`.
+
+### 5.2 Auth and Identity
+- `src/controllers/authController.ts`
+  - register user profile
+  - issue access + refresh tokens
+  - persist refresh token records
+  - rotate access token from valid refresh token
+- `src/utils/jwt.ts`
+  - access token (`15m`)
+  - refresh token (`30d`)
+  - token verification
+
+### 5.3 User and Logs
+- `src/controllers/userController.ts`: `GET /me`
+- `src/controllers/logController.ts`
+  - create daily log
+  - query recent logs (optional date filter, latest 30)
+
+### 5.4 Cycle Engine
+- `src/controllers/cycleController.ts`: current cycle + monthly calendar endpoints
+- `src/services/cycleEngine.ts`:
+  - cycle day normalization
+  - phase resolution (`menstrual`, `follicular`, `ovulation`, `luteal`)
+  - phase-tailored suggestions for UI logging
+
+### 5.5 Insights and Forecast
+- `src/controllers/insightController.ts`
+  - collects recent + baseline logs
+  - computes baseline scope (`phase/global/none`)
+  - builds context, generates deterministic insights
+  - optionally rewrites via OpenAI
+  - exposes forecast endpoint with confidence block
+- `src/services/insightService.ts`
+  - signal normalization and weighted scoring
+  - trend + variability extraction
+  - interaction detection
+  - priority driver resolution
+  - deterministic narrative + recommendations
+
+### 5.6 Chat
+- `src/controllers/chatController.ts`
+  - gathers user/cycle/log context
+  - sends bounded history + query to AI
+  - persists user and assistant messages
+- `src/services/aiService.ts`
+  - structured prompts and response sanitation
+  - optional behavior when `OPENAI_API_KEY` absent
+
+---
+
+## 6. API Surface and Contracts
+
+### 6.1 Public and Protected Endpoints
+
+Health:
+- `GET /health`
+
+Auth:
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+- `POST /api/auth/refresh`
+
+Protected (require `Authorization: Bearer <access_token>`):
+- `GET /api/user/me`
+- `GET /api/cycle/current`
+- `GET /api/cycle/calendar?month=YYYY-MM`
+- `POST /api/logs`
+- `GET /api/logs?date=YYYY-MM-DD`
+- `GET /api/insights`
+- `GET /api/insights/forecast`
+- `POST /api/chat`
+- `GET /api/chat/history`
+
+### 6.2 Response Strategy
+- Consistent JSON responses.
+- Client errors: explicit `4xx` with `{ error: string }`.
+- Unhandled failures: `500` with message from global error handler.
+- Route misses: `404` via `notFound`.
+
+---
+
+## 7. Request Flow Design
+
+## 7.1 Auth Flow
+
+1. Client registers or logs in.
+2. API issues:
+   - short-lived access JWT
+   - long-lived refresh JWT
+3. Refresh token is stored in DB (`RefreshToken` table).
+4. Protected APIs validate access token in middleware.
+5. Access token renewal uses `/api/auth/refresh`:
+   - verifies JWT signature + token type
+   - confirms DB token exists, not revoked, not expired
+   - mints new access token
+
+Security note: refresh-token rotation and explicit revoke endpoint are not yet implemented.
+
+## 7.2 Log Ingestion and Retrieval
+
+Create log:
+1. Authenticated request reaches controller.
+2. Payload is written to `DailyLog` with `userId` from token.
+3. API returns created log.
+
+Read logs:
+1. Optional date query creates daily UTC range filter.
+2. API fetches latest 30 logs ordered by date desc.
+3. Returns array of logs for client rendering.
+
+## 7.3 Insights Generation Flow
+
+1. Fetch user profile, recent logs (5), baseline logs (30).
+2. Determine current phase and phase-matched baseline availability.
+3. Build insight context:
+   - normalized signals
+   - trends and variability
+   - interaction flags
+   - baseline deviations
+   - priority drivers and confidence
+4. Produce deterministic insights.
+5. If AI key configured:
+   - call OpenAI for phrasing in strict JSON shape
+   - validate response fields
+   - fallback to deterministic draft on parse/validation/API errors
+6. Return insights + explainability metadata.
+
+## 7.4 Forecast Flow
+
+1. Build same context used for insights.
+2. Compute tomorrow cycle phase and trend-conditioned outlook.
+3. Add next-phase preview based on days to phase transition.
+4. Derive confidence level from context confidence score.
+5. Return forecast block with transparent confidence messaging.
+
+## 7.5 Chat Flow
+
+1. Authenticated user sends question + optional short history.
+2. API loads user profile, cycle state, and recent logs.
+3. AI prompt includes contextual block + bounded conversation history.
+4. AI response is sanitized.
+5. Both user message and assistant reply are persisted.
+6. Reply returned to client.
+
+Failure fallback: when AI is not configured, chat returns a configuration guidance string.
+
+---
+
+## 8. Data Model Design
+
+Prisma schema defines four main entities:
+
+### 8.1 `User`
+- profile data: demographic + cycle baseline
+- owns logs, chat messages, and refresh tokens
+- `cycleLength` defaults to 28 days
+
+### 8.2 `DailyLog`
+- flexible daily wellness/behavior/symptom fields
+- captures both qualitative strings and quantitative values (e.g. sleep, padsChanged)
+- indexed by `(userId, date desc)` for recent access patterns
+
+### 8.3 `ChatMessage`
+- conversational transcript storage
+- role-based entries (`user`, `assistant`)
+- chronological retrieval for history endpoint
+
+### 8.4 `RefreshToken`
+- persisted refresh token state
+- unique token constraint
+- expiry + revocation metadata
+- indexed by `(userId, createdAt desc)`
+
+## 8.5 Relationship Model
+
+```text
+User (1) ---- (N) DailyLog
+User (1) ---- (N) ChatMessage
+User (1) ---- (N) RefreshToken
+```
+
+On user deletion, dependent rows cascade delete.
+
+---
+
+## 9. Insights Subsystem Design
+
+The insights subsystem is deterministic-first with optional AI enhancement:
+
+Core stages:
+1. signal normalization
+2. trend/variability analysis
+3. cross-signal interaction detection
+4. baseline deviation comparison
+5. priority driver resolution
+6. deterministic narrative generation
+7. optional constrained AI rewrite
+
+Key properties:
+- explainable `basedOn` metadata returned to clients
+- explicit confidence and onboarding progress for low-data users
+- strict fallback guarantees when AI is unavailable/invalid
+
+For deeper rules and semantics, refer to `INSIGHTS_SYSTEM.md`.
+
+---
+
+## 10. Security Design
+
+### 10.1 Authentication
+- JWT Bearer auth on protected routes.
+- Access token TTL is 15 minutes.
+- Refresh token validity is 30 days, persisted server-side.
+
+### 10.2 Authorization
+- User scoping is enforced by `req.userId` in all data access paths.
+- Controllers query by authenticated user context for row-level isolation.
+
+### 10.3 Current Security Gaps (Known)
+- Login uses `userId` only; no credential verification.
+- No rate limiting or brute-force mitigation.
+- No refresh token rotation on use.
+- No dedicated logout/revoke endpoint in API.
+- `JWT_SECRET` has a permissive dev fallback if env var missing.
+
+### 10.4 Recommended Upgrades
+- move to password/passkey/OTP identity provider
+- implement token rotation + token family invalidation
+- add rate limiting and abuse controls
+- enforce strict env validation at startup
+- add structured audit logging for auth events
+
+---
+
+## 11. Reliability and Error Handling
+
+### 11.1 Degradation Strategy
+- AI-dependent features never block core response generation.
+- Deterministic insights are always available when logs exist.
+- Chat has a clear non-AI fallback message.
+
+### 11.2 Error Handling
+- Synchronous route misses return `404`.
+- Uncaught exceptions return `500` JSON error.
+- Controllers explicitly return `400/401/404` for common cases.
+
+### 11.3 Data Robustness
+- Insight engine handles sparse logs via fallback mode.
+- Trend calculations mark insufficient signal explicitly.
+- Forecast confidence messaging adapts to data quality.
+
+---
+
+## 12. Performance and Scaling
+
+### 12.1 Current Performance Characteristics
+- Typical request paths are light-to-moderate DB reads.
+- Insight endpoints perform multiple queries and in-memory analysis over small windows (5-30 logs).
+- Chat and AI-enhanced insights depend on external OpenAI latency.
+
+### 12.2 Scaling Approach
+- Horizontal scale API instances behind load balancer (stateless app layer).
+- Keep JWT verification stateless for access tokens.
+- Database remains shared state; optimize with indexes and query profiling.
+
+### 12.3 Bottleneck Risks
+- OpenAI call latency/timeouts affect user-perceived response times.
+- High chat volume increases write load (two message inserts per request).
+- Prisma client per-process concurrency must be monitored under burst traffic.
+
+### 12.4 Optimizations to Consider
+- introduce request timeouts + circuit-breaker around AI calls
+- cache cycle calculations per request/user where useful
+- use DB connection pooling + production Prisma tuning
+- optionally queue chat persistence if write latency becomes visible
+
+---
+
+## 13. Deployment and Runtime Operations
+
+### 13.1 Environment Configuration
+
+Required/expected variables:
+- `DATABASE_URL`
+- `JWT_SECRET`
+- `PORT`
+- optional: `OPENAI_API_KEY`, `OPENAI_MODEL`
+
+### 13.2 Build and Run
+- Dev: `npm run dev`
+- Build: `npm run build`
+- Prod run: `npm run start`
+
+### 13.3 Data Lifecycle
+- Prisma migrations evolve schema.
+- Prisma client generated from schema.
+- PostgreSQL is source of truth.
+
+### 13.4 Operational Recommendations
+- add readiness/liveness split beyond `/health`
+- centralize structured logs (request-id correlated)
+- capture error rates and latency by endpoint
+- monitor AI call failure rate separately from API failures
+
+---
+
+## 14. Testing Strategy (Current and Target)
+
+### 14.1 Current State
+- No automated test suite is configured (`npm test` placeholder).
+
+### 14.2 Recommended Test Pyramid
+- Unit tests:
+  - cycle calculations
+  - insight signal/trend/priority logic
+  - JWT helper behavior
+- Integration tests:
+  - auth lifecycle (register/login/refresh)
+  - protected route access and user scoping
+  - log ingest and query filters
+  - insights fallback vs AI-enhanced paths
+- Contract tests:
+  - response shape validation for client-critical endpoints
+
+### 14.3 Synthetic/Operational Tests
+- periodic health checks
+- smoke tests against staging after deploy
+- alerting on error-rate and p95 latency regressions
+
+---
+
+## 15. Extension Roadmap
+
+Short-term:
+- notification service integration (FCM)
+- scheduled check-ins via cron/worker
+- logout + refresh revoke endpoint
+- auth hardening and rate limits
+
+Medium-term:
+- richer user baseline modeling across cycles
+- multi-day forecast beyond tomorrow
+- better observability instrumentation
+- idempotency and replay protections for critical writes
+
+Long-term:
+- event-driven architecture for analytics and personalization pipelines
+- feature flags for iterative model/prompt rollout
+- privacy governance enhancements (retention, export, deletion tooling)
+
+---
+
+## 16. Architecture Decision Notes
+
+1. **Deterministic-first insights**  
+   Chosen to maintain explainability and reliability independent of AI services.
+
+2. **Controller-centric persistence access**  
+   Current code directly uses Prisma in controllers for speed of development; repository abstraction can be introduced when complexity grows.
+
+3. **JWT + persisted refresh tokens**  
+   Balances stateless access checks with server-side refresh token control.
+
+4. **Single service deployment**  
+   Simpler operational model for current product stage; can evolve into split services once load/ownership boundaries justify it.
+
+---
+
+## 17. Summary
+
+Vyana backend is a modular monolithic API optimized for rapid product iteration with deterministic health insight quality and optional AI enhancement. The core architecture is sound for current scope: clear route/controller/service layering, user-scoped data access, explainable insights, and practical fallback behavior. The highest-impact next improvements are authentication hardening, test coverage, and production-grade observability.
