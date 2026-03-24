@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { prisma } from "../lib/prisma";
+import { toPublicUser } from "../utils/userPublic";
 
 export async function getMe(req: Request, res: Response): Promise<void> {
   const user = await prisma.user.findUnique({ where: { id: req.userId } });
@@ -8,5 +9,5 @@ export async function getMe(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  res.json(user);
+  res.json(toPublicUser(user));
 }

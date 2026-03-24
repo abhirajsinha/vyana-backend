@@ -12,6 +12,8 @@ It covers:
 - forecast generation
 - API contracts
 
+Authentication for protected insight routes (Bearer JWT) is documented in `readme.md` and `SYSTEM_DESIGN.md` (`/api/auth/register`, `/api/auth/login`, `/api/auth/google`, `/api/auth/refresh`).
+
 ---
 
 ## 1) System Goals
@@ -233,6 +235,12 @@ Forecast logic uses:
 - trend continuation cues (e.g. stress increasing + sleep decreasing)
 - variability impact (adds uncertainty language)
 - confidence-aware messaging
+
+---
+
+## 12.5) Authentication
+
+`GET /api/insights` and `GET /api/insights/forecast` require `Authorization: Bearer <access_token>`. Obtain tokens by registering or logging in via `POST /api/auth/register`, `POST /api/auth/login`, or `POST /api/auth/google` (see `readme.md`).
 
 ---
 

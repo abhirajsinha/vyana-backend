@@ -9,6 +9,8 @@ Express + Prisma backend for Vyana (cycle tracking, daily logs, AI-powered insig
 - Prisma ORM
 - PostgreSQL (Supabase compatible)
 - JWT auth (access + refresh)
+- Email/password signup and login (bcrypt)
+- Google Sign-In (ID token verification via `google-auth-library`)
 - OpenAI (optional phrasing layer for insights)
 
 ## Project Structure
@@ -24,6 +26,7 @@ src/
   utils/
 prisma/
   schema.prisma
+  migrations/
 ```
 
 ## Core Design Docs
@@ -38,6 +41,7 @@ Create `.env` from `.env.example`:
 ```bash
 DATABASE_URL="postgresql://postgres:<password>@db.<project-ref>.supabase.co:5432/postgres?sslmode=require"
 JWT_SECRET="replace-with-strong-secret"
+GOOGLE_CLIENT_ID="your-client-id.apps.googleusercontent.com"   # required for POST /api/auth/google
 OPENAI_API_KEY="sk-..."        # optional (for AI-enhanced insights phrasing)
 OPENAI_MODEL="gpt-4o-mini"     # optional
 PORT=3000
@@ -47,7 +51,7 @@ PORT=3000
 
 ```bash
 npm install
-npx prisma migrate dev --name init
+npx prisma migrate dev   # applies migrations (e.g. `prisma/migrations/20250324120000_init`)
 npm run prisma:generate
 npm run dev
 ```
@@ -75,8 +79,9 @@ npm run start
 
 ### Auth
 
-- `POST /api/auth/register`
-- `POST /api/auth/login`
+- `POST /api/auth/register` — email + password (required) + profile fields
+- `POST /api/auth/login` — email + password
+- `POST /api/auth/google` — Google ID token + profile fields (server verifies token; requires `GOOGLE_CLIENT_ID`)
 - `POST /api/auth/refresh`
 
 ### User
@@ -104,18 +109,24 @@ npm run start
 
 ## Auth Usage
 
-Send access token in the `Authorization` header:
+Register and login responses include `{ user, tokens: { accessToken, refreshToken } }`. Password hashes are never returned.
+
+Send the access token on protected routes:
 
 ```text
 Authorization: Bearer <access_token>
 ```
 
+**Google Sign-In:** obtain an ID token from the client Google SDK (same OAuth client ID as `GOOGLE_CLIENT_ID` on the server), then `POST /api/auth/google` with `idToken` plus the same profile fields as register (`name` optional; falls back to Google display name). The Google account email must be verified.
+
 ## Example Payloads
 
-Register:
+Register (password minimum 8 characters):
 
 ```json
 {
+  "email": "priya@example.com",
+  "password": "your-secure-password",
   "name": "Priya",
   "age": 27,
   "height": 162,
@@ -129,7 +140,22 @@ Login:
 
 ```json
 {
-  "userId": "uuid-here"
+  "email": "priya@example.com",
+  "password": "your-secure-password"
+}
+```
+
+Google signup or sign-in (after client obtains `idToken`):
+
+```json
+{
+  "idToken": "eyJhbGciOiJSUzI1NiIs...",
+  "name": "Priya",
+  "age": 27,
+  "height": 162,
+  "weight": 58,
+  "cycleLength": 28,
+  "lastPeriodStart": "2026-03-10"
 }
 ```
 
@@ -205,7 +231,7 @@ Insights response shape:
 
 Implemented:
 
-- Auth + JWT middleware
+- Auth + JWT middleware (email/password register & login; Google ID token; refresh)
 - Cycle engine + current cycle endpoint
 - Monthly cycle calendar endpoint
 - Daily log save/read

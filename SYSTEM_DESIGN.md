@@ -20,7 +20,7 @@ This document complements `INSIGHTS_SYSTEM.md`, which goes deeper into the insig
 ## 2. System Overview
 
 Vyana backend is a TypeScript + Express service backed by PostgreSQL (via Prisma). It supports:
-- user onboarding and token-based authentication
+- user onboarding and token-based authentication (email/password and Google ID tokens)
 - cycle-phase computation and cycle calendar generation
 - daily wellness logging
 - deterministic + optional AI-enhanced insights
@@ -59,7 +59,7 @@ External dependency:
 - Preserve deterministic behavior even when AI services are unavailable.
 
 ### 3.2 Non-Goals (current scope)
-- No password-based identity model (current login uses `userId`).
+- No OAuth authorization-code redirect flow (clients use Google ID tokens + server verification).
 - No background jobs/schedulers yet (notifications/check-ins planned).
 - No multi-region deployment, sharding, or read replicas yet.
 - No advanced observability stack (tracing/metrics pipelines not yet implemented).
@@ -110,7 +110,9 @@ Single deployable API service:
 
 ### 5.2 Auth and Identity
 - `src/controllers/authController.ts`
-  - register user profile
+  - register with unique email, bcrypt-hashed password, and profile fields
+  - login with email + password
+  - Google signup/sign-in: verify Google ID token, then create or match user (`googleId` / email)
   - issue access + refresh tokens
   - persist refresh token records
   - rotate access token from valid refresh token
@@ -118,6 +120,9 @@ Single deployable API service:
   - access token (`15m`)
   - refresh token (`30d`)
   - token verification
+- `src/utils/password.ts` — bcrypt hashing and verification (`MIN_PASSWORD_LENGTH` = 8)
+- `src/utils/userPublic.ts` — strips `passwordHash` from user objects returned to clients
+- `src/services/googleAuthService.ts` — verifies Google ID tokens against `GOOGLE_CLIENT_ID`
 
 ### 5.3 User and Logs
 - `src/controllers/userController.ts`: `GET /me`
@@ -167,6 +172,7 @@ Health:
 Auth:
 - `POST /api/auth/register`
 - `POST /api/auth/login`
+- `POST /api/auth/google`
 - `POST /api/auth/refresh`
 
 Protected (require `Authorization: Bearer <access_token>`):
@@ -192,16 +198,22 @@ Protected (require `Authorization: Bearer <access_token>`):
 
 ## 7.1 Auth Flow
 
-1. Client registers or logs in.
-2. API issues:
-   - short-lived access JWT
-   - long-lived refresh JWT
-3. Refresh token is stored in DB (`RefreshToken` table).
-4. Protected APIs validate access token in middleware.
-5. Access token renewal uses `/api/auth/refresh`:
-   - verifies JWT signature + token type
-   - confirms DB token exists, not revoked, not expired
-   - mints new access token
+**Email/password**
+
+1. Client `POST /api/auth/register` with unique `email`, `password` (minimum 8 characters), and required profile fields (`name`, `age`, `height`, `weight`, `lastPeriodStart`, optional `cycleLength`). Email is normalized to lowercase.
+2. Or client `POST /api/auth/login` with `email` + `password`. On success, credentials are verified with bcrypt against `User.passwordHash`.
+3. API issues short-lived access JWT and long-lived refresh JWT; refresh row is stored in `RefreshToken`.
+
+**Google**
+
+1. Client completes Google Sign-In and obtains a Google **ID token** (audience must match server `GOOGLE_CLIENT_ID`).
+2. Client `POST /api/auth/google` with `idToken` and the same profile fields as register (`name` optional; Google display name used if omitted). Server verifies the token via `google-auth-library`; Google email must be marked verified.
+3. If `User` already exists for that `googleId`, tokens are issued. If a row exists for the same email with password only (no `googleId`), the API returns `409` to avoid silent account linking. Otherwise a user is created with `googleId` and without `passwordHash`.
+
+**Common**
+
+4. Protected APIs validate the access token in middleware (`requireAuth`).
+5. Access token renewal uses `/api/auth/refresh`: verifies JWT + refresh type, confirms DB row exists and is valid, mints a new access token.
 
 Security note: refresh-token rotation and explicit revoke endpoint are not yet implemented.
 
@@ -260,6 +272,7 @@ Failure fallback: when AI is not configured, chat returns a configuration guidan
 Prisma schema defines four main entities:
 
 ### 8.1 `User`
+- identity: optional unique `email`, optional `passwordHash` (email/password users), optional unique `googleId` (Google users)
 - profile data: demographic + cycle baseline
 - owns logs, chat messages, and refresh tokens
 - `cycleLength` defaults to 28 days
@@ -320,22 +333,24 @@ For deeper rules and semantics, refer to `INSIGHTS_SYSTEM.md`.
 - JWT Bearer auth on protected routes.
 - Access token TTL is 15 minutes.
 - Refresh token validity is 30 days, persisted server-side.
+- Passwords stored as bcrypt hashes; API responses never include `passwordHash`.
+- Google Sign-In: ID tokens validated with `google-auth-library` and `GOOGLE_CLIENT_ID` as audience.
 
 ### 10.2 Authorization
 - User scoping is enforced by `req.userId` in all data access paths.
 - Controllers query by authenticated user context for row-level isolation.
 
 ### 10.3 Current Security Gaps (Known)
-- Login uses `userId` only; no credential verification.
-- No rate limiting or brute-force mitigation.
+- No rate limiting or brute-force mitigation on login endpoints.
 - No refresh token rotation on use.
 - No dedicated logout/revoke endpoint in API.
 - `JWT_SECRET` has a permissive dev fallback if env var missing.
+- Google + email account linking for the same address is not supported (conflict returns `409`).
 
 ### 10.4 Recommended Upgrades
-- move to password/passkey/OTP identity provider
+- rate limiting and abuse controls (especially `/api/auth/login` and `/api/auth/google`)
+- optional passkey or OTP as additional factors
 - implement token rotation + token family invalidation
-- add rate limiting and abuse controls
 - enforce strict env validation at startup
 - add structured audit logging for auth events
 
@@ -393,6 +408,7 @@ Required/expected variables:
 - `DATABASE_URL`
 - `JWT_SECRET`
 - `PORT`
+- `GOOGLE_CLIENT_ID` (required for `POST /api/auth/google`; OAuth client ID whose tokens the app sends)
 - optional: `OPENAI_API_KEY`, `OPENAI_MODEL`
 
 ### 13.2 Build and Run
@@ -444,7 +460,7 @@ Short-term:
 - notification service integration (FCM)
 - scheduled check-ins via cron/worker
 - logout + refresh revoke endpoint
-- auth hardening and rate limits
+- rate limits and auth event monitoring
 
 Medium-term:
 - richer user baseline modeling across cycles
@@ -477,4 +493,4 @@ Long-term:
 
 ## 17. Summary
 
-Vyana backend is a modular monolithic API optimized for rapid product iteration with deterministic health insight quality and optional AI enhancement. The core architecture is sound for current scope: clear route/controller/service layering, user-scoped data access, explainable insights, and practical fallback behavior. The highest-impact next improvements are authentication hardening, test coverage, and production-grade observability.
+Vyana backend is a modular monolithic API optimized for rapid product iteration with deterministic health insight quality and optional AI enhancement. The core architecture is sound for current scope: clear route/controller/service layering, user-scoped data access, email/password and Google-backed authentication, explainable insights, and practical fallback behavior. The highest-impact next improvements are rate limiting and token lifecycle hardening, test coverage, and production-grade observability.
