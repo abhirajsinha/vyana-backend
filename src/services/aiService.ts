@@ -41,6 +41,25 @@ function countSentences(text: string): number {
   return (trimmed.match(/[.!?]+/g) || []).length;
 }
 
+const STRONG_WORDS = ["compounding", "persistent", "strain", "loop", "baseline", "cascade", "pattern", "cycle"];
+
+/** Returns true if the physical/causal fields already read premium — GPT cannot improve them. */
+const HIGH_QUALITY_MARKERS = ["your past cycles show", "this pattern", "compounding", "below your baseline"];
+function isDraftAlreadyPremium(draft: DailyInsights): boolean {
+  const text = [draft.physicalInsight, draft.whyThisIsHappening].join(" ").toLowerCase();
+  return HIGH_QUALITY_MARKERS.some((marker) => text.includes(marker));
+}
+
+/**
+ * Returns true if the GPT output dropped a strong word that appeared in the draft.
+ * Catches silent softening or genericisation of rule-based reasoning.
+ */
+function hasStrengthRegression(draft: DailyInsights, output: DailyInsights): boolean {
+  const draftText = Object.values(draft).join(" ").toLowerCase();
+  const outputText = Object.values(output).join(" ").toLowerCase();
+  return STRONG_WORDS.some((word) => draftText.includes(word) && !outputText.includes(word));
+}
+
 /** Returns true if any field in the insights exceeds 2 sentences. */
 function anyFieldExceedsTwoSentences(insights: DailyInsights): boolean {
   const fields: (keyof DailyInsights)[] = [
@@ -153,6 +172,8 @@ function safeParseInsights(raw: string | null | undefined, fallback: DailyInsigh
     const enforced = enforceTwoLinesOnInsights(out);
     // Hard reject if any field exceeds 2 sentences after enforcement
     if (anyFieldExceedsTwoSentences(enforced)) return fallback;
+    // Hard reject if GPT silently softened or genericised the draft
+    if (hasStrengthRegression(fallback, enforced)) return fallback;
     return enforced;
   } catch {
     return fallback;
@@ -165,11 +186,27 @@ export async function generateInsightsWithGpt(
   userName?: string
 ): Promise<DailyInsights> {
   if (!client) return draft;
+  // Skip GPT when draft already reads premium — rewrite cannot improve it
+  if (isDraftAlreadyPremium(draft)) return draft;
 
   const userPrompt = buildInsightRewritePrompt(context, draft, userName);
-  const systemContent =
-    "You rewrite health-adjacent support text safely. Output JSON only. " +
-    "Keep all facts exactly as given. Never add new claims or diagnoses.";
+  const systemContent = [
+    "You are Vyana — a sharp, warm, deeply knowledgeable cycle companion.",
+    "You are rewriting structured health insights for a specific user.",
+    "CRITICAL RULES — violations cause fallback to rule-based text:",
+    "Do NOT change meaning, reasoning, or causal relationships.",
+    "Do NOT remove specific data references (sleep hours, day numbers, cycle patterns).",
+    "Do NOT replace specific insights with generic advice.",
+    "Do NOT soften strong statements.",
+    "Do NOT use filler phrases or hedging beyond what's in the draft.",
+    "If a draft field is already specific and strong — return it unchanged.",
+    "STYLE: Max 3-4 sentences per field, max ~25 words each.",
+    "Warm, direct, specific — like a friend who pays close attention.",
+    "Use the user's name naturally in physicalInsight if provided.",
+    "Present tense where possible.",
+    "TASK: Rewrite ONLY for warmth and clarity. Preserve all facts exactly.",
+    "OUTPUT: Valid JSON with keys: physicalInsight, mentalInsight, emotionalInsight, whyThisIsHappening, solution, recommendation, tomorrowPreview",
+  ].join(" ");
 
   const response = await client.chat.completions.create({
     model: OPENAI_MODEL,
@@ -183,6 +220,134 @@ export async function generateInsightsWithGpt(
 
   const raw = response.choices[0]?.message?.content;
   return safeParseInsights(raw, draft);
+}
+
+type ForecastPayload = {
+  isNewUser: boolean;
+  progress: {
+    logsCount: number;
+    nextMilestone: number;
+    logsToNextMilestone: number;
+  };
+  today: {
+    phase: string;
+    currentDay: number;
+    confidenceScore: number;
+    priorityDrivers: string[];
+  };
+  forecast: {
+    tomorrow: {
+      date: string;
+      phase: string;
+      outlook: string;
+    };
+    nextPhase: {
+      inDays: number;
+      preview: string;
+    };
+    confidence: {
+      level: string;
+      score: number;
+      message: string;
+    };
+  };
+  pmsSymptomForecast?: {
+    available: boolean;
+    headline?: string;
+    action?: string;
+  } | null;
+  forecastAiEnhanced?: boolean;
+};
+
+function sanitizeForecast(payload: ForecastPayload, fallback: ForecastPayload): ForecastPayload {
+  if (!payload?.forecast?.tomorrow?.outlook || !payload?.forecast?.nextPhase?.preview) {
+    return fallback;
+  }
+  if (!payload?.forecast?.confidence?.message) {
+    return fallback;
+  }
+
+  return {
+    ...fallback,
+    ...payload,
+    forecast: {
+      ...fallback.forecast,
+      ...payload.forecast,
+      tomorrow: {
+        ...fallback.forecast.tomorrow,
+        ...payload.forecast.tomorrow,
+        outlook: enforceTwoLines(payload.forecast.tomorrow.outlook),
+      },
+      nextPhase: {
+        ...fallback.forecast.nextPhase,
+        ...payload.forecast.nextPhase,
+        preview: enforceTwoLines(payload.forecast.nextPhase.preview),
+      },
+      confidence: {
+        ...fallback.forecast.confidence,
+        ...payload.forecast.confidence,
+        message: enforceTwoLines(payload.forecast.confidence.message),
+      },
+    },
+    pmsSymptomForecast: payload.pmsSymptomForecast
+      ? {
+          ...fallback.pmsSymptomForecast,
+          ...payload.pmsSymptomForecast,
+          headline: payload.pmsSymptomForecast.headline
+            ? enforceTwoLines(payload.pmsSymptomForecast.headline)
+            : fallback.pmsSymptomForecast?.headline,
+          action: payload.pmsSymptomForecast.action
+            ? enforceTwoLines(payload.pmsSymptomForecast.action)
+            : fallback.pmsSymptomForecast?.action,
+        }
+      : fallback.pmsSymptomForecast,
+  };
+}
+
+export async function generateForecastWithGpt(
+  context: InsightContext,
+  draft: ForecastPayload,
+  userName?: string,
+): Promise<ForecastPayload> {
+  if (!client) return draft;
+
+  const userPrompt = [
+    "Rewrite ONLY for warmth and clarity. Keep all facts exactly the same.",
+    "Do not change dates, phase names, confidence level, score, or milestone numbers.",
+    "Do not add claims or medical advice.",
+    "Max 2 sentences per rewritten field.",
+    "",
+    `Context: phase=${context.phase}, cycleDay=${context.cycleDay}, confidence=${context.confidence}`,
+    userName ? `User: ${userName}` : "User: unnamed",
+    "",
+    "Return strict JSON with same schema as input.",
+    `INPUT_JSON: ${JSON.stringify(draft)}`,
+  ].join("\n");
+
+  const systemContent =
+    "You rewrite forecast text fields for tone while preserving exact meaning and data. " +
+    "Only rewrite these string fields if present: forecast.tomorrow.outlook, forecast.nextPhase.preview, " +
+    "forecast.confidence.message, pmsSymptomForecast.headline, pmsSymptomForecast.action. " +
+    "Keep all non-text fields unchanged. Output valid JSON only.";
+
+  try {
+    const response = await client.chat.completions.create({
+      model: OPENAI_MODEL,
+      temperature: 0.2,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: systemContent },
+        { role: "user", content: userPrompt },
+      ],
+    });
+
+    const raw = response.choices[0]?.message?.content;
+    if (!raw) return draft;
+    const parsed = JSON.parse(raw) as ForecastPayload;
+    return sanitizeForecast(parsed, draft);
+  } catch {
+    return draft;
+  }
 }
 
 export interface ChatHistoryItem {

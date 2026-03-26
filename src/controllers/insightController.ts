@@ -9,7 +9,11 @@ import {
   buildInsightContext,
   generateRuleBasedInsights,
 } from "../services/insightService";
-import { generateInsightsWithGpt, sanitizeInsights } from "../services/aiService";
+import {
+  generateForecastWithGpt,
+  generateInsightsWithGpt,
+  sanitizeInsights,
+} from "../services/aiService";
 import { getUserInsightData, getPreviousCycleDriverHistory } from "../services/insightData";
 import {
   buildInsightView,
@@ -24,6 +28,7 @@ import {
 import { getCycleNumber } from "../services/cycleInsightLibrary";
 import { runCorrelationEngine } from "../services/correlationEngine";
 import { buildTomorrowPreview } from "../services/tomorrowEngine";
+import { buildPmsSymptomForecast } from "../services/pmsEngine";
 
 function isInsightsPayloadCached(payload: unknown): boolean {
   return (
@@ -109,12 +114,31 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
   // Inject correlation pattern into primary card if high enough confidence
   if (correlation.patternKey && correlation.confidence >= 0.7 && context.mode === "personalized") {
     const patternResult = correlation.patterns[correlation.patternKey]!;
-    draftInsights = {
-      ...draftInsights,
-      // Use pattern headline as the primary insight (physical unless pattern points elsewhere)
-      physicalInsight: patternResult.headline,
-      solution: patternResult.action,
-    };
+    const physicallyProtected =
+      context.priorityDrivers.includes("bleeding_heavy") ||
+      context.priorityDrivers.includes("high_strain");
+
+    const cycleRecurrenceWhy = correlation.patternKey === "cycle_recurrence"
+      ? (() => {
+          const n = Math.max(2, Math.round((correlation.patterns.cycle_recurrence.confidence - 0.5) / 0.15));
+          return `Your last ${n} cycles show the same pattern in this window — sleep drops and stress rise together around this time.`;
+        })()
+      : `Your past cycles show this pattern: ${patternResult.headline.toLowerCase().replace(/\.$/, "")}.`;
+
+    if (!physicallyProtected) {
+      draftInsights = {
+        ...draftInsights,
+        physicalInsight: patternResult.headline,
+        solution: patternResult.action,
+        whyThisIsHappening: cycleRecurrenceWhy,
+      };
+    } else {
+      draftInsights = {
+        ...draftInsights,
+        solution: patternResult.action,
+        whyThisIsHappening: cycleRecurrenceWhy,
+      };
+    }
   }
 
   const logsCount = recentLogs.length;
@@ -201,6 +225,24 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
 
   const view = buildInsightView(context, insights, { primaryKeyOverride });
 
+  // PMS warning — surface when cycleDay >= 18 and symptoms expected within 3 days
+  const pmsForecastForWarning = cycleInfo.currentDay >= 18 && context.mode === "personalized"
+    ? buildPmsSymptomForecast(
+        cycleInfo.phase,
+        cycleInfo.currentDay,
+        cycleInfo.daysUntilNextPhase,
+        previousCycleDrivers,
+      )
+    : null;
+  const pmsWarning = pmsForecastForWarning?.available
+    ? {
+        headline: pmsForecastForWarning.headline,
+        action: pmsForecastForWarning.action,
+        likelySymptoms: pmsForecastForWarning.likelySymptoms,
+        confidence: pmsForecastForWarning.confidence,
+      }
+    : null;
+
   const responsePayload = {
     cycleDay: cycleInfo.currentDay,
     home: {
@@ -234,6 +276,7 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     },
     insights,
     view,
+    pmsWarning,
   };
 
   if (driverForMemory && context.mode === "personalized") {
@@ -332,6 +375,17 @@ export async function getInsightsForecast(
   const nextMilestone =
     logsCount < 3 ? 3 : logsCount < 7 ? 7 : logsCount < 14 ? 14 : 30;
 
+  const forecastPreviousCycleDrivers = context.mode === "personalized"
+    ? await getPreviousCycleDriverHistory(req.userId!)
+    : [];
+
+  const pmsSymptomForecast = buildPmsSymptomForecast(
+    todayCycle.phase,
+    todayCycle.currentDay,
+    todayCycle.daysUntilNextPhase,
+    forecastPreviousCycleDrivers,
+  );
+
   const tomorrowDate = new Date();
   tomorrowDate.setDate(tomorrowDate.getDate() + 1);
   const tomorrowCycle = calculateCycleInfoForDate(
@@ -366,7 +420,7 @@ export async function getInsightsForecast(
         ? "Forecast confidence is moderate; recent signals are useful but may still shift over the next day."
         : "Forecast confidence is high; recent trends and signals are relatively consistent.";
 
-  const forecastPayload = {
+  const draftForecastPayload = {
     isNewUser,
     progress: {
       logsCount,
@@ -395,7 +449,34 @@ export async function getInsightsForecast(
         message: confidenceMessage,
       },
     },
+    pmsSymptomForecast,
   };
+
+  let forecastPayload: (typeof draftForecastPayload & { forecastAiEnhanced?: boolean }) | Record<string, unknown> =
+    draftForecastPayload;
+  let forecastAiEnhanced = false;
+  const canUseAIForecast =
+    logsCount >= 3 &&
+    context.mode === "personalized" &&
+    context.confidence !== "low";
+  if (canUseAIForecast) {
+    const rewritten = await generateForecastWithGpt(
+      context,
+      draftForecastPayload,
+      user.name,
+    ) as typeof draftForecastPayload;
+    forecastAiEnhanced =
+      JSON.stringify(rewritten) !== JSON.stringify(draftForecastPayload);
+    forecastPayload = {
+      ...rewritten,
+      forecastAiEnhanced,
+    };
+  } else {
+    forecastPayload = {
+      ...draftForecastPayload,
+      forecastAiEnhanced: false,
+    };
+  }
 
   const forecastJson = JSON.parse(
     JSON.stringify(forecastPayload),

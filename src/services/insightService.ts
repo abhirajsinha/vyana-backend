@@ -199,7 +199,7 @@ function buildSignals(logs: DailyLog[]): SignalState {
   const moodState =
     weightedMoodScore === null
       ? "unknown"
-      : weightedMoodScore <= 1.4
+      : weightedMoodScore <= 1.6
       ? "low"
       : weightedMoodScore >= 2.4
       ? "positive"
@@ -355,13 +355,19 @@ function resolvePriorityDrivers(input: {
   sleepState: SignalState["sleepState"];
   moodTrend: TrendState["moodTrend"];
   moodState: SignalState["moodState"];
+  cycleDay: number;
+  variantIndex: 0 | 1 | 2;
 }): InsightDriver[] {
+  // Boost physical drivers on days with very_low library energy (days 1–2, day 28)
+  const isVeryLowEnergyDay = getDayInsight(input.cycleDay, input.variantIndex).energyLevel === "very_low";
+  const physicalBoost = isVeryLowEnergyDay ? 0.3 : 0;
+
   const candidates: Array<{ key: InsightDriver; score: number; active: boolean }> = [
     { key: "sleep_variability_high", score: 100, active: input.sleepVariability === "high" },
     { key: "sleep_below_baseline", score: 95, active: input.baselineDeviation.includes("sleep_below_personal_baseline") },
     { key: "stress_above_baseline", score: 90, active: input.baselineDeviation.includes("stress_above_personal_baseline") },
     { key: "stress_trend_spiking", score: 88, active: input.stressTrend === "increasing" && input.stressState !== "calm" },
-    { key: "bleeding_heavy", score: 85, active: input.bleedingLoad === "heavy" },
+    { key: "bleeding_heavy", score: 85 + physicalBoost, active: input.bleedingLoad === "heavy" },
     { key: "sleep_trend_declining", score: 83, active: input.sleepTrend === "decreasing" && input.sleepState !== "optimal" },
     {
       key: "sleep_stress_amplification",
@@ -372,7 +378,7 @@ function resolvePriorityDrivers(input: {
     { key: "mood_trend_declining", score: 72, active: input.moodTrend === "decreasing" && input.moodState !== "positive" },
     { key: "sedentary_strain", score: 70, active: input.interactionFlags.includes("sedentary_strain") },
     { key: "phase_deviation", score: 65, active: Boolean(input.phaseDeviation) },
-    { key: "high_strain", score: 60, active: input.physicalState === "high_strain" },
+    { key: "high_strain", score: 60 + physicalBoost, active: input.physicalState === "high_strain" },
   ];
 
   return candidates
@@ -430,6 +436,8 @@ export function buildInsightContext(
     sleepState: signals.sleepState,
     moodTrend: trends.moodTrend,
     moodState: signals.moodState,
+    cycleDay,
+    variantIndex,
   });
 
   const reasoning = [
@@ -543,6 +551,9 @@ function buildEmotionalInsight(ctx: InsightContext): string {
 function buildBroaderGuidance(ctx: InsightContext): string {
   if (ctx.recentLogsCount < 3) {
     return `Log mood, sleep, and stress for the next 3 days to unlock more personalized insights.`;
+  }
+  if (ctx.phase === "menstrual") {
+    return `This week, prioritize iron-rich food, early sleep, and minimal obligations — your body is doing its hardest work right now.`;
   }
   return `This week, aim for steady basics: regular sleep, gentle movement, and brief stress resets when things feel heavy.`;
 }
