@@ -56,7 +56,7 @@ const library: DayInsight[] = [
     ],
     tomorrowPreview: [
       "Day 2 cramps and bleeding typically peak before easing.",
-      "Tomorrow is often the heaviest bleeding day of the cycle.",
+      "Day 2 often brings peak cramps and flow before relief begins.",
       "Expect day 2 to be intense before the gradual relief begins.",
     ],
     energyLevel: "very_low",
@@ -796,9 +796,9 @@ const library: DayInsight[] = [
       "Expect increased physical discomfort as the hormone decline accelerates.",
     ],
     mentalExpectation: [
-      "Emotional sensitivity rises as estrogen falls — small stressors feel bigger.",
-      "Low estrogen amplifies the stress response — things feel heavier than usual.",
-      "The cognitive edge softens today as estrogen drops — patience with yourself helps.",
+      "Decision-making feels harder today as estrogen drops — keep tasks simple.",
+      "Mental sharpness is reduced today — low estrogen affects focus and clarity.",
+      "Cognitive resilience dips today — routine work suits better than complex tasks.",
     ],
     emotionalNote: [
       "Low estrogen makes feelings run closer to the surface today.",
@@ -919,7 +919,7 @@ const library: DayInsight[] = [
       "Low output, high recovery — that's the right approach for today.",
     ],
     tomorrowPreview: [
-      "Day 26 — period is three days away; symptoms may ease slightly.",
+      "Day 26 stays in the hardest window — hold steady, relief is close.",
       "Tomorrow continues the pre-period window — hold steady.",
       "Day 26 stays in the PMS stretch but relief is only days away.",
     ],
