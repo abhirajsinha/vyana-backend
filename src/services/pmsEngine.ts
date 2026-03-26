@@ -17,6 +17,7 @@ export interface DriverHistory {
   driver: string;
   cycleDay: number;
   phase: Phase;
+  createdAt?: Date;
 }
 
 const DRIVER_TO_SYMPTOM: Record<string, string> = {
@@ -48,8 +49,14 @@ function groupIntoCycleWindows(
 ): DriverHistory[][] {
   if (lateLutealEntries.length === 0) return [];
 
-  // Sort by cycleDay ascending so we can detect gaps between cycles
-  const sorted = [...lateLutealEntries].sort((a, b) => a.cycleDay - b.cycleDay);
+  // Sort by time so cycle-day drops can indicate a new cycle window.
+  // Fallback to cycleDay ordering only if timestamps are unavailable.
+  const sorted = [...lateLutealEntries].sort((a, b) => {
+    if (a.createdAt && b.createdAt) {
+      return a.createdAt.getTime() - b.createdAt.getTime();
+    }
+    return a.cycleDay - b.cycleDay;
+  });
 
   // Split into windows: a new window starts when cycleDay resets (goes lower)
   const windows: DriverHistory[][] = [];
@@ -58,8 +65,9 @@ function groupIntoCycleWindows(
   for (let i = 1; i < sorted.length; i++) {
     const prev = sorted[i - 1]!;
     const curr = sorted[i]!;
-    // Detect a cycle boundary: day drops significantly (new cycle)
-    if (curr.cycleDay < prev.cycleDay - 5) {
+    // Detect a cycle boundary: cycle day resets lower after period.
+    // Example: ...25 -> 22 should start a new window.
+    if (curr.cycleDay < prev.cycleDay) {
       windows.push(current);
       current = [curr];
     } else {

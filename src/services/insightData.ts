@@ -10,7 +10,7 @@ import type { Phase } from "./cycleEngine";
 export async function getPreviousCycleDriverHistory(
   userId: string,
   daysBack: number = 90,
-): Promise<Array<{ driver: string; cycleDay: number; phase: Phase }>> {
+): Promise<Array<{ driver: string; cycleDay: number; phase: Phase; createdAt: Date }>> {
   const since = new Date();
   since.setDate(since.getDate() - daysBack);
 
@@ -23,7 +23,7 @@ export async function getPreviousCycleDriverHistory(
       createdAt: { gte: since },
     },
     orderBy: { createdAt: "desc" },
-    select: { driver: true, cycleDay: true, phase: true },
+    select: { driver: true, cycleDay: true, phase: true, createdAt: true },
   });
 
   return history
@@ -32,6 +32,7 @@ export async function getPreviousCycleDriverHistory(
       driver: h.driver!,
       cycleDay: h.cycleDay!,
       phase: h.phase! as Phase,
+      createdAt: h.createdAt,
     }));
 }
 
