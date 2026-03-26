@@ -1,5 +1,6 @@
 import { DailyLog } from "@prisma/client";
 import { Phase } from "./cycleEngine";
+import { getDayInsight } from "./cycleInsightLibrary";
 
 type Trend = "increasing" | "decreasing" | "stable" | "insufficient";
 
@@ -26,6 +27,7 @@ interface TrendState {
 
 export interface InsightContext {
   recentLogsCount: number;
+  cycleDay: number;
   phase: Phase;
   physical_state: SignalState["physicalState"];
   mental_state: SignalState["mentalState"];
@@ -375,6 +377,7 @@ function resolvePriorityDrivers(input: {
 
 export function buildInsightContext(
   phase: Phase,
+  cycleDay: number,
   recentLogs: DailyLog[],
   baselineLogs: DailyLog[] = [],
   baselineScope: InsightContext["baselineScope"] = "none"
@@ -440,6 +443,7 @@ export function buildInsightContext(
 
   return {
     recentLogsCount,
+    cycleDay,
     phase,
     physical_state: signals.physicalState,
     mental_state: signals.mentalState,
@@ -464,10 +468,7 @@ export function buildInsightContext(
 
 function buildPhysicalInsight(ctx: InsightContext): string {
   if (ctx.mode === "fallback") {
-    if (ctx.phase === "ovulation") {
-      return `During ovulation, energy is often higher and more stable.\nThis is a good time for active routines or social plans.`;
-    }
-    return `Energy can shift during the ${ctx.phase} phase.\nAdjust your routine based on how your body feels.`;
+    return getDayInsight(ctx.cycleDay).physicalExpectation;
   }
 
   if (ctx.bleeding_load === "heavy") {
@@ -489,7 +490,7 @@ function buildPhysicalInsight(ctx: InsightContext): string {
 
 function buildMentalInsight(ctx: InsightContext): string {
   if (ctx.mode === "fallback") {
-    return `This phase can support clearer thinking for many people.\nIt may be a good time for focused tasks.`;
+    return getDayInsight(ctx.cycleDay).mentalExpectation;
   }
 
   if (ctx.mental_state === "stressed" || ctx.mental_state === "fatigued_and_stressed") {
@@ -516,7 +517,7 @@ function buildMentalInsight(ctx: InsightContext): string {
 
 function buildEmotionalInsight(ctx: InsightContext): string {
   if (ctx.mode === "fallback") {
-    return `Many people feel more emotionally steady in this phase.\nSocial interactions may feel easier.`;
+    return getDayInsight(ctx.cycleDay).emotionalNote;
   }
 
   if (ctx.emotional_state === "loaded") {
@@ -539,7 +540,7 @@ function buildRecommendation(ctx: InsightContext): string {
   const primary = ctx.priorityDrivers[0];
   if (!primary) {
     if (ctx.mode === "fallback") {
-      return `Keep your schedule flexible today and focus on a few priority tasks rather than multitasking.`;
+      return getDayInsight(ctx.cycleDay).actionTip;
     }
     return `Keep your current rhythm and add one anchor habit today (sleep timing or movement) for consistency.`;
   }
@@ -580,14 +581,14 @@ function buildRecommendation(ctx: InsightContext): string {
     return `Use a 5-minute reset block (breathing + single-priority planning) to reduce mental overload.`;
   }
   if (ctx.mode === "fallback") {
-    return `Keep your schedule flexible today and focus on a few priority tasks rather than multitasking.`;
+    return getDayInsight(ctx.cycleDay).actionTip;
   }
   return `Keep your current rhythm and add one anchor habit today (sleep timing or movement) for consistency.`;
 }
 
 function buildWhyThisIsHappening(ctx: InsightContext): string {
   if (ctx.recentLogsCount === 0) {
-    return `This is based on your current cycle phase.\nInsights will become more personalized as you start logging daily.`;
+    return getDayInsight(ctx.cycleDay).hormoneNote;
   }
 
   // If the engine decided we have a strong signal, prefer signal-derived reasoning

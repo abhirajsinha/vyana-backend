@@ -61,6 +61,7 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
       : "none";
   const context = buildInsightContext(
     cycleInfo.phase,
+    cycleInfo.currentDay,
     recentLogs,
     baselineForComparison,
     baselineScope,
@@ -255,6 +256,7 @@ export async function getInsightsForecast(
 
   const context = buildInsightContext(
     todayCycle.phase,
+    todayCycle.currentDay,
     recentLogs,
     baselineForComparison,
     baselineScope,
