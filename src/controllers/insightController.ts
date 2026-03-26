@@ -14,7 +14,6 @@ import { getUserInsightData } from "../services/insightData";
 import {
   buildInsightView,
   resolvePrimaryInsightKey,
-  getRelevantKeysForDriver,
   shouldSuppressPrimary,
   pickNovelPrimaryKey,
 } from "../services/insightView";
@@ -35,22 +34,6 @@ function isInsightsPayloadCached(payload: unknown): boolean {
 
 export async function getInsights(req: Request, res: Response): Promise<void> {
   const now = new Date();
-  const dayStart = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
-  );
-  /* const cached = await prisma.insightCache.findUnique({
-    where: {
-      userId_date: {
-        userId: req.userId!,
-        date: dayStart,
-      },
-    },
-  });
-  if (cached && isInsightsPayloadCached(cached.payload)) {
-    res.json(cached.payload);
-    return;
-  } */
-
   const data = await getUserInsightData(req.userId!);
   if (!data) {
     res.status(404).json({ error: "User not found" });
@@ -201,25 +184,6 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     view,
   };
 
-  const cachedPayload = JSON.parse(
-    JSON.stringify(responsePayload),
-  ) as Prisma.InputJsonValue;
-
-  await prisma.insightCache.upsert({
-    where: {
-      userId_date: {
-        userId: req.userId!,
-        date: dayStart,
-      },
-    },
-    update: { payload: cachedPayload },
-    create: {
-      userId: req.userId!,
-      date: dayStart,
-      payload: cachedPayload,
-    },
-  });
-
   if (driverForMemory && context.mode === "personalized") {
     await recordInsightMemoryOccurrence({
       userId: req.userId!,
@@ -228,14 +192,16 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     });
   }
 
-  const resolvedPrimaryKey = primaryKeyOverride ?? currentPrimaryKey;
-  await prisma.insightHistory.create({
-    data: {
-      userId: req.userId!,
-      primaryKey: resolvedPrimaryKey,
-      driver: driverForMemory,
-    },
-  });
+  if (context.mode === "personalized") {
+    const resolvedPrimaryKey = primaryKeyOverride ?? currentPrimaryKey;
+    await prisma.insightHistory.create({
+      data: {
+        userId: req.userId!,
+        primaryKey: resolvedPrimaryKey,
+        driver: driverForMemory,
+      },
+    });
+  }
 
   res.json(responsePayload);
 }

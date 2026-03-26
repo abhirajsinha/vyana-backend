@@ -19,6 +19,6 @@ export async function getUserInsightData(userId: string): Promise<{
   return {
     user,
     recentLogs: allLogs.slice(0, 5),
-    baselineLogs: allLogs,
+    baselineLogs: allLogs.slice(5),
   };
 }

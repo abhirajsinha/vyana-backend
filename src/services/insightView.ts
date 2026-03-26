@@ -42,11 +42,15 @@ export function getConfidenceLabel(ctx: InsightContext): string {
 }
 
 export function shouldShowExplanation(ctx: InsightContext): boolean {
-  return ctx.recentLogsCount >= 3;
+  // When mode is personalized we trust the engine's signal enough to show "why",
+  // even if confidence is still "low" due to limited log count.
+  return ctx.recentLogsCount >= 3 || ctx.mode === "personalized";
 }
 
 export function shouldShowSupporting(ctx: InsightContext): boolean {
-  return ctx.confidence !== "low";
+  // For personalized mode we show supporting insights even when confidence is low,
+  // because the signal strength is high enough to justify context.
+  return ctx.confidence !== "low" || ctx.mode === "personalized";
 }
 
 export function shouldSuppressPrimary(

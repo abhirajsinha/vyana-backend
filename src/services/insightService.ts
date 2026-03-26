@@ -59,6 +59,8 @@ type InsightDriver =
   | "sleep_variability_high"
   | "sleep_below_baseline"
   | "stress_above_baseline"
+  | "stress_trend_spiking"
+  | "sleep_trend_declining"
   | "bleeding_heavy"
   | "sleep_stress_amplification"
   | "mood_stress_coupling"
@@ -342,12 +344,18 @@ function resolvePriorityDrivers(input: {
   interactionFlags: string[];
   phaseDeviation: string | null;
   physicalState: SignalState["physicalState"];
+  stressTrend: TrendState["stressTrend"];
+  stressState: SignalState["stressState"];
+  sleepTrend: TrendState["sleepTrend"];
+  sleepState: SignalState["sleepState"];
 }): InsightDriver[] {
   const candidates: Array<{ key: InsightDriver; score: number; active: boolean }> = [
     { key: "sleep_variability_high", score: 100, active: input.sleepVariability === "high" },
     { key: "sleep_below_baseline", score: 95, active: input.baselineDeviation.includes("sleep_below_personal_baseline") },
     { key: "stress_above_baseline", score: 90, active: input.baselineDeviation.includes("stress_above_personal_baseline") },
+    { key: "stress_trend_spiking", score: 88, active: input.stressTrend === "increasing" && input.stressState !== "calm" },
     { key: "bleeding_heavy", score: 85, active: input.bleedingLoad === "heavy" },
+    { key: "sleep_trend_declining", score: 83, active: input.sleepTrend === "decreasing" && input.sleepState !== "optimal" },
     {
       key: "sleep_stress_amplification",
       score: 80,
@@ -405,6 +413,10 @@ export function buildInsightContext(
     interactionFlags: signals.interactionFlags,
     phaseDeviation,
     physicalState: signals.physicalState,
+    stressTrend: trends.stressTrend,
+    stressState: signals.stressState,
+    sleepTrend: trends.sleepTrend,
+    sleepState: signals.sleepState,
   });
 
   const reasoning = [
@@ -466,6 +478,12 @@ function buildPhysicalInsight(ctx: InsightContext): string {
     return `Your body shows signs of higher strain today.\nConsider slowing down and focusing on recovery.`;
   }
 
+  if (ctx.priorityDrivers.includes("sleep_trend_declining")) {
+    return ctx.recentLogsCount < 3
+      ? `Your latest log suggests sleep quality may be dropping.\nThis can affect energy recovery.`
+      : `Sleep has been declining over recent days.\nThis may affect physical recovery and energy.`;
+  }
+
   return `Your physical energy looks stable for this phase.\nAdjust activity based on how you feel.`;
 }
 
@@ -474,10 +492,23 @@ function buildMentalInsight(ctx: InsightContext): string {
     return `This phase can support clearer thinking for many people.\nIt may be a good time for focused tasks.`;
   }
 
-  if (ctx.mental_state === "stressed") {
-    return ctx.recentLogsCount < 3
-      ? `Your latest log suggests higher stress today.\nThis may make focusing harder.`
+  if (ctx.mental_state === "stressed" || ctx.mental_state === "fatigued_and_stressed") {
+    const isFatigued = ctx.mental_state === "fatigued_and_stressed";
+    if (ctx.recentLogsCount < 3) {
+      return isFatigued
+        ? `Your latest log suggests stress and fatigue today.\nThis may make focusing harder.`
+        : `Your latest log suggests higher stress today.\nThis may make focusing harder.`;
+    }
+
+    return isFatigued
+      ? `Stress and fatigue have been elevated recently.\nThis may increase mental load.`
       : `Stress levels have been elevated recently.\nThis may increase mental load.`;
+  }
+
+  if (ctx.priorityDrivers.includes("stress_trend_spiking")) {
+    return ctx.recentLogsCount < 3
+      ? `Your logs suggest stress may be rising.\nThis can make focusing harder.`
+      : `Stress has been building over recent days.\nThis may be increasing mental load.`;
   }
 
   return `Your recent signal suggests a relatively balanced mental state.\nNo strong strain signals detected.`;
@@ -499,7 +530,7 @@ function buildEmotionalInsight(ctx: InsightContext): string {
 
 function buildBroaderGuidance(ctx: InsightContext): string {
   if (ctx.recentLogsCount < 3) {
-    return `Keep your schedule flexible today and focus on a few priority tasks rather than multitasking.`;
+    return `Log mood, sleep, and stress for the next 3 days to unlock more personalized insights.`;
   }
   return `This week, aim for steady basics: regular sleep, gentle movement, and brief stress resets when things feel heavy.`;
 }
@@ -508,7 +539,7 @@ function buildRecommendation(ctx: InsightContext): string {
   const primary = ctx.priorityDrivers[0];
   if (!primary) {
     if (ctx.mode === "fallback") {
-      return `Log mood, sleep, and stress for the next 3 days to unlock more personalized insights.`;
+      return `Keep your schedule flexible today and focus on a few priority tasks rather than multitasking.`;
     }
     return `Keep your current rhythm and add one anchor habit today (sleep timing or movement) for consistency.`;
   }
@@ -521,8 +552,14 @@ function buildRecommendation(ctx: InsightContext): string {
   if (primary === "stress_above_baseline") {
     return `Stress is above your usual baseline; insert two short reset breaks today to prevent overload accumulation.`;
   }
+  if (primary === "stress_trend_spiking") {
+    return `Stress is trending upward; add a short reset break between tasks today to prevent accumulation.`;
+  }
   if (primary === "bleeding_heavy") {
     return `Prioritize hydration and iron-rich meals today, and reduce exertion while bleeding is heavier.`;
+  }
+  if (primary === "sleep_trend_declining") {
+    return `Sleep has been declining; prioritize an earlier wind-down tonight to reverse this trend before it compounds.`;
   }
   if (primary === "sleep_stress_amplification") {
     return `Use a 10-minute calming routine before bed and one midday reset to break the sleep-stress loop.`;
@@ -543,7 +580,7 @@ function buildRecommendation(ctx: InsightContext): string {
     return `Use a 5-minute reset block (breathing + single-priority planning) to reduce mental overload.`;
   }
   if (ctx.mode === "fallback") {
-    return `Log mood, sleep, and stress for the next 3 days to unlock more personalized insights.`;
+    return `Keep your schedule flexible today and focus on a few priority tasks rather than multitasking.`;
   }
   return `Keep your current rhythm and add one anchor habit today (sleep timing or movement) for consistency.`;
 }
@@ -552,9 +589,34 @@ function buildWhyThisIsHappening(ctx: InsightContext): string {
   if (ctx.recentLogsCount === 0) {
     return `This is based on your current cycle phase.\nInsights will become more personalized as you start logging daily.`;
   }
+
+  // If the engine decided we have a strong signal, prefer signal-derived reasoning
+  // even with limited log count (eg. 1–2 logs).
+  if (ctx.mode === "personalized") {
+    if (ctx.phase_deviation) {
+      return `${ctx.phase_deviation} This likely reflects a temporary mismatch between expected phase energy and current recovery signals.`;
+    }
+    if (ctx.bleeding_load === "heavy") {
+      return `Higher pad usage suggests heavier bleeding, which can temporarily lower energy and increase weakness.`;
+    }
+    if (ctx.physical_state === "high_strain") {
+      return `Your recent signals combine into high body strain, likely from recovery load, symptoms, and sleep/stress mix.`;
+    }
+    if (ctx.mental_state === "stressed" || ctx.mental_state === "fatigued_and_stressed") {
+      return `Stress and fatigue signals can amplify mental load, making fatigue and discomfort feel stronger in this phase.`;
+    }
+    if (ctx.emotional_state === "loaded") {
+      return `Elevated stress or low mood signals can make your emotional system feel more loaded today.`;
+    }
+    if (ctx.trends.length > 0) {
+      return `Recent trends (${ctx.trends.join(", ")}) indicate your body and mood are responding to day-to-day changes.`;
+    }
+  }
+
   if (ctx.recentLogsCount < 3) {
     return `This combines your cycle phase with limited data.\nIt will refine as more logs are added.`;
   }
+
   if (ctx.phase_deviation) {
     return `${ctx.phase_deviation} This likely reflects a temporary mismatch between expected phase energy and current recovery signals.`;
   }
@@ -564,7 +626,7 @@ function buildWhyThisIsHappening(ctx: InsightContext): string {
   if (ctx.physical_state === "high_strain") {
     return `Your recent signals combine into high body strain, likely from recovery load, symptoms, and sleep/stress mix.`;
   }
-  if (ctx.mental_state === "stressed") {
+  if (ctx.mental_state === "stressed" || ctx.mental_state === "fatigued_and_stressed") {
     return `Stress has stayed elevated across recent logs, which can amplify fatigue and discomfort in this phase.`;
   }
   if (ctx.trends.length > 0) {
