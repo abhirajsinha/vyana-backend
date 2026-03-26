@@ -41,6 +41,11 @@ export async function saveLog(req: Request, res: Response): Promise<void> {
     },
   });
 
+  // Invalidate insight cache so next GET /insights recomputes with fresh data
+  await prisma.insightCache.deleteMany({
+    where: { userId: req.userId! },
+  });
+
   res.status(201).json({ success: true, log });
 }
 

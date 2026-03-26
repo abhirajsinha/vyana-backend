@@ -10,7 +10,7 @@ import {
   generateRuleBasedInsights,
 } from "../services/insightService";
 import { generateInsightsWithGpt, sanitizeInsights } from "../services/aiService";
-import { getUserInsightData } from "../services/insightData";
+import { getUserInsightData, getPreviousCycleDriverHistory } from "../services/insightData";
 import {
   buildInsightView,
   resolvePrimaryInsightKey,
@@ -22,7 +22,7 @@ import {
   recordInsightMemoryOccurrence,
 } from "../services/insightMemory";
 import { getCycleNumber } from "../services/cycleInsightLibrary";
-import { runCorrelationEngine, DIFFICULT_DRIVERS } from "../services/correlationEngine";
+import { runCorrelationEngine } from "../services/correlationEngine";
 import { buildTomorrowPreview } from "../services/tomorrowEngine";
 
 function isInsightsPayloadCached(payload: unknown): boolean {
@@ -98,28 +98,13 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
   );
   let draftInsights = { ...ruleBasedInsights, tomorrowPreview };
 
-  // Sprint 3: run correlation engine, inject highest-confidence pattern
-  // Sprint 5: fetch previous cycle difficult drivers for Pattern 7
-  const cycleWindowStart = new Date(dayStart);
-  cycleWindowStart.setDate(cycleWindowStart.getDate() - (user.cycleLength + 3));
-  const cycleWindowEnd = new Date(dayStart);
-  cycleWindowEnd.setDate(cycleWindowEnd.getDate() - (user.cycleLength - 3));
-
-  const prevCycleHistory = context.mode === "personalized"
-    ? await prisma.insightHistory.findMany({
-        where: {
-          userId: req.userId!,
-          createdAt: { gte: cycleWindowStart, lte: cycleWindowEnd },
-          driver: { in: [...DIFFICULT_DRIVERS] },
-        },
-        select: { driver: true },
-      })
+  // Run correlation engine (Sprints 3 + 5)
+  // Fetch 90 days of historical driver data for recurring pattern detection
+  const previousCycleDrivers = context.mode === "personalized"
+    ? await getPreviousCycleDriverHistory(req.userId!)
     : [];
-  const prevCycleDifficultDrivers = prevCycleHistory
-    .map((h) => h.driver)
-    .filter((d): d is string => d !== null);
 
-  const correlation = runCorrelationEngine(context, recentLogs, prevCycleDifficultDrivers);
+  const correlation = runCorrelationEngine(context, recentLogs, previousCycleDrivers);
 
   // Inject correlation pattern into primary card if high enough confidence
   if (correlation.patternKey && correlation.confidence >= 0.7 && context.mode === "personalized") {
@@ -266,6 +251,8 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
         userId: req.userId!,
         primaryKey: resolvedPrimaryKey,
         driver: driverForMemory,
+        cycleDay: cycleInfo.currentDay,
+        phase: cycleInfo.phase,
       },
     });
   }

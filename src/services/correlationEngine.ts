@@ -166,33 +166,55 @@ function pattern6(ctx: InsightContext): PatternResult {
   };
 }
 
-// Pattern 7: Cycle-to-cycle recurrence
-// same phase + similar day as a difficult driver from the previous cycle
-function pattern7(
-  ctx: InsightContext,
-  prevCycleDifficultDrivers: string[],
-): PatternResult {
-  const hasDifficultPast = prevCycleDifficultDrivers.length > 0;
-  const detected = hasDifficultPast && ctx.recentLogsCount >= 2;
-  const confidence = detected ? 0.7 : 0;
+export interface RecurringPatternInput {
+  currentCycleDay: number;
+  currentPhase: Phase;
+  previousCycleDrivers: Array<{
+    driver: string;
+    cycleDay: number;
+    phase: Phase;
+  }>;
+}
+
+export function detectRecurringPattern(input: RecurringPatternInput): PatternResult {
+  const { currentCycleDay, currentPhase, previousCycleDrivers } = input;
+
+  // Find drivers that fired near this same cycle day (±3 days) in past cycles
+  const nearbyPastDrivers = previousCycleDrivers.filter(
+    (d) =>
+      d.phase === currentPhase &&
+      Math.abs(d.cycleDay - currentCycleDay) <= 3 &&
+      DIFFICULT_DRIVERS.includes(d.driver as typeof DIFFICULT_DRIVERS[number]),
+  );
+
+  // Count how many distinct past cycles had a difficult driver in this window
+  const pastCycleMatches = nearbyPastDrivers.length;
+  const detected = pastCycleMatches >= 2;
+
+  // Find the most common difficult driver in this window
+  const driverCounts: Record<string, number> = {};
+  for (const d of nearbyPastDrivers) {
+    driverCounts[d.driver] = (driverCounts[d.driver] || 0) + 1;
+  }
+  const topDriver = Object.entries(driverCounts).sort((a, b) => b[1] - a[1])[0]?.[0];
+  const driverLabel = topDriver ? topDriver.replace(/_/g, " ") : "difficulty";
+
   return {
     detected,
-    confidence,
-    headline:
-      "Last cycle you felt worst around this day.",
-    action:
-      "Light your schedule for the next two days.",
+    confidence: detected ? Math.min(0.5 + pastCycleMatches * 0.15, 0.95) : 0,
+    headline: `This is the window where ${driverLabel} has hit you before.`,
+    action: "Lighten your schedule for the next 2–3 days — you know this stretch.",
   };
 }
 
 /**
  * Scores all 7 correlation patterns and returns the highest-confidence detected pattern.
- * prevCycleDifficultDrivers: drivers from previous cycle at the same phase/day window.
+ * previousCycleDrivers: historical driver data from insightHistory (with cycleDay + phase).
  */
 export function runCorrelationEngine(
   ctx: InsightContext,
   logs: DailyLog[],
-  prevCycleDifficultDrivers: string[] = [],
+  previousCycleDrivers: Array<{ driver: string; cycleDay: number; phase: Phase }> = [],
 ): CorrelationResult {
   const patterns: Record<string, PatternResult> = {
     sleep_stress_amplification: pattern1(ctx, logs),
@@ -201,7 +223,11 @@ export function runCorrelationEngine(
     post_period_recovery_lag: pattern4(ctx, logs),
     luteal_stress_sensitivity: pattern5(ctx),
     follicular_momentum: pattern6(ctx),
-    cycle_recurrence: pattern7(ctx, prevCycleDifficultDrivers),
+    cycle_recurrence: detectRecurringPattern({
+      currentCycleDay: ctx.cycleDay,
+      currentPhase: ctx.phase,
+      previousCycleDrivers,
+    }),
   };
 
   let best: { key: string; result: PatternResult } | null = null;
@@ -232,4 +258,3 @@ export const DIFFICULT_DRIVERS = [
   "phase_deviation",
 ] as const;
 
-export type Phase_ = Phase;
