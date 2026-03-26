@@ -90,6 +90,7 @@ export type InsightViewPayload = {
   action: string;
   explanation?: string;
   recommendation: string;
+  tomorrowPreview: string;
   confidenceLabel: string;
 };
 
@@ -107,6 +108,7 @@ export function buildInsightView(
     action: insights.solution,
     explanation: insights.whyThisIsHappening,
     recommendation: insights.recommendation,
+    tomorrowPreview: insights.tomorrowPreview,
     confidenceLabel: getConfidenceLabel(ctx),
   };
 

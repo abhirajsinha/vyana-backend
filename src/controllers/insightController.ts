@@ -21,6 +21,9 @@ import {
   getInsightMemoryCount,
   recordInsightMemoryOccurrence,
 } from "../services/insightMemory";
+import { getCycleNumber } from "../services/cycleInsightLibrary";
+import { runCorrelationEngine, DIFFICULT_DRIVERS } from "../services/correlationEngine";
+import { buildTomorrowPreview } from "../services/tomorrowEngine";
 
 function isInsightsPayloadCached(payload: unknown): boolean {
   return (
@@ -34,6 +37,19 @@ function isInsightsPayloadCached(payload: unknown): boolean {
 
 export async function getInsights(req: Request, res: Response): Promise<void> {
   const now = new Date();
+  const dayStart = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+  );
+
+  // Bug 4 fix: read from daily cache before recomputing
+  const cached = await prisma.insightCache.findUnique({
+    where: { userId_date: { userId: req.userId!, date: dayStart } },
+  });
+  if (cached?.payload && isInsightsPayloadCached(cached.payload)) {
+    res.json(cached.payload);
+    return;
+  }
+
   const data = await getUserInsightData(req.userId!);
   if (!data) {
     res.status(404).json({ error: "User not found" });
@@ -42,6 +58,9 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
   const { user, recentLogs, baselineLogs } = data;
 
   const cycleInfo = calculateCycleInfo(user.lastPeriodStart, user.cycleLength);
+  const cycleNumber = getCycleNumber(user.lastPeriodStart, user.cycleLength);
+  const variantIndex = (cycleNumber % 3) as 0 | 1 | 2;
+
   const phaseBaselineLogs = baselineLogs.filter((log) => {
     const logPhase = calculateCycleInfoForDate(
       user.lastPeriodStart,
@@ -59,14 +78,60 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     : baselineForComparison.length >= 7
       ? "global"
       : "none";
+
   const context = buildInsightContext(
     cycleInfo.phase,
     cycleInfo.currentDay,
     recentLogs,
     baselineForComparison,
     baselineScope,
+    cycleNumber,
   );
-  const draftInsights = generateRuleBasedInsights(context);
+
+  const ruleBasedInsights = generateRuleBasedInsights(context);
+
+  // Replace basic tomorrowPreview with trend-adjusted version (Sprint 4)
+  const tomorrowPreview = buildTomorrowPreview(
+    context,
+    cycleInfo.daysUntilNextPhase,
+    variantIndex,
+  );
+  let draftInsights = { ...ruleBasedInsights, tomorrowPreview };
+
+  // Sprint 3: run correlation engine, inject highest-confidence pattern
+  // Sprint 5: fetch previous cycle difficult drivers for Pattern 7
+  const cycleWindowStart = new Date(dayStart);
+  cycleWindowStart.setDate(cycleWindowStart.getDate() - (user.cycleLength + 3));
+  const cycleWindowEnd = new Date(dayStart);
+  cycleWindowEnd.setDate(cycleWindowEnd.getDate() - (user.cycleLength - 3));
+
+  const prevCycleHistory = context.mode === "personalized"
+    ? await prisma.insightHistory.findMany({
+        where: {
+          userId: req.userId!,
+          createdAt: { gte: cycleWindowStart, lte: cycleWindowEnd },
+          driver: { in: [...DIFFICULT_DRIVERS] },
+        },
+        select: { driver: true },
+      })
+    : [];
+  const prevCycleDifficultDrivers = prevCycleHistory
+    .map((h) => h.driver)
+    .filter((d): d is string => d !== null);
+
+  const correlation = runCorrelationEngine(context, recentLogs, prevCycleDifficultDrivers);
+
+  // Inject correlation pattern into primary card if high enough confidence
+  if (correlation.patternKey && correlation.confidence >= 0.7 && context.mode === "personalized") {
+    const patternResult = correlation.patterns[correlation.patternKey]!;
+    draftInsights = {
+      ...draftInsights,
+      // Use pattern headline as the primary insight (physical unless pattern points elsewhere)
+      physicalInsight: patternResult.headline,
+      solution: patternResult.action,
+    };
+  }
+
   const logsCount = recentLogs.length;
   const isNewUser = logsCount < 3;
   const nextMilestone =
@@ -89,22 +154,22 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
   }
 
   const driverForMemory = context.priorityDrivers[0] || null;
-  const memory = driverForMemory
-    ? await getInsightMemoryCount({
-        userId: req.userId!,
-        driver: driverForMemory,
-      })
+  const memory = driverForMemory && context.mode === "personalized"
+    ? await getInsightMemoryCount({ userId: req.userId!, driver: driverForMemory })
     : { count: 0, lastSeen: null };
   const existingMemoryCount = memory.count;
 
   const currentPrimaryKey = resolvePrimaryInsightKey(context);
 
-  const recentHistory = await prisma.insightHistory.findMany({
-    where: { userId: req.userId! },
-    orderBy: { createdAt: "desc" },
-    take: 3,
-    select: { primaryKey: true },
-  });
+  // Bug 1 fix: only read insightHistory when mode === "personalized" (saves a DB query for fallback users)
+  const recentHistory = context.mode === "personalized"
+    ? await prisma.insightHistory.findMany({
+        where: { userId: req.userId! },
+        orderBy: { createdAt: "desc" },
+        take: 3,
+        select: { primaryKey: true },
+      })
+    : [];
 
   let primaryKeyOverride: typeof currentPrimaryKey | null = null;
   if (context.mode === "personalized" && shouldSuppressPrimary(currentPrimaryKey, recentHistory)) {
@@ -170,6 +235,7 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     mode: context.mode,
     confidence: context.confidence,
     aiEnhanced,
+    correlationPattern: correlation.patternKey,
     basedOn: {
       phase: cycleInfo.phase,
       recentLogsCount: logsCount,
@@ -204,6 +270,14 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     });
   }
 
+  // Bug 4 fix: write to daily cache so subsequent same-day requests are served from cache
+  const payloadJson = JSON.parse(JSON.stringify(responsePayload)) as Prisma.InputJsonValue;
+  await prisma.insightCache.upsert({
+    where: { userId_date: { userId: req.userId!, date: dayStart } },
+    update: { payload: payloadJson },
+    create: { userId: req.userId!, date: dayStart, payload: payloadJson },
+  });
+
   res.json(responsePayload);
 }
 
@@ -236,6 +310,9 @@ export async function getInsightsForecast(
   const { user, recentLogs, baselineLogs } = data;
 
   const todayCycle = calculateCycleInfo(user.lastPeriodStart, user.cycleLength);
+  const cycleNumber = getCycleNumber(user.lastPeriodStart, user.cycleLength);
+  const variantIndex = (cycleNumber % 3) as 0 | 1 | 2;
+
   const phaseBaselineLogs = baselineLogs.filter((log) => {
     const logPhase = calculateCycleInfoForDate(
       user.lastPeriodStart,
@@ -260,11 +337,14 @@ export async function getInsightsForecast(
     recentLogs,
     baselineForComparison,
     baselineScope,
+    cycleNumber,
   );
+
   const logsCount = recentLogs.length;
   const isNewUser = logsCount < 3;
   const nextMilestone =
     logsCount < 3 ? 3 : logsCount < 7 ? 7 : logsCount < 14 ? 14 : 30;
+
   const tomorrowDate = new Date();
   tomorrowDate.setDate(tomorrowDate.getDate() + 1);
   const tomorrowCycle = calculateCycleInfoForDate(
@@ -273,45 +353,12 @@ export async function getInsightsForecast(
     user.cycleLength,
   );
 
-  const hasStressIncrease = context.trends.some(
-    (t) => t === "Stress increasing",
+  // Use tomorrowEngine for the outlook (Sprint 4)
+  const tomorrowOutlook = buildTomorrowPreview(
+    context,
+    todayCycle.daysUntilNextPhase,
+    variantIndex,
   );
-  const hasSleepDecrease = context.trends.some((t) => t === "Sleep decreasing");
-  const hasSleepIncrease = context.trends.some((t) => t === "Sleep increasing");
-  const hasMoodDecrease = context.trends.some((t) => t === "Mood decreasing");
-  const hasHighVariability =
-    context.sleep_variability === "high" || context.mood_variability === "high";
-
-  let tomorrowOutlook: string;
-  if (context.priorityDrivers[0] === "sleep_variability_high") {
-    tomorrowOutlook =
-      "Recovery may still feel uneven tomorrow unless sleep timing stabilizes tonight.";
-  } else if (
-    context.priorityDrivers[0] === "stress_above_baseline" ||
-    context.priorityDrivers[0] === "sleep_stress_amplification"
-  ) {
-    tomorrowOutlook =
-      "Mental load may remain elevated tomorrow; short reset breaks can reduce carry-over strain.";
-  } else if (context.priorityDrivers[0] === "bleeding_heavy") {
-    tomorrowOutlook =
-      "Energy may stay lower tomorrow while bleeding remains high; keep activity gentle and prioritize recovery.";
-  } else if (hasStressIncrease && hasSleepDecrease) {
-    tomorrowOutlook =
-      "If current trends continue, tomorrow may feel heavier with lower recovery and higher stress sensitivity.";
-  } else if (hasSleepIncrease && !hasStressIncrease) {
-    tomorrowOutlook =
-      "Recovery may improve slightly tomorrow if your current sleep trend continues.";
-  } else if (hasMoodDecrease) {
-    tomorrowOutlook =
-      "Emotional load may remain sensitive tomorrow, so a lighter schedule can help stability.";
-  } else {
-    tomorrowOutlook = `Tomorrow is likely to feel ${context.confidenceScore >= 0.65 ? "fairly predictable" : "somewhat variable"} based on current trends.`;
-  }
-
-  if (hasHighVariability) {
-    tomorrowOutlook +=
-      " Recent variability suggests parts of the day may still feel unpredictable.";
-  }
 
   const nextPhaseInDays = todayCycle.daysUntilNextPhase;
   const nextPhasePreview =

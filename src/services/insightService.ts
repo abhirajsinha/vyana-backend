@@ -29,6 +29,7 @@ export interface InsightContext {
   recentLogsCount: number;
   cycleDay: number;
   phase: Phase;
+  variantIndex: 0 | 1 | 2;
   physical_state: SignalState["physicalState"];
   mental_state: SignalState["mentalState"];
   emotional_state: SignalState["emotionalState"];
@@ -55,6 +56,7 @@ export interface DailyInsights {
   whyThisIsHappening: string;
   solution: string;
   recommendation: string;
+  tomorrowPreview: string;
 }
 
 type InsightDriver =
@@ -63,6 +65,7 @@ type InsightDriver =
   | "stress_above_baseline"
   | "stress_trend_spiking"
   | "sleep_trend_declining"
+  | "mood_trend_declining"
   | "bleeding_heavy"
   | "sleep_stress_amplification"
   | "mood_stress_coupling"
@@ -350,6 +353,8 @@ function resolvePriorityDrivers(input: {
   stressState: SignalState["stressState"];
   sleepTrend: TrendState["sleepTrend"];
   sleepState: SignalState["sleepState"];
+  moodTrend: TrendState["moodTrend"];
+  moodState: SignalState["moodState"];
 }): InsightDriver[] {
   const candidates: Array<{ key: InsightDriver; score: number; active: boolean }> = [
     { key: "sleep_variability_high", score: 100, active: input.sleepVariability === "high" },
@@ -364,6 +369,7 @@ function resolvePriorityDrivers(input: {
       active: input.interactionFlags.includes("sleep_stress_amplification"),
     },
     { key: "mood_stress_coupling", score: 75, active: input.interactionFlags.includes("mood_stress_coupling") },
+    { key: "mood_trend_declining", score: 72, active: input.moodTrend === "decreasing" && input.moodState !== "positive" },
     { key: "sedentary_strain", score: 70, active: input.interactionFlags.includes("sedentary_strain") },
     { key: "phase_deviation", score: 65, active: Boolean(input.phaseDeviation) },
     { key: "high_strain", score: 60, active: input.physicalState === "high_strain" },
@@ -380,8 +386,10 @@ export function buildInsightContext(
   cycleDay: number,
   recentLogs: DailyLog[],
   baselineLogs: DailyLog[] = [],
-  baselineScope: InsightContext["baselineScope"] = "none"
+  baselineScope: InsightContext["baselineScope"] = "none",
+  cycleNumber: number = 0,
 ): InsightContext {
+  const variantIndex = (cycleNumber % 3) as 0 | 1 | 2;
   const recentLogsCount = recentLogs.length;
   const signals = buildSignals(recentLogs);
   const trends = buildTrends(recentLogs);
@@ -420,6 +428,8 @@ export function buildInsightContext(
     stressState: signals.stressState,
     sleepTrend: trends.sleepTrend,
     sleepState: signals.sleepState,
+    moodTrend: trends.moodTrend,
+    moodState: signals.moodState,
   });
 
   const reasoning = [
@@ -445,6 +455,7 @@ export function buildInsightContext(
     recentLogsCount,
     cycleDay,
     phase,
+    variantIndex,
     physical_state: signals.physicalState,
     mental_state: signals.mentalState,
     emotional_state: signals.emotionalState,
@@ -468,7 +479,7 @@ export function buildInsightContext(
 
 function buildPhysicalInsight(ctx: InsightContext): string {
   if (ctx.mode === "fallback") {
-    return getDayInsight(ctx.cycleDay).physicalExpectation;
+    return getDayInsight(ctx.cycleDay, ctx.variantIndex).physicalExpectation;
   }
 
   if (ctx.bleeding_load === "heavy") {
@@ -490,7 +501,7 @@ function buildPhysicalInsight(ctx: InsightContext): string {
 
 function buildMentalInsight(ctx: InsightContext): string {
   if (ctx.mode === "fallback") {
-    return getDayInsight(ctx.cycleDay).mentalExpectation;
+    return getDayInsight(ctx.cycleDay, ctx.variantIndex).mentalExpectation;
   }
 
   if (ctx.mental_state === "stressed" || ctx.mental_state === "fatigued_and_stressed") {
@@ -517,7 +528,7 @@ function buildMentalInsight(ctx: InsightContext): string {
 
 function buildEmotionalInsight(ctx: InsightContext): string {
   if (ctx.mode === "fallback") {
-    return getDayInsight(ctx.cycleDay).emotionalNote;
+    return getDayInsight(ctx.cycleDay, ctx.variantIndex).emotionalNote;
   }
 
   if (ctx.emotional_state === "loaded") {
@@ -540,7 +551,7 @@ function buildRecommendation(ctx: InsightContext): string {
   const primary = ctx.priorityDrivers[0];
   if (!primary) {
     if (ctx.mode === "fallback") {
-      return getDayInsight(ctx.cycleDay).actionTip;
+      return getDayInsight(ctx.cycleDay, ctx.variantIndex).actionTip;
     }
     return `Keep your current rhythm and add one anchor habit today (sleep timing or movement) for consistency.`;
   }
@@ -581,14 +592,14 @@ function buildRecommendation(ctx: InsightContext): string {
     return `Use a 5-minute reset block (breathing + single-priority planning) to reduce mental overload.`;
   }
   if (ctx.mode === "fallback") {
-    return getDayInsight(ctx.cycleDay).actionTip;
+    return getDayInsight(ctx.cycleDay, ctx.variantIndex).actionTip;
   }
   return `Keep your current rhythm and add one anchor habit today (sleep timing or movement) for consistency.`;
 }
 
 function buildWhyThisIsHappening(ctx: InsightContext): string {
   if (ctx.recentLogsCount === 0) {
-    return getDayInsight(ctx.cycleDay).hormoneNote;
+    return getDayInsight(ctx.cycleDay, ctx.variantIndex).hormoneNote;
   }
 
   // If the engine decided we have a strong signal, prefer signal-derived reasoning
@@ -646,5 +657,8 @@ export function generateRuleBasedInsights(ctx: InsightContext): DailyInsights {
     whyThisIsHappening: buildWhyThisIsHappening(ctx),
     solution,
     recommendation,
+    // Basic tomorrowPreview from day-specific library. Controller replaces with
+    // trend-adjusted version from tomorrowEngine before sending to client.
+    tomorrowPreview: getDayInsight(ctx.cycleDay, ctx.variantIndex).tomorrowPreview,
   };
 }

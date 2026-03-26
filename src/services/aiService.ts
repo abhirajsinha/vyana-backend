@@ -30,10 +30,27 @@ function enforceTwoLinesOnInsights(insights: DailyInsights): DailyInsights {
     whyThisIsHappening: enforceTwoLines(insights.whyThisIsHappening),
     solution: enforceTwoLines(insights.solution),
     recommendation: enforceTwoLines(insights.recommendation),
+    tomorrowPreview: enforceTwoLines(insights.tomorrowPreview),
   };
 }
 
-/** Final guard after AI: schema check + 2-line cap (belt-and-suspenders with safeParse). */
+/** Count sentences by end-punctuation markers. */
+function countSentences(text: string): number {
+  const trimmed = text.trim();
+  if (!trimmed) return 0;
+  return (trimmed.match(/[.!?]+/g) || []).length;
+}
+
+/** Returns true if any field in the insights exceeds 2 sentences. */
+function anyFieldExceedsTwoSentences(insights: DailyInsights): boolean {
+  const fields: (keyof DailyInsights)[] = [
+    "physicalInsight", "mentalInsight", "emotionalInsight",
+    "whyThisIsHappening", "solution", "recommendation", "tomorrowPreview",
+  ];
+  return fields.some((k) => countSentences(insights[k]) > 2);
+}
+
+/** Final guard after AI: schema check + 2-sentence cap. Rejects entirely if any field exceeds 2 sentences. */
 export function sanitizeInsights(insights: unknown, fallback: DailyInsights): DailyInsights {
   if (!insights || typeof insights !== "object") return fallback;
   const o = insights as Record<string, unknown>;
@@ -44,45 +61,60 @@ export function sanitizeInsights(insights: unknown, fallback: DailyInsights): Da
     "whyThisIsHappening",
     "solution",
     "recommendation",
+    "tomorrowPreview",
   ];
   for (const key of keys) {
     if (typeof o[key] !== "string") return fallback;
   }
-  return enforceTwoLinesOnInsights({
+  const candidate = enforceTwoLinesOnInsights({
     physicalInsight: o.physicalInsight as string,
     mentalInsight: o.mentalInsight as string,
     emotionalInsight: o.emotionalInsight as string,
     whyThisIsHappening: o.whyThisIsHappening as string,
     solution: o.solution as string,
     recommendation: o.recommendation as string,
+    tomorrowPreview: o.tomorrowPreview as string,
   });
+  // Hard reject if any field still exceeds 2 sentences after enforcement
+  if (anyFieldExceedsTwoSentences(candidate)) return fallback;
+  return candidate;
 }
 
-function buildInsightRewritePrompt(context: InsightContext, draft: DailyInsights): string {
+function buildInsightRewritePrompt(
+  context: InsightContext,
+  draft: DailyInsights,
+  userName?: string,
+): string {
+  const userLine = userName
+    ? `User: ${userName}, cycle day ${context.cycleDay}, phase ${context.phase}, cycle ${context.variantIndex}`
+    : `User: cycle day ${context.cycleDay}, phase ${context.phase}`;
+
   return [
-    "Rewrite ONLY for clarity and tone. Do not add facts, diagnoses, or new claims.",
-    "Do not infer patterns, trends, or behaviors unless they already appear in the draft text.",
-    "Do not mention trends, patterns, or 'across days' unless the draft already does.",
-    "Keep each field to at most 2 short lines.",
+    "You are Vyana, a warm cycle wellness companion. Rewrite each field in your",
+    "voice — caring, specific, never clinical. Keep all facts exactly as given.",
+    "Do not add new claims. HARD LIMIT: max 2 sentences per field, ~15 words each.",
+    "If you cannot say it in 2 sentences, cut the less important one.",
     "solution = immediate action today; recommendation = broader guidance; do not duplicate wording.",
+    "tomorrowPreview = 1–2 sentences about tomorrow only; do not repeat today's insight.",
     "",
-    "CONTEXT (for tone only, do not invent from it):",
-    `phase=${context.phase}, recentLogsCount=${context.recentLogsCount}, confidence=${context.confidence}, mode=${context.mode}`,
+    userLine,
     "",
-    "DRAFT (rewrite each field, preserve meaning):",
-    `physicalInsight:\n${draft.physicalInsight}`,
+    "DRAFT (rewrite each field, preserve all facts exactly):",
+    `Physical: ${draft.physicalInsight}`,
     "",
-    `mentalInsight:\n${draft.mentalInsight}`,
+    `Mental: ${draft.mentalInsight}`,
     "",
-    `emotionalInsight:\n${draft.emotionalInsight}`,
+    `Emotional: ${draft.emotionalInsight}`,
     "",
-    `whyThisIsHappening:\n${draft.whyThisIsHappening}`,
+    `Why: ${draft.whyThisIsHappening}`,
     "",
-    `solution:\n${draft.solution}`,
+    `Action: ${draft.solution}`,
     "",
-    `recommendation:\n${draft.recommendation}`,
+    `Recommendation: ${draft.recommendation}`,
     "",
-    "Return strict JSON with keys: physicalInsight, mentalInsight, emotionalInsight, whyThisIsHappening, solution, recommendation.",
+    `Tomorrow: ${draft.tomorrowPreview}`,
+    "",
+    "Return strict JSON with keys: physicalInsight, mentalInsight, emotionalInsight, whyThisIsHappening, solution, recommendation, tomorrowPreview.",
   ].join("\n");
 }
 
@@ -97,26 +129,31 @@ function safeParseInsights(raw: string | null | undefined, fallback: DailyInsigh
       "whyThisIsHappening",
       "solution",
       "recommendation",
+      "tomorrowPreview",
     ];
     for (const key of keys) {
       if (typeof parsed[key] !== "string") {
         return fallback;
       }
     }
-    const out = {
+    const out: DailyInsights = {
       physicalInsight: parsed.physicalInsight!,
       mentalInsight: parsed.mentalInsight!,
       emotionalInsight: parsed.emotionalInsight!,
       whyThisIsHappening: parsed.whyThisIsHappening!,
       solution: parsed.solution!,
       recommendation: parsed.recommendation!,
+      tomorrowPreview: parsed.tomorrowPreview!,
     };
     const draftLen = JSON.stringify(fallback).length;
     const outLen = JSON.stringify(out).length;
     if (outLen > Math.max(800, draftLen * 2.5)) {
       return fallback;
     }
-    return enforceTwoLinesOnInsights(out);
+    const enforced = enforceTwoLinesOnInsights(out);
+    // Hard reject if any field exceeds 2 sentences after enforcement
+    if (anyFieldExceedsTwoSentences(enforced)) return fallback;
+    return enforced;
   } catch {
     return fallback;
   }
@@ -129,10 +166,10 @@ export async function generateInsightsWithGpt(
 ): Promise<DailyInsights> {
   if (!client) return draft;
 
-  const userPrompt = buildInsightRewritePrompt(context, draft);
+  const userPrompt = buildInsightRewritePrompt(context, draft, userName);
   const systemContent =
     "You rewrite health-adjacent support text safely. Output JSON only. " +
-    (userName ? `Address the user as ${userName} only if natural; do not add names if not in draft.` : "");
+    "Keep all facts exactly as given. Never add new claims or diagnoses.";
 
   const response = await client.chat.completions.create({
     model: OPENAI_MODEL,
