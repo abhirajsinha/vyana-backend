@@ -25,6 +25,7 @@ interface TrendState {
 }
 
 export interface InsightContext {
+  recentLogsCount: number;
   phase: Phase;
   physical_state: SignalState["physicalState"];
   mental_state: SignalState["mentalState"];
@@ -97,11 +98,16 @@ function normalizeExercise(value?: string | null): SignalState["exerciseState"] 
   return "light";
 }
 
-function weightedAverage(values: number[]): number | null {
-  if (values.length === 0) return null;
-  const weights = values.map((_, idx) => idx + 1);
-  const weightedSum = values.reduce((sum, value, idx) => sum + value * weights[idx], 0);
-  const totalWeight = weights.reduce((sum, value) => sum + value, 0);
+/**
+ * Weighted mean over chronological order (array index 0 = oldest, last = newest).
+ * Missing entries must be `null` so they are dropped before weights are applied (no index skew).
+ */
+function weightedAverageNullable(values: (number | null)[]): number | null {
+  const valid = values.filter((v): v is number => typeof v === "number");
+  if (valid.length === 0) return null;
+  const weights = valid.map((_, idx) => idx + 1);
+  const weightedSum = valid.reduce((sum, value, idx) => sum + value * weights[idx]!, 0);
+  const totalWeight = weights.reduce((sum, w) => sum + w, 0);
   return weightedSum / totalWeight;
 }
 
@@ -123,10 +129,16 @@ function getBleedingLoad(padsChanged?: number | null): SignalState["bleedingLoad
   return "light";
 }
 
-function numberTrend(values: number[]): Trend {
-  if (values.length < 3) return "insufficient";
-  const first = values[0];
-  const last = values[values.length - 1];
+/** Compare earliest vs latest *present* sample in timeline order (nulls preserve gaps). */
+function numberTrendNullable(values: (number | null)[]): Trend {
+  const validIndexes = values
+    .map((v, i) => (typeof v === "number" ? i : -1))
+    .filter((i) => i !== -1);
+  if (validIndexes.length < 3) return "insufficient";
+  const firstIdx = validIndexes[0]!;
+  const lastIdx = validIndexes[validIndexes.length - 1]!;
+  const first = values[firstIdx]!;
+  const last = values[lastIdx]!;
   const delta = last - first;
   if (Math.abs(delta) < 0.35) return "stable";
   return delta > 0 ? "increasing" : "decreasing";
@@ -150,21 +162,23 @@ function buildSignals(logs: DailyLog[]): SignalState {
   const latest = logs[0];
   const ordered = [...logs].slice(0, 5).reverse();
 
-  const weightedSleep = weightedAverage(
-    ordered.map((l) => l.sleep).filter((v): v is number => typeof v === "number")
-  );
-  const weightedStressScore = weightedAverage(
-    ordered
-      .map((l) => normalizeStress(l.stress))
-      .map((s) => stateToScore(s, { calm: 1, moderate: 2, elevated: 3 }))
-      .filter((v) => v > 0)
-  );
-  const weightedMoodScore = weightedAverage(
-    ordered
-      .map((l) => normalizeMood(l.mood))
-      .map((m) => stateToScore(m, { low: 1, neutral: 2, positive: 3 }))
-      .filter((v) => v > 0)
-  );
+  const sleepSeries = ordered.map((l) => (typeof l.sleep === "number" ? l.sleep : null));
+  const stressSeries = ordered.map((l) => {
+    if (!l.stress?.trim()) return null;
+    const s = normalizeStress(l.stress);
+    const sc = stateToScore(s, { calm: 1, moderate: 2, elevated: 3 });
+    return sc > 0 ? sc : null;
+  });
+  const moodSeries = ordered.map((l) => {
+    if (!l.mood?.trim()) return null;
+    const m = normalizeMood(l.mood);
+    const sc = stateToScore(m, { low: 1, neutral: 2, positive: 3 });
+    return sc > 0 ? sc : null;
+  });
+
+  const weightedSleep = weightedAverageNullable(sleepSeries);
+  const weightedStressScore = weightedAverageNullable(stressSeries);
+  const weightedMoodScore = weightedAverageNullable(moodSeries);
 
   const sleepState = normalizeSleep(weightedSleep);
   const stressState =
@@ -203,7 +217,6 @@ function buildSignals(logs: DailyLog[]): SignalState {
   let mentalState: SignalState["mentalState"] = "balanced";
   if (stressState === "elevated" && sleepState === "poor") {
     mentalState = "fatigued_and_stressed";
-    interactionFlags.push("sleep_stress_amplification");
   } else if (stressState === "elevated") {
     mentalState = "stressed";
   } else if (sleepState === "poor") {
@@ -214,11 +227,18 @@ function buildSignals(logs: DailyLog[]): SignalState {
   if (moodState === "low" || stressState === "elevated") emotionalState = "loaded";
   else if (moodState === "positive") emotionalState = "uplifted";
 
-  if (moodState === "low" && stressState !== "calm") {
-    interactionFlags.push("mood_stress_coupling");
-  }
-  if (exerciseState === "sedentary" && stressState === "elevated") {
-    interactionFlags.push("sedentary_strain");
+  // Avoid "pattern/coupling" type claims for brand new users.
+  // Interactions can be re-enabled once we have enough days to justify them.
+  if (logs.length >= 3) {
+    if (stressState === "elevated" && sleepState === "poor") {
+      interactionFlags.push("sleep_stress_amplification");
+    }
+    if (moodState === "low" && stressState !== "calm") {
+      interactionFlags.push("mood_stress_coupling");
+    }
+    if (exerciseState === "sedentary" && stressState === "elevated") {
+      interactionFlags.push("sedentary_strain");
+    }
   }
 
   return {
@@ -237,22 +257,29 @@ function buildSignals(logs: DailyLog[]): SignalState {
 
 function buildTrends(logs: DailyLog[]): TrendState {
   const ordered = [...logs].slice(0, 5).reverse();
-  const sleepValues = ordered.map((l) => l.sleep).filter((v): v is number => typeof v === "number");
-  const stressValues = ordered
-    .map((l) => normalizeStress(l.stress))
-    .map((s) => stateToScore(s, { calm: 1, moderate: 2, elevated: 3 }))
-    .filter((v) => v > 0);
-  const moodValues = ordered
-    .map((l) => normalizeMood(l.mood))
-    .map((m) => stateToScore(m, { low: 1, neutral: 2, positive: 3 }))
-    .filter((v) => v > 0);
+  const sleepSeries = ordered.map((l) => (typeof l.sleep === "number" ? l.sleep : null));
+  const stressSeries = ordered.map((l) => {
+    if (!l.stress?.trim()) return null;
+    const s = normalizeStress(l.stress);
+    const sc = stateToScore(s, { calm: 1, moderate: 2, elevated: 3 });
+    return sc > 0 ? sc : null;
+  });
+  const moodSeries = ordered.map((l) => {
+    if (!l.mood?.trim()) return null;
+    const m = normalizeMood(l.mood);
+    const sc = stateToScore(m, { low: 1, neutral: 2, positive: 3 });
+    return sc > 0 ? sc : null;
+  });
+
+  const sleepForVar = sleepSeries.filter((v): v is number => typeof v === "number");
+  const moodForVar = moodSeries.filter((v): v is number => typeof v === "number");
 
   return {
-    sleepTrend: numberTrend(sleepValues),
-    stressTrend: numberTrend(stressValues),
-    moodTrend: numberTrend(moodValues),
-    sleepVariability: variabilityLabel(sleepValues),
-    moodVariability: variabilityLabel(moodValues),
+    sleepTrend: numberTrendNullable(sleepSeries),
+    stressTrend: numberTrendNullable(stressSeries),
+    moodTrend: numberTrendNullable(moodSeries),
+    sleepVariability: variabilityLabel(sleepForVar),
+    moodVariability: variabilityLabel(moodForVar),
   };
 }
 
@@ -269,6 +296,7 @@ function formatTrends(trends: TrendState): string[] {
 function modeFor(logs: DailyLog[], signals: SignalState): InsightContext["mode"] {
   const strongSignal =
     signals.physicalState === "high_strain" || signals.mentalState === "stressed" || signals.emotionalState === "loaded";
+  // For <3 logs, keep tone conservative and avoid trend/coupling framing.
   return logs.length >= 3 || strongSignal ? "personalized" : "fallback";
 }
 
@@ -276,21 +304,25 @@ function buildBaselineDeviation(recentLogs: DailyLog[], baselineLogs: DailyLog[]
   if (baselineLogs.length < 7 || recentLogs.length === 0) return [];
 
   const recent = recentLogs.slice(0, 5);
-  const recentSleep = weightedAverage(recent.map((l) => l.sleep).filter((v): v is number => typeof v === "number"));
-  const baselineSleep = weightedAverage(
-    baselineLogs.map((l) => l.sleep).filter((v): v is number => typeof v === "number")
+  const recentSleep = weightedAverageNullable(recent.map((l) => (typeof l.sleep === "number" ? l.sleep : null)));
+  const baselineSleep = weightedAverageNullable(
+    baselineLogs.map((l) => (typeof l.sleep === "number" ? l.sleep : null)),
   );
-  const recentStress = weightedAverage(
-    recent
-      .map((l) => normalizeStress(l.stress))
-      .map((s) => stateToScore(s, { calm: 1, moderate: 2, elevated: 3 }))
-      .filter((v) => v > 0)
+  const recentStress = weightedAverageNullable(
+    recent.map((l) => {
+      if (!l.stress?.trim()) return null;
+      const s = normalizeStress(l.stress);
+      const sc = stateToScore(s, { calm: 1, moderate: 2, elevated: 3 });
+      return sc > 0 ? sc : null;
+    }),
   );
-  const baselineStress = weightedAverage(
-    baselineLogs
-      .map((l) => normalizeStress(l.stress))
-      .map((s) => stateToScore(s, { calm: 1, moderate: 2, elevated: 3 }))
-      .filter((v) => v > 0)
+  const baselineStress = weightedAverageNullable(
+    baselineLogs.map((l) => {
+      if (!l.stress?.trim()) return null;
+      const s = normalizeStress(l.stress);
+      const sc = stateToScore(s, { calm: 1, moderate: 2, elevated: 3 });
+      return sc > 0 ? sc : null;
+    }),
   );
 
   const deviations: string[] = [];
@@ -339,19 +371,20 @@ export function buildInsightContext(
   baselineLogs: DailyLog[] = [],
   baselineScope: InsightContext["baselineScope"] = "none"
 ): InsightContext {
+  const recentLogsCount = recentLogs.length;
   const signals = buildSignals(recentLogs);
   const trends = buildTrends(recentLogs);
   const trendList = formatTrends(trends);
   const mode = modeFor(recentLogs, signals);
   const baselineDeviation = buildBaselineDeviation(recentLogs, baselineLogs);
-  const phaseDeviation =
-    phase === "ovulation" && (signals.sleepState === "poor" || signals.physicalState === "high_strain")
-      ? "Energy/recovery dip detected during ovulation window."
-      : phase === "luteal" && signals.stressState === "elevated"
-      ? null
-      : phase === "follicular" && signals.moodState === "low"
-      ? "Lower mood than expected for rising-energy follicular phase."
-      : null;
+
+  let phaseDeviation: string | null = null;
+  if (phase === "ovulation" && (signals.sleepState === "poor" || signals.physicalState === "high_strain")) {
+    phaseDeviation = "Energy/recovery dip detected during ovulation window.";
+  } else if (phase === "follicular" && signals.moodState === "low") {
+    phaseDeviation = "Lower mood than expected for rising-energy follicular phase.";
+  }
+  // luteal stress/mood variability is often expected — no deviation flag here.
 
   const confidence: InsightContext["confidence"] =
     recentLogs.length >= 5 ? "high" : recentLogs.length >= 3 ? "medium" : "low";
@@ -360,9 +393,10 @@ export function buildInsightContext(
     (signals.physicalState === "high_strain" ? 1 : 0) +
     (signals.mentalState === "fatigued_and_stressed" ? 1 : 0) +
     (signals.emotionalState === "loaded" ? 1 : 0);
+  const logPortion = recentLogs.length === 0 ? 0 : recentLogs.length / 5;
   const confidenceScore = Math.min(
     1,
-    Math.max(0.2, recentLogs.length / 5) * 0.6 + Math.min(1, trendCount / 3) * 0.25 + Math.min(1, signalStrength / 3) * 0.15
+    logPortion * 0.6 + Math.min(1, trendCount / 3) * 0.25 + Math.min(1, signalStrength / 3) * 0.15
   );
   const priorityDrivers = resolvePriorityDrivers({
     baselineDeviation,
@@ -393,6 +427,7 @@ export function buildInsightContext(
   ];
 
   return {
+    recentLogsCount,
     phase,
     physical_state: signals.physicalState,
     mental_state: signals.mentalState,
@@ -413,59 +448,60 @@ export function buildInsightContext(
     reasoning,
   };
 }
+// ===================== UPDATED SERVICE =====================
 
 function buildPhysicalInsight(ctx: InsightContext): string {
   if (ctx.mode === "fallback") {
-    return `In the ${ctx.phase} phase, energy shifts are common; a lighter routine can support recovery.`;
+    if (ctx.phase === "ovulation") {
+      return `During ovulation, energy is often higher and more stable.\nThis is a good time for active routines or social plans.`;
+    }
+    return `Energy can shift during the ${ctx.phase} phase.\nAdjust your routine based on how your body feels.`;
   }
+
   if (ctx.bleeding_load === "heavy") {
-    return `Your bleeding looks heavier today, which can increase weakness and body strain.`;
+    return `Your bleeding looks heavier today, which can increase weakness.\nReduce exertion and prioritize recovery.`;
   }
-  if (ctx.interaction_flags.includes("sedentary_strain")) {
-    return `Low movement with elevated stress is adding physical strain, so your body may feel heavier than usual.`;
-  }
-  if (ctx.sleep_variability === "high") {
-    return `Your sleep pattern is inconsistent across recent days, which can reduce physical recovery quality.`;
-  }
+
   if (ctx.physical_state === "high_strain") {
-    return `Your body shows high strain today, likely from combined recovery load and symptoms.`;
+    return `Your body shows signs of higher strain today.\nConsider slowing down and focusing on recovery.`;
   }
-  if (ctx.physical_state === "low_recovery") {
-    return `Your body seems to be in low recovery mode, so pacing activities can help stability.`;
-  }
-  return `Your physical signals look relatively stable for this point in your cycle.`;
+
+  return `Your physical energy looks stable for this phase.\nAdjust activity based on how you feel.`;
 }
 
 function buildMentalInsight(ctx: InsightContext): string {
+  if (ctx.mode === "fallback") {
+    return `This phase can support clearer thinking for many people.\nIt may be a good time for focused tasks.`;
+  }
+
   if (ctx.mental_state === "stressed") {
-    return `Your recent logs suggest elevated cognitive strain, especially with stress carrying across days.`;
+    return ctx.recentLogsCount < 3
+      ? `Your latest log suggests higher stress today.\nThis may make focusing harder.`
+      : `Stress levels have been elevated recently.\nThis may increase mental load.`;
   }
-  if (ctx.mental_state === "fatigued_and_stressed") {
-    return `Low recovery and elevated stress are amplifying each other, which can increase mental fatigue today.`;
-  }
-  if (ctx.interaction_flags.includes("sleep_stress_amplification")) {
-    return `Recent sleep-stress interaction is reinforcing cognitive load, so focus may feel harder than usual.`;
-  }
-  if (ctx.mental_state === "fatigued") {
-    return `Your focus may feel heavier today because recovery signals point to mental fatigue.`;
-  }
-  return `Your mental load appears balanced overall, with no strong strain pattern right now.`;
+
+  return `Your recent signal suggests a relatively balanced mental state.\nNo strong strain signals detected.`;
 }
 
 function buildEmotionalInsight(ctx: InsightContext): string {
-  if (ctx.mood_variability === "high") {
-    return `Your mood has been fluctuating more than usual, suggesting an emotionally variable pattern this week.`;
+  if (ctx.mode === "fallback") {
+    return `Many people feel more emotionally steady in this phase.\nSocial interactions may feel easier.`;
   }
-  if (ctx.interaction_flags.includes("mood_stress_coupling")) {
-    return `Your mood appears tightly coupled with stress right now, so emotional dips may track stressful moments quickly.`;
-  }
+
   if (ctx.emotional_state === "loaded") {
-    return `Emotionally, you may be carrying extra load today; this aligns with your current phase context.`;
+    return ctx.recentLogsCount < 3
+      ? `Stress today may be affecting your mood.\nEmotional dips may feel sharper.`
+      : `You may be carrying higher emotional load recently.\nTake space to decompress.`;
   }
-  if (ctx.emotional_state === "uplifted") {
-    return `Your emotional trend looks uplifted, which can be a strong window for meaningful tasks.`;
+
+  return `Your recent signals suggest a steady emotional state.\nNo major fluctuations detected.`;
+}
+
+function buildBroaderGuidance(ctx: InsightContext): string {
+  if (ctx.recentLogsCount < 3) {
+    return `Keep your schedule flexible today and focus on a few priority tasks rather than multitasking.`;
   }
-  return `Your emotional state appears steady, with manageable variation across recent days.`;
+  return `This week, aim for steady basics: regular sleep, gentle movement, and brief stress resets when things feel heavy.`;
 }
 
 function buildRecommendation(ctx: InsightContext): string {
@@ -513,8 +549,11 @@ function buildRecommendation(ctx: InsightContext): string {
 }
 
 function buildWhyThisIsHappening(ctx: InsightContext): string {
-  if (ctx.confidenceScore < 0.45) {
-    return `This insight is based on limited recent data, so it may shift as more daily logs are added.`;
+  if (ctx.recentLogsCount === 0) {
+    return `This is based on your current cycle phase.\nInsights will become more personalized as you start logging daily.`;
+  }
+  if (ctx.recentLogsCount < 3) {
+    return `This combines your cycle phase with limited data.\nIt will refine as more logs are added.`;
   }
   if (ctx.phase_deviation) {
     return `${ctx.phase_deviation} This likely reflects a temporary mismatch between expected phase energy and current recovery signals.`;
@@ -536,12 +575,13 @@ function buildWhyThisIsHappening(ctx: InsightContext): string {
 
 export function generateRuleBasedInsights(ctx: InsightContext): DailyInsights {
   const solution = buildRecommendation(ctx);
+  const recommendation = buildBroaderGuidance(ctx);
   return {
     physicalInsight: buildPhysicalInsight(ctx),
     mentalInsight: buildMentalInsight(ctx),
     emotionalInsight: buildEmotionalInsight(ctx),
     whyThisIsHappening: buildWhyThisIsHappening(ctx),
     solution,
-    recommendation: solution,
+    recommendation,
   };
 }

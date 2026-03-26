@@ -33,17 +33,50 @@ export async function getCycleCalendar(req: Request, res: Response): Promise<voi
   const year = Number(yearStr);
   const monthIndex = Number(monthStr) - 1;
   const daysInMonth = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+  const startDate = new Date(Date.UTC(year, monthIndex, 1));
+  const endDate = new Date(Date.UTC(year, monthIndex + 1, 0, 23, 59, 59));
+
+  const logs = await prisma.dailyLog.findMany({
+    where: {
+      userId: req.userId,
+      date: {
+        gte: startDate,
+        lte: endDate,
+      },
+    },
+  });
+
+  const logMap = new Map<string, (typeof logs)[number]>();
+  logs.forEach((log) => {
+    const key = new Date(log.date).toISOString().split("T")[0];
+    logMap.set(key, log);
+  });
+
+  const now = new Date();
+  const todayIso = now.toISOString().split("T")[0];
 
   const calendar = Array.from({ length: daysInMonth }, (_, i) => {
     const day = i + 1;
     const date = new Date(Date.UTC(year, monthIndex, day));
+    const isoDate = date.toISOString().split("T")[0];
+    const log = logMap.get(isoDate);
     const cycleInfo = calculateCycleInfoForDate(user.lastPeriodStart, date, user.cycleLength);
     return {
-      date: date.toISOString().split("T")[0],
+      date: isoDate,
       currentDay: cycleInfo.currentDay,
       phase: cycleInfo.phase,
       phaseDay: cycleInfo.phaseDay,
       daysUntilNextPhase: cycleInfo.daysUntilNextPhase,
+      isToday: isoDate === todayIso,
+      isFuture: date > now,
+      hasLog: !!log,
+      logSummary: log
+        ? {
+            mood: log.mood ?? null,
+            energy: log.energy ?? null,
+            stress: log.stress ?? null,
+          }
+        : null,
     };
   });
 

@@ -11,6 +11,117 @@ function sanitize(text: string): string {
   return text.trim().replace(/\s+/g, " ");
 }
 
+/** Post-process AI strings: max 2 lines, max length, normalized whitespace per line. */
+export function enforceTwoLines(text: string): string {
+  return text
+    .split("\n")
+    .map((line) => line.trim().replace(/\s+/g, " "))
+    .filter((line) => line.length > 0)
+    .slice(0, 2)
+    .join("\n")
+    .slice(0, 180);
+}
+
+function enforceTwoLinesOnInsights(insights: DailyInsights): DailyInsights {
+  return {
+    physicalInsight: enforceTwoLines(insights.physicalInsight),
+    mentalInsight: enforceTwoLines(insights.mentalInsight),
+    emotionalInsight: enforceTwoLines(insights.emotionalInsight),
+    whyThisIsHappening: enforceTwoLines(insights.whyThisIsHappening),
+    solution: enforceTwoLines(insights.solution),
+    recommendation: enforceTwoLines(insights.recommendation),
+  };
+}
+
+/** Final guard after AI: schema check + 2-line cap (belt-and-suspenders with safeParse). */
+export function sanitizeInsights(insights: unknown, fallback: DailyInsights): DailyInsights {
+  if (!insights || typeof insights !== "object") return fallback;
+  const o = insights as Record<string, unknown>;
+  const keys: (keyof DailyInsights)[] = [
+    "physicalInsight",
+    "mentalInsight",
+    "emotionalInsight",
+    "whyThisIsHappening",
+    "solution",
+    "recommendation",
+  ];
+  for (const key of keys) {
+    if (typeof o[key] !== "string") return fallback;
+  }
+  return enforceTwoLinesOnInsights({
+    physicalInsight: o.physicalInsight as string,
+    mentalInsight: o.mentalInsight as string,
+    emotionalInsight: o.emotionalInsight as string,
+    whyThisIsHappening: o.whyThisIsHappening as string,
+    solution: o.solution as string,
+    recommendation: o.recommendation as string,
+  });
+}
+
+function buildInsightRewritePrompt(context: InsightContext, draft: DailyInsights): string {
+  return [
+    "Rewrite ONLY for clarity and tone. Do not add facts, diagnoses, or new claims.",
+    "Do not infer patterns, trends, or behaviors unless they already appear in the draft text.",
+    "Do not mention trends, patterns, or 'across days' unless the draft already does.",
+    "Keep each field to at most 2 short lines.",
+    "solution = immediate action today; recommendation = broader guidance; do not duplicate wording.",
+    "",
+    "CONTEXT (for tone only, do not invent from it):",
+    `phase=${context.phase}, recentLogsCount=${context.recentLogsCount}, confidence=${context.confidence}, mode=${context.mode}`,
+    "",
+    "DRAFT (rewrite each field, preserve meaning):",
+    `physicalInsight:\n${draft.physicalInsight}`,
+    "",
+    `mentalInsight:\n${draft.mentalInsight}`,
+    "",
+    `emotionalInsight:\n${draft.emotionalInsight}`,
+    "",
+    `whyThisIsHappening:\n${draft.whyThisIsHappening}`,
+    "",
+    `solution:\n${draft.solution}`,
+    "",
+    `recommendation:\n${draft.recommendation}`,
+    "",
+    "Return strict JSON with keys: physicalInsight, mentalInsight, emotionalInsight, whyThisIsHappening, solution, recommendation.",
+  ].join("\n");
+}
+
+function safeParseInsights(raw: string | null | undefined, fallback: DailyInsights): DailyInsights {
+  if (!raw?.trim()) return fallback;
+  try {
+    const parsed = JSON.parse(raw) as Partial<DailyInsights>;
+    const keys: (keyof DailyInsights)[] = [
+      "physicalInsight",
+      "mentalInsight",
+      "emotionalInsight",
+      "whyThisIsHappening",
+      "solution",
+      "recommendation",
+    ];
+    for (const key of keys) {
+      if (typeof parsed[key] !== "string") {
+        return fallback;
+      }
+    }
+    const out = {
+      physicalInsight: parsed.physicalInsight!,
+      mentalInsight: parsed.mentalInsight!,
+      emotionalInsight: parsed.emotionalInsight!,
+      whyThisIsHappening: parsed.whyThisIsHappening!,
+      solution: parsed.solution!,
+      recommendation: parsed.recommendation!,
+    };
+    const draftLen = JSON.stringify(fallback).length;
+    const outLen = JSON.stringify(out).length;
+    if (outLen > Math.max(800, draftLen * 2.5)) {
+      return fallback;
+    }
+    return enforceTwoLinesOnInsights(out);
+  } catch {
+    return fallback;
+  }
+}
+
 export async function generateInsightsWithGpt(
   context: InsightContext,
   draft: DailyInsights,
@@ -18,64 +129,23 @@ export async function generateInsightsWithGpt(
 ): Promise<DailyInsights> {
   if (!client) return draft;
 
-  const systemPrompt = [
-    "You are Vyana, a supportive menstrual health companion.",
-    "Generate insight content from structured context, not from assumptions.",
-    "Use trends, interactions, phase deviation, baseline deviation, and confidence score.",
-    "Prioritize the primary driver first, then optionally incorporate secondary drivers.",
-    "If mode is fallback, clearly state insights are based on general patterns and personalization will improve with more logs.",
-    "Keep outputs concise and actionable. No diagnosis or medical certainty claims.",
-    "Each field must be maximum 2 short lines. No filler or generic advice.",
-    "Return strict JSON only with keys: physicalInsight, mentalInsight, emotionalInsight, whyThisIsHappening, solution, recommendation.",
-  ].join(" ");
-
-  const primaryDriver = context.priorityDrivers[0] || "none";
-  const secondaryDrivers = context.priorityDrivers.slice(1, 3);
-  const priorityReason =
-    context.reasoning.find((line) => line.startsWith("Insight priority drivers:")) || "No explicit priority reason available.";
-
-  const payload = {
-    userName: userName || "User",
-    context,
-    primaryDriver,
-    secondaryDrivers,
-    priorityReason,
-    draftFallback: draft,
-  };
+  const userPrompt = buildInsightRewritePrompt(context, draft);
+  const systemContent =
+    "You rewrite health-adjacent support text safely. Output JSON only. " +
+    (userName ? `Address the user as ${userName} only if natural; do not add names if not in draft.` : "");
 
   const response = await client.chat.completions.create({
     model: OPENAI_MODEL,
-    temperature: 0.4,
+    temperature: 0.3,
     response_format: { type: "json_object" },
     messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: JSON.stringify(payload) },
+      { role: "system", content: systemContent },
+      { role: "user", content: userPrompt },
     ],
   });
 
-  const raw = response.choices[0]?.message?.content || "{}";
-  const parsed = JSON.parse(raw) as Partial<DailyInsights>;
-
-  if (
-    typeof parsed.physicalInsight !== "string" ||
-    typeof parsed.mentalInsight !== "string" ||
-    typeof parsed.emotionalInsight !== "string" ||
-    typeof parsed.whyThisIsHappening !== "string" ||
-    typeof parsed.solution !== "string"
-  ) {
-    return draft;
-  }
-
-  const recommendation = typeof parsed.recommendation === "string" ? parsed.recommendation : parsed.solution;
-
-  return {
-    physicalInsight: sanitize(parsed.physicalInsight),
-    mentalInsight: sanitize(parsed.mentalInsight),
-    emotionalInsight: sanitize(parsed.emotionalInsight),
-    whyThisIsHappening: sanitize(parsed.whyThisIsHappening),
-    solution: sanitize(parsed.solution),
-    recommendation: sanitize(recommendation),
-  };
+  const raw = response.choices[0]?.message?.content;
+  return safeParseInsights(raw, draft);
 }
 
 export interface ChatHistoryItem {
