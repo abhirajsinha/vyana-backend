@@ -2,6 +2,8 @@ import { Request, Response } from "express";
 import { prisma } from "../lib/prisma";
 import { calculateCycleInfo } from "../services/cycleEngine";
 import { askVyanaWithGpt, ChatHistoryItem } from "../services/aiService";
+import { getCycleMode } from "../services/cycleEngine";
+import { getUserInsightData } from "../services/insightData";
 
 export async function chat(req: Request, res: Response): Promise<void> {
   const { message, history } = req.body as { message?: string; history?: ChatHistoryItem[] };
@@ -10,25 +12,25 @@ export async function chat(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  const user = await prisma.user.findUnique({ where: { id: req.userId } });
-  if (!user) {
+  // Use the rich getUserInsightData so chat has access to real numbers and cross-cycle narrative
+  const data = await getUserInsightData(req.userId!);
+  if (!data) {
     res.status(404).json({ error: "User not found" });
     return;
   }
 
-  const recentLogs = await prisma.dailyLog.findMany({
-    where: { userId: req.userId },
-    orderBy: { date: "desc" },
-    take: 5,
-  });
+  const { user, recentLogs, numericBaseline, crossCycleNarrative } = data;
+  const cycleMode = getCycleMode(user);
+  const cycleInfo = calculateCycleInfo(user.lastPeriodStart, user.cycleLength, cycleMode);
 
-  const cycleInfo = calculateCycleInfo(user.lastPeriodStart, user.cycleLength);
   const reply = await askVyanaWithGpt({
     userName: user.name,
     question: message,
     cycleInfo,
     recentLogs,
     history: Array.isArray(history) ? history : undefined,
+    numericBaseline,
+    crossCycleNarrative,
   });
 
   await prisma.chatMessage.createMany({

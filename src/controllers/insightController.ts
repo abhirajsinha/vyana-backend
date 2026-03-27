@@ -55,7 +55,6 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
   );
 
-  // Bug 4 fix: read from daily cache before recomputing
   const cached = await prisma.insightCache.findUnique({
     where: { userId_date: { userId: req.userId!, date: dayStart } },
   });
@@ -64,21 +63,19 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     return;
   }
 
+  // ── Fetch rich data (upgraded: 90-day baseline + cross-cycle narrative) ──
   const data = await getUserInsightData(req.userId!);
   if (!data) {
     res.status(404).json({ error: "User not found" });
     return;
   }
-  const { user, recentLogs, baselineLogs } = data;
+  const { user, recentLogs, baselineLogs, numericBaseline, crossCycleNarrative } = data;
+
   const cycleMode = getCycleMode(user);
   const cyclePrediction = await getCyclePredictionContext(req.userId!, user.cycleLength);
   const effectiveCycleLength = cyclePrediction.avgLength || user.cycleLength;
 
-  const cycleInfo = calculateCycleInfo(
-    user.lastPeriodStart,
-    effectiveCycleLength,
-    cycleMode,
-  );
+  const cycleInfo = calculateCycleInfo(user.lastPeriodStart, effectiveCycleLength, cycleMode);
   const cycleNumber = getCycleNumber(user.lastPeriodStart, effectiveCycleLength);
   const variantIndex = (cycleNumber % 3) as 0 | 1 | 2;
 
@@ -92,14 +89,8 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     return logPhase === cycleInfo.phase;
   });
   const hasPhaseBaseline = phaseBaselineLogs.length >= 7;
-  const baselineForComparison = hasPhaseBaseline
-    ? phaseBaselineLogs
-    : baselineLogs;
-  const baselineScope = hasPhaseBaseline
-    ? "phase"
-    : baselineForComparison.length >= 7
-      ? "global"
-      : "none";
+  const baselineForComparison = hasPhaseBaseline ? phaseBaselineLogs : baselineLogs;
+  const baselineScope = hasPhaseBaseline ? "phase" : baselineForComparison.length >= 7 ? "global" : "none";
 
   const context = buildInsightContext(
     cycleInfo.phase,
@@ -114,24 +105,15 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
   );
 
   const ruleBasedInsights = generateRuleBasedInsights(context);
-
-  // Replace basic tomorrowPreview with trend-adjusted version (Sprint 4)
-  const tomorrowPreview = buildTomorrowPreview(
-    context,
-    cycleInfo.daysUntilNextPhase,
-    variantIndex,
-  );
+  const tomorrowPreview = buildTomorrowPreview(context, cycleInfo.daysUntilNextPhase, variantIndex);
   let draftInsights = { ...ruleBasedInsights, tomorrowPreview };
 
-  // Run correlation engine (Sprints 3 + 5)
-  // Fetch 90 days of historical driver data for recurring pattern detection
   const previousCycleDrivers = context.mode === "personalized"
     ? await getPreviousCycleDriverHistory(req.userId!)
     : [];
 
   const correlation = runCorrelationEngine(context, recentLogs, previousCycleDrivers);
 
-  // Inject correlation pattern into primary card if high enough confidence
   if (correlation.patternKey && correlation.confidence >= 0.7 && context.mode === "personalized") {
     const patternResult = correlation.patterns[correlation.patternKey]!;
     const physicallyProtected =
@@ -161,20 +143,39 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     }
   }
 
+  // ── Inject cross-cycle narrative into whyThisIsHappening if available ──
+  if (crossCycleNarrative?.narrativeStatement && context.mode === "personalized") {
+    const narrativeSuffix = crossCycleNarrative.trend === "worsening"
+      ? " This window has been getting harder across your recent cycles."
+      : crossCycleNarrative.trend === "improving"
+      ? " The good news: this window has been getting easier across your recent cycles."
+      : "";
+    draftInsights = {
+      ...draftInsights,
+      whyThisIsHappening: draftInsights.whyThisIsHappening.includes("last")
+        ? draftInsights.whyThisIsHappening
+        : `${draftInsights.whyThisIsHappening} ${crossCycleNarrative.narrativeStatement}${narrativeSuffix}`.trim(),
+    };
+  }
+
   const logsCount = recentLogs.length;
   const isNewUser = logsCount < 3;
-  const nextMilestone =
-    logsCount < 3 ? 3 : logsCount < 7 ? 7 : logsCount < 14 ? 14 : 30;
+  const nextMilestone = logsCount < 3 ? 3 : logsCount < 7 ? 7 : logsCount < 14 ? 14 : 30;
 
   let insights = draftInsights;
   let aiEnhanced = false;
-  const canUseAI =
-    logsCount >= 3 &&
-    context.mode === "personalized" &&
-    context.confidence !== "low";
+  const canUseAI = logsCount >= 3 && context.mode === "personalized" && context.confidence !== "low";
+
   if (canUseAI) {
     try {
-      const raw = await generateInsightsWithGpt(context, draftInsights, user.name);
+      // ── Pass real user numbers and cross-cycle narrative to GPT ──
+      const raw = await generateInsightsWithGpt(
+        context,
+        draftInsights,
+        numericBaseline,
+        crossCycleNarrative,
+        user.name,
+      );
       insights = sanitizeInsights(raw, draftInsights);
       aiEnhanced = JSON.stringify(insights) !== JSON.stringify(draftInsights);
     } catch {
@@ -190,7 +191,6 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
 
   const currentPrimaryKey = resolvePrimaryInsightKey(context);
 
-  // Bug 1 fix: only read insightHistory when mode === "personalized" (saves a DB query for fallback users)
   const recentHistory = context.mode === "personalized"
     ? await prisma.insightHistory.findMany({
         where: { userId: req.userId! },
@@ -205,6 +205,7 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     primaryKeyOverride = pickNovelPrimaryKey(currentPrimaryKey, recentHistory, driverForMemory);
   }
 
+  // ── Memory-based insight escalation (unchanged) ──
   if (driverForMemory === "stress_above_baseline" && context.mode === "personalized") {
     if (existingMemoryCount <= 1) {
       insights = {
@@ -231,20 +232,21 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
   }
 
   if (driverForMemory === "sleep_below_baseline" && context.mode === "personalized" && existingMemoryCount > 3) {
+    const sleepNote = numericBaseline.recentSleepAvg !== null && numericBaseline.baselineSleepAvg !== null
+      ? `Sleep has dropped to ${numericBaseline.recentSleepAvg}h — ${Math.abs(numericBaseline.sleepDelta ?? 0)}h below your usual ${numericBaseline.baselineSleepAvg}h.`
+      : `Sleep has been below your usual baseline for several days.`;
     insights = {
       ...insights,
-      physicalInsight: `Sleep has been below your usual baseline for several days.\nThis can compound fatigue and slow recovery.`,
+      physicalInsight: `${sleepNote}\nThis can compound fatigue and slow recovery.`,
       solution: `Prioritize an earlier wind-down tonight and protect tomorrow morning for lighter tasks.`,
     };
   }
 
-  // Critical drivers: never suppress physical insight as primary
   if (driverForMemory === "bleeding_heavy" || driverForMemory === "high_strain") {
     primaryKeyOverride = null;
   }
 
   const view = buildInsightView(context, insights, { primaryKeyOverride });
-
   const hook = generateHook(driverForMemory, context, correlation.patternKey);
   const core = buildCoreInsight(insights, context);
   const pattern = buildPatternReassurance(context, correlation.patternKey);
@@ -259,7 +261,6 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     confidenceLabel: view.confidenceLabel,
   };
 
-  // PMS warning — surface when cycleDay >= 18 and symptoms expected within 3 days
   const pmsForecastForWarning = cycleInfo.currentDay >= 18 && context.mode === "personalized"
     ? buildPmsSymptomForecast(
         cycleInfo.phase,
@@ -302,19 +303,32 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
       nextPeriodRange:
         cyclePrediction.confidence === "variable" || cyclePrediction.confidence === "irregular"
           ? {
-              earliest: new Date(
-                cycleInfo.nextPeriodDate.getTime() - cyclePrediction.stdDev * 86400000,
-              )
-                .toISOString()
-                .split("T")[0],
-              latest: new Date(
-                cycleInfo.nextPeriodDate.getTime() + cyclePrediction.stdDev * 86400000,
-              )
-                .toISOString()
-                .split("T")[0],
+              earliest: new Date(cycleInfo.nextPeriodDate.getTime() - cyclePrediction.stdDev * 86400000)
+                .toISOString().split("T")[0],
+              latest: new Date(cycleInfo.nextPeriodDate.getTime() + cyclePrediction.stdDev * 86400000)
+                .toISOString().split("T")[0],
             }
           : undefined,
     },
+    // ── New: expose numeric baseline so frontend can show real numbers ──
+    numericSummary: {
+      recentSleepAvg: numericBaseline.recentSleepAvg,
+      baselineSleepAvg: numericBaseline.baselineSleepAvg,
+      sleepDelta: numericBaseline.sleepDelta,
+      recentStressLabel: numericBaseline.recentStressAvg !== null
+        ? (numericBaseline.recentStressAvg >= 2.4 ? "elevated" : numericBaseline.recentStressAvg >= 1.6 ? "moderate" : "calm")
+        : null,
+      recentMoodLabel: numericBaseline.recentMoodAvg !== null
+        ? (numericBaseline.recentMoodAvg >= 2.4 ? "positive" : numericBaseline.recentMoodAvg <= 1.6 ? "low" : "neutral")
+        : null,
+    },
+    // ── New: expose cross-cycle narrative ──
+    crossCycleNarrative: crossCycleNarrative ? {
+      matchingCycles: crossCycleNarrative.matchingCycles,
+      totalCyclesAnalyzed: crossCycleNarrative.totalCyclesAnalyzed,
+      narrativeStatement: crossCycleNarrative.narrativeStatement,
+      trend: crossCycleNarrative.trend,
+    } : null,
     aiEnhanced,
     correlationPattern: correlation.patternKey,
     basedOn: {
@@ -335,11 +349,7 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
   };
 
   if (driverForMemory && context.mode === "personalized") {
-    await recordInsightMemoryOccurrence({
-      userId: req.userId!,
-      driver: driverForMemory,
-      now,
-    });
+    await recordInsightMemoryOccurrence({ userId: req.userId!, driver: driverForMemory, now });
   }
 
   if (context.mode === "personalized") {
@@ -355,7 +365,6 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     });
   }
 
-  // Bug 4 fix: write to daily cache so subsequent same-day requests are served from cache
   const payloadJson = JSON.parse(JSON.stringify(responsePayload)) as Prisma.InputJsonValue;
   await prisma.insightCache.upsert({
     where: { userId_date: { userId: req.userId!, date: dayStart } },
@@ -366,21 +375,12 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
   res.json(responsePayload);
 }
 
-export async function getInsightsForecast(
-  req: Request,
-  res: Response,
-): Promise<void> {
+export async function getInsightsForecast(req: Request, res: Response): Promise<void> {
   const now = new Date();
-  const dayStart = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
-  );
+  const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+
   const cached = await prisma.insightCache.findUnique({
-    where: {
-      userId_date: {
-        userId: req.userId!,
-        date: dayStart,
-      },
-    },
+    where: { userId_date: { userId: req.userId!, date: dayStart } },
   });
   if (cached?.forecast) {
     res.json(cached.forecast);
@@ -392,16 +392,13 @@ export async function getInsightsForecast(
     res.status(404).json({ error: "User not found" });
     return;
   }
-  const { user, recentLogs, baselineLogs } = data;
+  const { user, recentLogs, baselineLogs, numericBaseline, crossCycleNarrative } = data;
+
   const cycleMode = getCycleMode(user);
   const cyclePrediction = await getCyclePredictionContext(req.userId!, user.cycleLength);
   const effectiveCycleLength = cyclePrediction.avgLength || user.cycleLength;
 
-  const todayCycle = calculateCycleInfo(
-    user.lastPeriodStart,
-    effectiveCycleLength,
-    cycleMode,
-  );
+  const todayCycle = calculateCycleInfo(user.lastPeriodStart, effectiveCycleLength, cycleMode);
   const cycleNumber = getCycleNumber(user.lastPeriodStart, effectiveCycleLength);
   const variantIndex = (cycleNumber % 3) as 0 | 1 | 2;
 
@@ -415,14 +412,8 @@ export async function getInsightsForecast(
     return logPhase === todayCycle.phase;
   });
   const hasPhaseBaseline = phaseBaselineLogs.length >= 7;
-  const baselineForComparison = hasPhaseBaseline
-    ? phaseBaselineLogs
-    : baselineLogs;
-  const baselineScope = hasPhaseBaseline
-    ? "phase"
-    : baselineForComparison.length >= 7
-      ? "global"
-      : "none";
+  const baselineForComparison = hasPhaseBaseline ? phaseBaselineLogs : baselineLogs;
+  const baselineScope = hasPhaseBaseline ? "phase" : baselineForComparison.length >= 7 ? "global" : "none";
 
   const context = buildInsightContext(
     todayCycle.phase,
@@ -438,8 +429,7 @@ export async function getInsightsForecast(
 
   const logsCount = recentLogs.length;
   const isNewUser = logsCount < 3;
-  const nextMilestone =
-    logsCount < 3 ? 3 : logsCount < 7 ? 7 : logsCount < 14 ? 14 : 30;
+  const nextMilestone = logsCount < 3 ? 3 : logsCount < 7 ? 7 : logsCount < 14 ? 14 : 30;
 
   const forecastPreviousCycleDrivers = context.mode === "personalized"
     ? await getPreviousCycleDriverHistory(req.userId!)
@@ -461,12 +451,7 @@ export async function getInsightsForecast(
     cycleMode,
   );
 
-  // Use tomorrowEngine for the outlook (Sprint 4)
-  const tomorrowOutlook = buildTomorrowPreview(
-    context,
-    todayCycle.daysUntilNextPhase,
-    variantIndex,
-  );
+  const tomorrowOutlook = buildTomorrowPreview(context, todayCycle.daysUntilNextPhase, variantIndex);
 
   const nextPhaseInDays = todayCycle.daysUntilNextPhase;
   const nextPhasePreview =
@@ -475,25 +460,17 @@ export async function getInsightsForecast(
       : `Your current phase may continue for about ${nextPhaseInDays} day(s), with gradual changes expected near transition.`;
 
   const forecastConfidence =
-    context.confidenceScore >= 0.75
-      ? "high"
-      : context.confidenceScore >= 0.5
-        ? "medium"
-        : "low";
+    context.confidenceScore >= 0.75 ? "high" : context.confidenceScore >= 0.5 ? "medium" : "low";
   const confidenceMessage =
     forecastConfidence === "low"
-      ? "Forecast confidence is low due to limited or unstable recent data; this outlook may change as more logs are added."
+      ? "Forecast confidence is low due to limited recent data; this outlook will sharpen as more logs are added."
       : forecastConfidence === "medium"
-        ? "Forecast confidence is moderate; recent signals are useful but may still shift over the next day."
-        : "Forecast confidence is high; recent trends and signals are relatively consistent.";
+      ? "Forecast confidence is moderate; recent signals are useful but may still shift."
+      : "Forecast confidence is high; recent trends and signals are consistent.";
 
   const draftForecastPayload = {
     isNewUser,
-    progress: {
-      logsCount,
-      nextMilestone,
-      logsToNextMilestone: Math.max(0, nextMilestone - logsCount),
-    },
+    progress: { logsCount, nextMilestone, logsToNextMilestone: Math.max(0, nextMilestone - logsCount) },
     today: {
       phase: todayCycle.phase,
       currentDay: todayCycle.currentDay,
@@ -506,63 +483,46 @@ export async function getInsightsForecast(
         phase: tomorrowCycle.phase,
         outlook: tomorrowOutlook,
       },
-      nextPhase: {
-        inDays: nextPhaseInDays,
-        preview: nextPhasePreview,
-      },
-      confidence: {
-        level: forecastConfidence,
-        score: context.confidenceScore,
-        message: confidenceMessage,
-      },
+      nextPhase: { inDays: nextPhaseInDays, preview: nextPhasePreview },
+      confidence: { level: forecastConfidence, score: context.confidenceScore, message: confidenceMessage },
     },
     pmsSymptomForecast,
+    // Expose numeric summary in forecast too
+    numericSummary: {
+      recentSleepAvg: numericBaseline.recentSleepAvg,
+      baselineSleepAvg: numericBaseline.baselineSleepAvg,
+      sleepDelta: numericBaseline.sleepDelta,
+    },
+    crossCycleNarrative: crossCycleNarrative ? {
+      narrativeStatement: crossCycleNarrative.narrativeStatement,
+      trend: crossCycleNarrative.trend,
+    } : null,
   };
 
   let forecastPayload: (typeof draftForecastPayload & { forecastAiEnhanced?: boolean }) | Record<string, unknown> =
     draftForecastPayload;
   let forecastAiEnhanced = false;
-  const canUseAIForecast =
-    logsCount >= 3 &&
-    context.mode === "personalized" &&
-    context.confidence !== "low";
+
+  const canUseAIForecast = logsCount >= 3 && context.mode === "personalized" && context.confidence !== "low";
   if (canUseAIForecast) {
     const rewritten = await generateForecastWithGpt(
       context,
       draftForecastPayload,
+      numericBaseline,
+      crossCycleNarrative,
       user.name,
     ) as typeof draftForecastPayload;
-    forecastAiEnhanced =
-      JSON.stringify(rewritten) !== JSON.stringify(draftForecastPayload);
-    forecastPayload = {
-      ...rewritten,
-      forecastAiEnhanced,
-    };
+    forecastAiEnhanced = JSON.stringify(rewritten) !== JSON.stringify(draftForecastPayload);
+    forecastPayload = { ...rewritten, forecastAiEnhanced };
   } else {
-    forecastPayload = {
-      ...draftForecastPayload,
-      forecastAiEnhanced: false,
-    };
+    forecastPayload = { ...draftForecastPayload, forecastAiEnhanced: false };
   }
 
-  const forecastJson = JSON.parse(
-    JSON.stringify(forecastPayload),
-  ) as Prisma.InputJsonValue;
-
+  const forecastJson = JSON.parse(JSON.stringify(forecastPayload)) as Prisma.InputJsonValue;
   await prisma.insightCache.upsert({
-    where: {
-      userId_date: {
-        userId: req.userId!,
-        date: dayStart,
-      },
-    },
+    where: { userId_date: { userId: req.userId!, date: dayStart } },
     update: { forecast: forecastJson },
-    create: {
-      userId: req.userId!,
-      date: dayStart,
-      payload: {},
-      forecast: forecastJson,
-    },
+    create: { userId: req.userId!, date: dayStart, payload: {}, forecast: forecastJson },
   });
 
   res.json(forecastPayload);
