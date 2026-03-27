@@ -338,15 +338,15 @@ function buildEmotionalMemory(params: {
     return { hasMemory: false, recallNarrative: null, pastMoodLabel: null, occurrenceCount: matchingOccurrences.length };
   }
 
-  // Build driver-specific recall narrative
+  // Build driver-specific recall narrative — concrete + bridge phrase
   const driverPhrases: Record<string, string> = {
     sleep_below_baseline: `the last ${matchingOccurrences.length} times sleep dropped like this`,
     stress_above_baseline: `the last ${matchingOccurrences.length} times stress ran this high`,
     sleep_stress_amplification: `the last ${matchingOccurrences.length} times sleep and stress were both elevated`,
     mood_trend_declining: `the last ${matchingOccurrences.length} times mood dipped in this window`,
     high_strain: `the last ${matchingOccurrences.length} times your body was under this much strain`,
-    bleeding_heavy: `the last ${matchingOccurrences.length} times flow was heavier`,
-    sleep_trend_declining: `the last ${matchingOccurrences.length} times sleep was declining`,
+    bleeding_heavy: `the last ${matchingOccurrences.length} times your flow was heavier like this`,
+    sleep_trend_declining: `the last ${matchingOccurrences.length} times sleep was declining like this`,
   };
 
   const driverPhrase = driverPhrases[driver];
@@ -354,7 +354,16 @@ function buildEmotionalMemory(params: {
     return { hasMemory: false, recallNarrative: null, pastMoodLabel: null, occurrenceCount: matchingOccurrences.length };
   }
 
-  const recallNarrative = `${driverPhrase}, you logged feeling ${moodLabel}`;
+  // Bug 5 fix: add bridge phrase — connects past to present, makes it feel like real recall
+  const bridges = [
+    "this probably feels familiar",
+    "this time likely feels similar",
+    "your body tends to respond this way",
+  ];
+  const bridge = bridges[cycleDay % bridges.length]!;
+
+  // Full recall: specific driver phrase + mood word + bridge
+  const recallNarrative = `${driverPhrase}, you logged feeling ${moodLabel} — ${bridge}`;
 
   return {
     hasMemory: true,
