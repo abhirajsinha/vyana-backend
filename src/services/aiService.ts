@@ -1,13 +1,30 @@
+// src/services/aiService.ts  (v5 — final complete)
+// CHANGES vs v4:
+//   - buildVyanaContextForInsights now requires userId + emotionalMemoryInput
+//   - System prompt has EMOTIONAL MEMORY RULE
+//   - User prompt surfaces emotional memory instruction
+//   - Everything else identical to v4
+
 import OpenAI from "openai";
 import { DailyInsights, InsightContext } from "./insightService";
-import { CycleInfo } from "./cycleEngine";
+import { CycleInfo, type Phase, type CycleMode } from "./cycleEngine";
 import type { NumericBaseline, CrossCycleNarrative } from "./insightData";
 import { CERTAINTY_RULES_FOR_GPT } from "../utils/confidencelanguage";
+import {
+  buildVyanaContext,
+  serializeVyanaContext,
+  serializePrioritySignals,
+  type VyanaContext,
+  type AnticipationFrequencyState,
+  type EmotionalMemoryInput,
+} from "./vyanaContext";
+import type { HormoneState } from "./hormoneengine";
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
-
 const client = OPENAI_API_KEY ? new OpenAI({ apiKey: OPENAI_API_KEY }) : null;
+
+// ─── Unchanged utilities ──────────────────────────────────────────────────────
 
 function sanitize(text: string): string {
   return text.trim().replace(/\s+/g, " ");
@@ -16,8 +33,8 @@ function sanitize(text: string): string {
 export function enforceTwoLines(text: string): string {
   return text
     .split("\n")
-    .map((line) => line.trim().replace(/\s+/g, " "))
-    .filter((line) => line.length > 0)
+    .map((l) => l.trim().replace(/\s+/g, " "))
+    .filter((l) => l.length > 0)
     .slice(0, 2)
     .join("\n")
     .slice(0, 200);
@@ -41,28 +58,55 @@ function countSentences(text: string): number {
   return (trimmed.match(/[.!?]+/g) || []).length;
 }
 
-const STRONG_WORDS = ["compounding", "persistent", "strain", "loop", "baseline", "cascade", "pattern", "cycle"];
+const STRONG_WORDS = [
+  "compounding",
+  "persistent",
+  "strain",
+  "loop",
+  "baseline",
+  "cascade",
+  "pattern",
+  "cycle",
+];
 
-function hasStrengthRegression(draft: DailyInsights, output: DailyInsights): boolean {
+function hasStrengthRegression(
+  draft: DailyInsights,
+  output: DailyInsights,
+): boolean {
   const draftText = Object.values(draft).join(" ").toLowerCase();
   const outputText = Object.values(output).join(" ").toLowerCase();
-  return STRONG_WORDS.some((word) => draftText.includes(word) && !outputText.includes(word));
+  return STRONG_WORDS.some(
+    (w) => draftText.includes(w) && !outputText.includes(w),
+  );
 }
 
 function anyFieldExceedsTwoSentences(insights: DailyInsights): boolean {
   const fields: (keyof DailyInsights)[] = [
-    "physicalInsight", "mentalInsight", "emotionalInsight",
-    "whyThisIsHappening", "solution", "recommendation", "tomorrowPreview",
+    "physicalInsight",
+    "mentalInsight",
+    "emotionalInsight",
+    "whyThisIsHappening",
+    "solution",
+    "recommendation",
+    "tomorrowPreview",
   ];
   return fields.some((k) => countSentences(insights[k]) > 2);
 }
 
-export function sanitizeInsights(insights: unknown, fallback: DailyInsights): DailyInsights {
+export function sanitizeInsights(
+  insights: unknown,
+  fallback: DailyInsights,
+): DailyInsights {
   if (!insights || typeof insights !== "object") return fallback;
   const o = insights as Record<string, unknown>;
   const keys: (keyof DailyInsights)[] = [
-    "physicalInsight", "mentalInsight", "emotionalInsight",
-    "whyThisIsHappening", "solution", "recommendation", "tomorrowPreview",
+    "physicalInsight",
+    "mentalInsight",
+    "emotionalInsight",
+    "whyThisIsHappening",
+    "solution",
+    "recommendation",
+    "tomorrowPreview",
   ];
   for (const key of keys) {
     if (typeof o[key] !== "string") return fallback;
@@ -80,116 +124,21 @@ export function sanitizeInsights(insights: unknown, fallback: DailyInsights): Da
   return candidate;
 }
 
-// ─── Build a rich data block for GPT ─────────────────────────────────────────
-
-function buildUserDataBlock(
-  ctx: InsightContext,
-  baseline: NumericBaseline,
-  narrative: CrossCycleNarrative | null,
-  userName?: string,
-): string {
-  const lines: string[] = [];
-
-  if (userName) lines.push(`User: ${userName}`);
-  lines.push(`Cycle day ${ctx.cycleDay}, phase: ${ctx.phase}, mode: ${ctx.cycleMode}`);
-
-  // Real sleep numbers
-  if (baseline.recentSleepAvg !== null) {
-    const sleepLine = baseline.baselineSleepAvg !== null
-      ? `Sleep: averaging ${baseline.recentSleepAvg}h over the last ${baseline.recentLogCount} days (her usual: ${baseline.baselineSleepAvg}h, delta: ${baseline.sleepDelta !== null ? (baseline.sleepDelta > 0 ? "+" : "") + baseline.sleepDelta + "h" : "unknown"})`
-      : `Sleep: averaging ${baseline.recentSleepAvg}h over the last ${baseline.recentLogCount} days`;
-    lines.push(sleepLine);
-  }
-
-  // Real stress numbers
-  if (baseline.recentStressAvg !== null) {
-    const stressLabel = baseline.recentStressAvg >= 2.4 ? "elevated" : baseline.recentStressAvg >= 1.6 ? "moderate" : "calm";
-    const stressLine = baseline.baselineStressAvg !== null
-      ? `Stress: ${stressLabel} (score ${baseline.recentStressAvg}/3, her usual: ${baseline.baselineStressAvg}/3${baseline.stressDelta !== null ? `, delta: ${baseline.stressDelta > 0 ? "+" : ""}${baseline.stressDelta}` : ""})`
-      : `Stress: ${stressLabel} (score ${baseline.recentStressAvg}/3)`;
-    lines.push(stressLine);
-  }
-
-  // Real mood numbers
-  if (baseline.recentMoodAvg !== null) {
-    const moodLabel = baseline.recentMoodAvg >= 2.4 ? "positive" : baseline.recentMoodAvg <= 1.6 ? "low" : "neutral";
-    const moodLine = baseline.baselineMoodAvg !== null
-      ? `Mood: ${moodLabel} (score ${baseline.recentMoodAvg}/3, her usual: ${baseline.baselineMoodAvg}/3${baseline.moodDelta !== null ? `, delta: ${baseline.moodDelta > 0 ? "+" : ""}${baseline.moodDelta}` : ""})`
-      : `Mood: ${moodLabel} (score ${baseline.recentMoodAvg}/3)`;
-    lines.push(moodLine);
-  }
-
-  // Active drivers
-  if (ctx.priorityDrivers.length > 0) {
-    lines.push(`Key signals: ${ctx.priorityDrivers.slice(0, 3).join(", ")}`);
-  }
-
-  // Trends
-  if (ctx.trends.length > 0) {
-    lines.push(`Trends: ${ctx.trends.join(", ")}`);
-  }
-
-  // Cross-cycle narrative — this is the "knows me" layer
-  if (narrative && narrative.narrativeStatement) {
-    lines.push(`Cross-cycle memory: ${narrative.narrativeStatement}`);
-    if (narrative.trend !== "unknown") {
-      lines.push(`Pattern trend across cycles: ${narrative.trend}`);
-    }
-  }
-
-  return lines.join("\n");
-}
-
-// ─── Core GPT prompt builder ──────────────────────────────────────────────────
-
-function buildInsightRewritePrompt(
-  ctx: InsightContext,
-  draft: DailyInsights,
-  baseline: NumericBaseline,
-  narrative: CrossCycleNarrative | null,
-  userName?: string,
-): string {
-  const dataBlock = buildUserDataBlock(ctx, baseline, narrative, userName);
-
-  return [
-    "You are Vyana — a deeply personal cycle wellness companion who has been tracking this user for months.",
-    "You have real data about her. Use it. Make her feel seen.",
-    "",
-    "CRITICAL RULES:",
-    "- Use her actual numbers when available: e.g. 'your sleep dropped from 7.2h to 5.8h' not 'sleep has been declining'",
-    "- If you have cross-cycle memory, use it: e.g. 'last cycle you felt this exact way around day 24 too'",
-    "- Never say 'above baseline' or 'pattern detected' — say 'higher than your normal' or 'tends to happen'",
-    "- Start with how she feels right now, not with data",
-    "- Use 'you' and 'your' constantly — this is personal, not clinical",
-    "- solution = one specific action for TODAY. recommendation = broader guidance for this week. Never duplicate wording between them.",
-    "- tomorrowPreview = 1–2 sentences about TOMORROW only, not today",
-    "- Max 2 sentences per field. ~15 words per sentence. Hard limit.",
-    "- If you cannot improve a field — return it unchanged",
-    "- Never add new medical claims. Never soften strong causal statements.",
-    "",
-    "HER DATA RIGHT NOW:",
-    dataBlock,
-    "",
-    "DRAFT TO REWRITE (preserve all facts, improve specificity and warmth):",
-    `Physical: ${draft.physicalInsight}`,
-    `Mental: ${draft.mentalInsight}`,
-    `Emotional: ${draft.emotionalInsight}`,
-    `Why: ${draft.whyThisIsHappening}`,
-    `Action: ${draft.solution}`,
-    `Recommendation: ${draft.recommendation}`,
-    `Tomorrow: ${draft.tomorrowPreview}`,
-    "",
-    "Return strict JSON with keys: physicalInsight, mentalInsight, emotionalInsight, whyThisIsHappening, solution, recommendation, tomorrowPreview.",
-  ].join("\n");
-}
-
-function safeParseInsights(raw: string | null | undefined, fallback: DailyInsights): DailyInsights {
+function safeParseInsights(
+  raw: string | null | undefined,
+  fallback: DailyInsights,
+): DailyInsights {
   if (!raw?.trim()) return fallback;
   try {
     const parsed = JSON.parse(raw) as Partial<DailyInsights>;
     const keys: (keyof DailyInsights)[] = [
-      "physicalInsight", "mentalInsight", "emotionalInsight",
-      "whyThisIsHappening", "solution", "recommendation", "tomorrowPreview",
+      "physicalInsight",
+      "mentalInsight",
+      "emotionalInsight",
+      "whyThisIsHappening",
+      "solution",
+      "recommendation",
+      "tomorrowPreview",
     ];
     for (const key of keys) {
       if (typeof parsed[key] !== "string") return fallback;
@@ -204,8 +153,8 @@ function safeParseInsights(raw: string | null | undefined, fallback: DailyInsigh
       tomorrowPreview: parsed.tomorrowPreview!,
     };
     const draftLen = JSON.stringify(fallback).length;
-    const outLen = JSON.stringify(out).length;
-    if (outLen > Math.max(800, draftLen * 2.5)) return fallback;
+    if (JSON.stringify(out).length > Math.max(800, draftLen * 2.5))
+      return fallback;
     const enforced = enforceTwoLinesOnInsights(out);
     if (anyFieldExceedsTwoSentences(enforced)) return fallback;
     if (hasStrengthRegression(fallback, enforced)) return fallback;
@@ -215,112 +164,253 @@ function safeParseInsights(raw: string | null | undefined, fallback: DailyInsigh
   }
 }
 
-// ─── Public API ───────────────────────────────────────────────────────────────
+// ─── VyanaContext builder (updated — userId + emotionalMemoryInput) ───────────
 
-export async function generateInsightsWithGpt(
-  ctx: any, // InsightContext
-  draft: any, // DailyInsights
-  baseline: any, // NumericBaseline
-  narrative: any, // CrossCycleNarrative | null
-  userName?: string,
-  insightTone: "cycle-based" | "pattern-based" | "symptom-based" = "cycle-based",
-): Promise<any> {
-  // @ts-ignore — client is defined in original file
-  if (!client) return draft;
-  if (ctx.mode !== "personalized") return draft;
- 
-  const toneInstruction =
-    insightTone === "pattern-based"
-      ? "This user is on hormonal contraception. Do NOT reference cycle phases, ovulation, or hormone level changes. Base all insights on logged symptoms and patterns only. Say 'based on your recent patterns' not 'in this phase'."
-      : insightTone === "symptom-based"
-      ? "This user's cycle is significantly affected by contraception. Focus only on what they are logging. Avoid all cycle-phase or hormone language."
-      : "Use cycle-phase context where appropriate.";
- 
-  const dataBlock = buildUserDataBlock(ctx, baseline, narrative, userName);
- 
-  const userPrompt = [
-    "You are Vyana — a deeply personal cycle wellness companion who has been tracking this user for months.",
-    "You have real data about her. Use it. Make her feel seen.",
-    "",
-    CERTAINTY_RULES_FOR_GPT,
-    "",
-    `TONE: ${toneInstruction}`,
-    "",
-    "ADDITIONAL RULES:",
-    "- Use her actual numbers when available: e.g. 'your sleep dropped from 7.2h to 5.8h'",
-    "- If you have cross-cycle memory, use it: e.g. 'last cycle you tended to feel this around day 24'",
-    "- Never say 'above baseline' or 'pattern detected' — say 'higher than your normal' or 'tends to happen'",
-    "- Start with how she feels right now, not with data",
-    "- Use 'you' and 'your' constantly — this is personal, not clinical",
-    "- solution = one specific action for TODAY. recommendation = broader guidance for this week. Never duplicate.",
-    "- tomorrowPreview = 1–2 sentences about TOMORROW only, not today",
-    "- Max 2 sentences per field. ~15 words per sentence. Hard limit.",
-    "- Hormone context belongs ONLY in whyThisIsHappening — never as a headline. Always frame as 'typically' not 'is'.",
-    "",
-    "HER DATA RIGHT NOW:",
-    dataBlock,
-    "",
-    "DRAFT TO REWRITE (preserve all facts, improve specificity and warmth):",
-    `Physical: ${draft.physicalInsight}`,
-    `Mental: ${draft.mentalInsight}`,
-    `Emotional: ${draft.emotionalInsight}`,
-    `Why: ${draft.whyThisIsHappening}`,
-    `Action: ${draft.solution}`,
-    `Recommendation: ${draft.recommendation}`,
-    `Tomorrow: ${draft.tomorrowPreview}`,
-    "",
-    "Return strict JSON with keys: physicalInsight, mentalInsight, emotionalInsight, whyThisIsHappening, solution, recommendation, tomorrowPreview.",
-  ].join("\n");
- 
-  const systemContent = [
-    "You are Vyana — a warm, sharp, deeply personal cycle companion who has been tracking this user for months.",
-    "You write like a knowledgeable friend who has access to her actual health data.",
-    "VOICE: Start with how she feels. Use 'you' constantly. Use her real numbers ('your sleep dropped from 7.2h to 5.8h').",
-    "Use cross-cycle memory when available ('last cycle you tended to feel this around day 24 — it passed').",
-    "Say 'higher than your normal' not 'above baseline'. Say 'tends to happen' not 'pattern detected'.",
-    "Use 'today', 'tonight', 'tomorrow' — never 'this phase' or 'this week'.",
-    "NEVER: 'it is important to', 'make sure to', 'consider', 'elevated levels'.",
-    "NEVER: 'you will feel', 'this will happen', 'your estrogen is', 'your progesterone is'.",
-    "ALWAYS: probability-aware language. Even high confidence → 'likely' not 'will'.",
-    "Hormones: frame as 'estrogen is typically rising' not 'your estrogen is high'.",
-    "Be direct with actions: 'do X tonight' not 'you might want to try X'. One idea per sentence. Short. Human.",
-    "TASK: Make every field feel like it was written specifically for her — because it was.",
-    "OUTPUT: JSON with keys: physicalInsight, mentalInsight, emotionalInsight, whyThisIsHappening, solution, recommendation, tomorrowPreview",
-  ].join(" ");
- 
-  // @ts-ignore
-  const response = await client.chat.completions.create({
-    // @ts-ignore
-    model: OPENAI_MODEL,
-    temperature: 0.35,
-    response_format: { type: "json_object" },
-    messages: [
-      { role: "system", content: systemContent },
-      { role: "user", content: userPrompt },
-    ],
-  });
- 
-  const raw = response.choices[0]?.message?.content;
-  return safeParseInsights(raw, draft);
+export function buildVyanaContextForInsights(params: {
+  ctx: InsightContext;
+  baseline: NumericBaseline;
+  crossCycleNarrative: CrossCycleNarrative | null;
+  hormoneState: HormoneState | null;
+  hormoneLanguage: string | null;
+  phase: Phase;
+  cycleDay: number;
+  phaseDay: number;
+  cycleLength: number;
+  cycleMode: CycleMode;
+  daysUntilNextPhase: number;
+  daysUntilNextPeriod: number;
+  isPeriodDelayed: boolean;
+  daysOverdue: number;
+  isIrregular: boolean;
+  memoryDriver: string | null;
+  memoryCount: number;
+  userName: string | null;
+  userId: string;
+  anticipationFrequencyState?: AnticipationFrequencyState;
+  emotionalMemoryInput?: EmotionalMemoryInput | null;
+}): VyanaContext {
+  return buildVyanaContext(params);
 }
 
-// ─── Forecast rewrite ─────────────────────────────────────────────────────────
+// ─── System prompt (v5 — final complete) ─────────────────────────────────────
+
+const VYANA_SYSTEM_PROMPT = `
+You are Vyana — a warm, deeply personal cycle companion who has been tracking this user for months.
+You write like a knowledgeable friend who has access to her actual health data.
+
+VOICE:
+- Start with what she's experiencing right now
+- Use "you" and "your" constantly
+- Be direct without being clinical. Warm without being vague.
+- When signals have persisted, name the duration naturally
+- When signals connect, show that connection explicitly
+
+NUMBER RULES:
+- Sleep: use the pre-rounded value exactly as given — never change the phrasing
+- Stress and mood: NEVER use numeric scores — labels only
+- Only use numbers when paired with comparison or trend
+
+CONFIDENCE RULE:
+- HIGH → "this tends to happen for you", "your patterns show", "you're likely to notice"
+- MEDIUM → "you might notice", "there's a good chance", "you may start to feel"
+- LOW → "you may find", "it could be", "some people notice"
+
+IDENTITY RULE:
+When "Your pattern:" is in the data — use it for personal authority:
+"for you, this tends to..." or "your cycles show..." or "you tend to notice..."
+This is what makes Vyana feel like a companion, not an app.
+
+EMOTIONAL MEMORY RULE:
+When "Emotional memory:" is in the data — this is the most empathetic moment:
+- Use it to show you remember: "the last time this happened, you felt..."
+- It validates that her current feeling is real and has precedent
+- Weave it into emotionalInsight or whyThisIsHappening — once, naturally
+- Example: "The last few times stress ran this high, you logged feeling exhausted — this time likely feels similar"
+- Never state it as a data point — express it as genuine recall
+
+DELIGHT RULE:
+When marked [warm human moment] or [light human touch]:
+- One sentence, woven naturally — never announced
+- "nothing is wrong — this is just your cycle moving"
+- If it doesn't fit, skip it
+
+SURPRISE INSIGHT RULE:
+When marked [surprise insight]:
+- Lead with the unexpected connection, then the brief explanation
+- Keep it grounded and observational: "sleep and stress together are hitting harder than either would alone"
+- One surprise only — never stack
+
+PRIORITY SIGNAL RULES:
+- Do NOT copy signals verbatim — translate into natural language
+- Core signals address first, with appropriate empathy
+- Enhancement is max 1 — surprise or anticipation, not both
+- Emotional is always last and optional
+
+ANTICIPATION RULE:
+- Weave naturally into tomorrowPreview or whyThisIsHappening
+- No "but" or "however" before it — make it flow
+
+LANGUAGE RULES:
+${CERTAINTY_RULES_FOR_GPT}
+
+STRUCTURE:
+- physicalInsight: physical state. Max 2 sentences.
+- mentalInsight: cognitive/mental state. Max 2 sentences.
+- emotionalInsight: emotional tone — good place for emotional memory. Max 2 sentences.
+- whyThisIsHappening: cause — hormone context ONLY here. Good place for identity + emotional memory. Max 2 sentences.
+- solution: ONE action for TODAY only. Max 2 sentences.
+- recommendation: broader guidance, next few days. Never duplicates solution. Max 2 sentences.
+- tomorrowPreview: tomorrow only — good for anticipation. Max 2 sentences.
+
+OUTPUT: strict JSON. Keys: physicalInsight, mentalInsight, emotionalInsight, whyThisIsHappening, solution, recommendation, tomorrowPreview
+`.trim();
+
+// ─── generateInsightsWithGpt (v5) ────────────────────────────────────────────
+
+export async function generateInsightsWithGpt(
+  ctx: InsightContext,
+  draft: DailyInsights,
+  baseline: NumericBaseline,
+  narrative: CrossCycleNarrative | null,
+  userName?: string,
+  insightTone:
+    | "cycle-based"
+    | "pattern-based"
+    | "symptom-based" = "cycle-based",
+  vyanaCtx?: VyanaContext,
+): Promise<DailyInsights> {
+  if (!client) return draft;
+
+  const contextBlock = vyanaCtx
+    ? serializeVyanaContext(vyanaCtx)
+    : buildFallbackContextBlock(ctx, baseline, narrative, userName);
+
+  const priorityBlock = vyanaCtx
+    ? serializePrioritySignals(
+        vyanaCtx.prioritySignals,
+        vyanaCtx.confidenceMapping,
+      )
+    : "";
+
+  const stableInstruction = vyanaCtx?.isStablePattern
+    ? "\nSTABLE PATTERN: Focus on phase normalcy, subtle forward-looking warmth, and her identity pattern if present."
+    : "";
+
+  const anticipationInstruction =
+    vyanaCtx?.anticipation.shouldSurface &&
+    !vyanaCtx.surpriseInsight.shouldSurface
+      ? `\nANTICIPATION (${vyanaCtx.anticipation.type}): "${vyanaCtx.anticipation.narrative}" — weave naturally, no contrasting connector.`
+      : "";
+
+  const identityInstruction =
+    vyanaCtx?.identity.useThisOutput && vyanaCtx.identity.userPatternNarrative
+      ? `\nIDENTITY (${vyanaCtx.identity.historyCycles} cycles): "${vyanaCtx.identity.patternCore}" — express as "for you" or "your cycles tend to".`
+      : "";
+
+  const emotionalMemoryInstruction =
+    vyanaCtx?.emotionalMemory.hasMemory &&
+    vyanaCtx.emotionalMemory.recallNarrative
+      ? `\nEMOTIONAL MEMORY: "${vyanaCtx.emotionalMemory.recallNarrative}" — express as genuine recall in emotionalInsight or whyThisIsHappening. Show that Vyana remembers how she felt, not just what happened.`
+      : "";
+
+  const surpriseInstruction =
+    vyanaCtx?.surpriseInsight.shouldSurface && vyanaCtx.surpriseInsight.insight
+      ? `\nSURPRISE INSIGHT: "${vyanaCtx.surpriseInsight.insight}" — lead with the unexpected connection. One sentence.`
+      : "";
+
+  const delightInstruction =
+    !vyanaCtx?.surpriseInsight.shouldSurface &&
+    vyanaCtx?.delight.shouldSurface &&
+    vyanaCtx.delight.moment
+      ? `\nDELIGHT (${vyanaCtx.delight.type}): "${vyanaCtx.delight.moment}" — weave as one warm human touch. Don't force it.`
+      : "";
+
+  const toneInstruction =
+    insightTone === "pattern-based"
+      ? "Hormonal contraception — do NOT reference cycle phases, ovulation, or hormone changes."
+      : insightTone === "symptom-based"
+        ? "Focus only on what she is logging. No cycle-phase or hormone language."
+        : "Use cycle-phase context where appropriate. Hormone context in whyThisIsHappening only.";
+
+  const userPrompt = `
+TONE: ${toneInstruction}
+${priorityBlock}
+${stableInstruction}
+${anticipationInstruction}
+${identityInstruction}
+${emotionalMemoryInstruction}
+${surpriseInstruction}
+${delightInstruction}
+
+HER DATA:
+${contextBlock}
+
+TASK: Write her insights from scratch. GPT is primary author.
+Translate signals into natural language — never copy verbatim.
+Use identity language when present. Express emotional memory as recall, not data.
+Surprise insight leads with the unexpected connection. Delight is one warm sentence.
+
+DRAFT (quality floor):
+Physical: ${draft.physicalInsight}
+Mental: ${draft.mentalInsight}
+Emotional: ${draft.emotionalInsight}
+Why: ${draft.whyThisIsHappening}
+Action: ${draft.solution}
+Recommendation: ${draft.recommendation}
+Tomorrow: ${draft.tomorrowPreview}
+
+Return strict JSON only.
+`.trim();
+
+  try {
+    const response = await client.chat.completions.create({
+      model: OPENAI_MODEL,
+      temperature: 0.3,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: VYANA_SYSTEM_PROMPT },
+        { role: "user", content: userPrompt },
+      ],
+    });
+    return safeParseInsights(response.choices[0]?.message?.content, draft);
+  } catch {
+    return draft;
+  }
+}
+
+// ─── generateForecastWithGpt (v5) ────────────────────────────────────────────
 
 type ForecastPayload = {
   isNewUser: boolean;
-  progress: { logsCount: number; nextMilestone: number; logsToNextMilestone: number };
-  today: { phase: string; currentDay: number; confidenceScore: number; priorityDrivers: string[] };
+  progress: {
+    logsCount: number;
+    nextMilestone: number;
+    logsToNextMilestone: number;
+  };
+  today: {
+    phase: string | null;
+    currentDay: number;
+    confidenceScore: number;
+    priorityDrivers: string[];
+  };
   forecast: {
-    tomorrow: { date: string; phase: string; outlook: string };
-    nextPhase: { inDays: number; preview: string };
+    tomorrow: { date: string; phase: string | null; outlook: string };
+    nextPhase: { inDays: number; preview: string } | null;
     confidence: { level: string; score: number; message: string };
   };
-  pmsSymptomForecast?: { available: boolean; headline?: string; action?: string } | null;
+  pmsSymptomForecast?: {
+    available: boolean;
+    headline?: string;
+    action?: string;
+  } | null;
   forecastAiEnhanced?: boolean;
 };
 
-function sanitizeForecast(payload: ForecastPayload, fallback: ForecastPayload): ForecastPayload {
-  if (!payload?.forecast?.tomorrow?.outlook || !payload?.forecast?.nextPhase?.preview) return fallback;
+function sanitizeForecast(
+  payload: ForecastPayload,
+  fallback: ForecastPayload,
+): ForecastPayload {
+  if (!payload?.forecast?.tomorrow?.outlook) return fallback;
   if (!payload?.forecast?.confidence?.message) return fallback;
   return {
     ...fallback,
@@ -333,11 +423,13 @@ function sanitizeForecast(payload: ForecastPayload, fallback: ForecastPayload): 
         ...payload.forecast.tomorrow,
         outlook: enforceTwoLines(payload.forecast.tomorrow.outlook),
       },
-      nextPhase: {
-        ...fallback.forecast.nextPhase,
-        ...payload.forecast.nextPhase,
-        preview: enforceTwoLines(payload.forecast.nextPhase.preview),
-      },
+      nextPhase: payload.forecast.nextPhase
+        ? {
+            ...fallback.forecast.nextPhase,
+            ...payload.forecast.nextPhase,
+            preview: enforceTwoLines(payload.forecast.nextPhase.preview),
+          }
+        : fallback.forecast.nextPhase,
       confidence: {
         ...fallback.forecast.confidence,
         ...payload.forecast.confidence,
@@ -360,61 +452,72 @@ function sanitizeForecast(payload: ForecastPayload, fallback: ForecastPayload): 
 }
 
 export async function generateForecastWithGpt(
-  ctx: any,
-  draft: any,
-  baseline: any,
-  narrative: any,
+  ctx: InsightContext,
+  draft: ForecastPayload,
+  baseline: NumericBaseline,
+  narrative: CrossCycleNarrative | null,
   userName?: string,
-): Promise<any> {
-  // @ts-ignore
+  vyanaCtx?: VyanaContext,
+): Promise<ForecastPayload> {
   if (!client) return draft;
- 
-  const dataBlock = buildUserDataBlock(ctx, baseline, narrative, userName);
- 
-  const userPrompt = [
-    "Rewrite ONLY the text fields for warmth, specificity, and personal resonance.",
-    "Use her actual data (sleep hours, stress scores, cross-cycle memory) to make the forecast feel personal.",
-    "Keep all facts exactly the same — dates, phase names, confidence level, score, milestone numbers.",
-    "Max 2 sentences per rewritten field. Never add medical claims.",
-    "",
-    CERTAINTY_RULES_FOR_GPT,
-    "",
-    "HER DATA:",
-    dataBlock,
-    "",
-    "Return strict JSON with same schema as input.",
-    `INPUT_JSON: ${JSON.stringify(draft)}`,
-  ].join("\n");
- 
-  const systemContent =
-    "You are Vyana. Rewrite forecast text fields to feel personal and specific — use her real numbers when you have them. " +
-    "CRITICAL: Never use deterministic language. Never say 'you will feel', 'this will happen', 'estrogen will', 'your period will'. " +
-    "Always hedge: 'you might notice', 'you may start to feel', 'you're likely to experience'. " +
-    "Only rewrite: forecast.tomorrow.outlook, forecast.nextPhase.preview, forecast.confidence.message, pmsSymptomForecast.headline, pmsSymptomForecast.action. " +
-    "Keep all non-text fields unchanged. Output valid JSON only.";
- 
+
+  const contextBlock = vyanaCtx
+    ? serializeVyanaContext(vyanaCtx)
+    : buildFallbackContextBlock(ctx, baseline, narrative, userName);
+  const confidenceLevel = vyanaCtx?.confidenceMapping.level ?? "medium";
+  const forwardClaims =
+    vyanaCtx?.confidenceMapping.forwardClaims ?? "you might notice";
+
+  const anticipationNote = vyanaCtx?.anticipation.shouldSurface
+    ? `\nANTICIPATION for tomorrow: "${vyanaCtx.anticipation.narrative}"`
+    : "";
+  const identityNote =
+    vyanaCtx?.identity.useThisOutput && vyanaCtx.identity.userPatternNarrative
+      ? `\nIDENTITY: Use "for you this tends to..." (${vyanaCtx.identity.historyCycles} cycles of data).`
+      : "";
+
+  const userPrompt = `
+You are Vyana. Rewrite only forecast text fields to feel personal and grounded.
+
+HER DATA: ${contextBlock}
+${anticipationNote}
+${identityNote}
+
+CONFIDENCE: ${confidenceLevel} — use "${forwardClaims}" for forward claims.
+NUMBER RULES: sleep values as given, never stress/mood scores.
+${CERTAINTY_RULES_FOR_GPT}
+
+TASK: Rewrite only: forecast.tomorrow.outlook, forecast.nextPhase.preview, forecast.confidence.message
+Optional: pmsSymptomForecast.headline, pmsSymptomForecast.action
+All other fields: unchanged. Max 2 sentences each.
+
+INPUT_JSON: ${JSON.stringify(draft)}
+Return strict JSON only. Same schema.
+`.trim();
+
   try {
-    // @ts-ignore
     const response = await client.chat.completions.create({
-      // @ts-ignore
       model: OPENAI_MODEL,
       temperature: 0.25,
       response_format: { type: "json_object" },
       messages: [
-        { role: "system", content: systemContent },
+        {
+          role: "system",
+          content:
+            "You are Vyana. Rewrite forecast text to feel personal. Never deterministic. Output valid JSON only.",
+        },
         { role: "user", content: userPrompt },
       ],
     });
     const raw = response.choices[0]?.message?.content;
     if (!raw) return draft;
-    const parsed = JSON.parse(raw);
-    return sanitizeForecast(parsed, draft);
+    return sanitizeForecast(JSON.parse(raw) as ForecastPayload, draft);
   } catch {
     return draft;
   }
 }
 
-// ─── Chat ─────────────────────────────────────────────────────────────────────
+// ─── askVyanaWithGpt (v5) ─────────────────────────────────────────────────────
 
 export interface ChatHistoryItem {
   role: "user" | "assistant";
@@ -429,63 +532,145 @@ export async function askVyanaWithGpt(params: {
   history?: ChatHistoryItem[];
   numericBaseline?: NumericBaseline | null;
   crossCycleNarrative?: CrossCycleNarrative | null;
+  vyanaCtx?: VyanaContext;
 }): Promise<string> {
-  const { userName, question, cycleInfo, recentLogs, history = [], numericBaseline, crossCycleNarrative } = params;
+  const {
+    userName,
+    question,
+    cycleInfo,
+    recentLogs,
+    history = [],
+    numericBaseline,
+    crossCycleNarrative,
+    vyanaCtx,
+  } = params;
 
-  if (!client) {
-    return "I can help with cycle guidance, but AI chat is not configured yet. Add OPENAI_API_KEY to enable personalized responses.";
-  }
+  if (!client)
+    return "I can help with cycle guidance, but AI chat is not configured yet.";
 
   const systemPrompt = [
     "You are Vyana, a warm and deeply personal menstrual health companion.",
-    "You have access to this user's real health data — use it to make every response feel specific to her.",
-    "Be empathetic, concise, and practical.",
-    "Use her actual numbers when relevant (sleep hours, stress levels, cycle day).",
-    "Reference cross-cycle patterns if they're helpful ('this has happened in your past cycles too').",
-    "Never diagnose conditions. Suggest seeking medical support for severe or persistent symptoms.",
+    "VOICE: specific, personal, warm. Use 'you' and 'your' always.",
+    "CONFIDENCE: match certainty to data depth.",
+    "IDENTITY: use 'for you' and 'your cycles tend to' when past data is present.",
+    "EMOTIONAL MEMORY: if past emotional recall is present, express it as genuine remembering.",
+    "NUMBER RULES: sleep values as given, no stress/mood scores.",
+    "Never diagnose. Suggest medical support for severe or persistent symptoms.",
+    CERTAINTY_RULES_FOR_GPT,
   ].join(" ");
 
-  // Build a rich context block
-  const contextParts: string[] = [
-    `User: ${userName}`,
-    `Cycle day: ${cycleInfo.currentDay}, phase: ${cycleInfo.phase}`,
-  ];
-
-  if (numericBaseline) {
-    if (numericBaseline.recentSleepAvg !== null) {
-      contextParts.push(
-        `Sleep: ${numericBaseline.recentSleepAvg}h avg recently` +
-        (numericBaseline.baselineSleepAvg ? ` (usual: ${numericBaseline.baselineSleepAvg}h)` : "")
+  const contextBlock = vyanaCtx
+    ? serializeVyanaContext(vyanaCtx)
+    : buildFallbackContextBlock(
+        {
+          cycleDay: cycleInfo.currentDay,
+          phase: cycleInfo.phase,
+          trends: [],
+          interaction_flags: [],
+          priorityDrivers: [],
+          mode: "fallback",
+          confidence: "low",
+          sleep_variability: "insufficient",
+          mood_variability: "insufficient",
+        } as unknown as InsightContext,
+        numericBaseline ?? {
+          recentSleepAvg: null,
+          recentStressAvg: null,
+          recentMoodAvg: null,
+          recentEnergyAvg: null,
+          baselineSleepAvg: null,
+          baselineStressAvg: null,
+          baselineMoodAvg: null,
+          sleepDelta: null,
+          stressDelta: null,
+          moodDelta: null,
+          recentLogCount: 0,
+          baselineLogCount: 0,
+        },
+        crossCycleNarrative ?? null,
+        userName,
       );
-    }
-    if (numericBaseline.recentStressAvg !== null) {
-      const label = numericBaseline.recentStressAvg >= 2.4 ? "elevated" : numericBaseline.recentStressAvg >= 1.6 ? "moderate" : "calm";
-      contextParts.push(`Stress: ${label}`);
-    }
-  }
-
-  if (crossCycleNarrative?.narrativeStatement) {
-    contextParts.push(`Cross-cycle: ${crossCycleNarrative.narrativeStatement}`);
-  }
-
-  contextParts.push(`Recent logs (last ${recentLogs.length}): ${JSON.stringify(recentLogs.slice(0, 3))}`);
 
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     { role: "system", content: systemPrompt },
+    ...history
+      .slice(-6)
+      .map(
+        (item) =>
+          ({
+            role: item.role,
+            content: item.content,
+          }) as OpenAI.Chat.Completions.ChatCompletionMessageParam,
+      ),
+    {
+      role: "user",
+      content: `Context:\n${contextBlock}\n\nQuestion: ${question}`,
+    },
   ];
-  history.slice(-6).forEach((item) => {
-    messages.push({ role: item.role, content: item.content });
-  });
-  messages.push({
-    role: "user",
-    content: `Context:\n${contextParts.join("\n")}\n\nQuestion: ${question}`,
-  });
 
   const response = await client.chat.completions.create({
     model: OPENAI_MODEL,
     temperature: 0.6,
     messages,
   });
-
   return sanitize(response.choices[0]?.message?.content || "");
+}
+
+// ─── Fallback context block ───────────────────────────────────────────────────
+
+function buildFallbackContextBlock(
+  ctx: InsightContext,
+  baseline: NumericBaseline,
+  narrative: CrossCycleNarrative | null,
+  userName?: string,
+): string {
+  const lines: string[] = [];
+  if (userName) lines.push(`User: ${userName}`);
+  lines.push(`Cycle day ${ctx.cycleDay}, phase: ${ctx.phase}`);
+
+  if (baseline.recentSleepAvg !== null) {
+    const rounded = Math.round(baseline.recentSleepAvg * 2) / 2;
+    const opener = ["around", "roughly", "about"][ctx.cycleDay % 3]!;
+    const baseRounded =
+      baseline.baselineSleepAvg !== null
+        ? Math.round(baseline.baselineSleepAvg * 2) / 2
+        : null;
+    const delta = baseline.sleepDelta;
+    const meaningful = delta !== null && Math.abs(delta) >= 0.8;
+    lines.push(
+      baseRounded !== null && meaningful
+        ? `Sleep: ${opener} ${rounded}h — ${delta! < 0 ? "lower than" : "higher than"} your usual ~${baseRounded}h`
+        : `Sleep: ${opener} ${rounded}h`,
+    );
+  }
+  if (baseline.recentStressAvg !== null) {
+    const label =
+      baseline.recentStressAvg >= 2.4
+        ? "elevated"
+        : baseline.recentStressAvg >= 1.6
+          ? "moderate"
+          : "calm";
+    const delta = baseline.stressDelta;
+    lines.push(
+      delta !== null && Math.abs(delta) >= 0.5
+        ? `Stress: ${label} — ${delta > 0 ? "higher than" : "lower than"} your usual`
+        : `Stress: ${label}`,
+    );
+  }
+  if (baseline.recentMoodAvg !== null) {
+    const label =
+      baseline.recentMoodAvg >= 2.4
+        ? "good"
+        : baseline.recentMoodAvg <= 1.6
+          ? "a little low"
+          : "neutral";
+    lines.push(`Mood: ${label}`);
+  }
+  if (ctx.priorityDrivers?.length > 0)
+    lines.push(`Key signals: ${ctx.priorityDrivers.slice(0, 3).join(", ")}`);
+  if (ctx.trends?.length > 0) lines.push(`Trends: ${ctx.trends.join(", ")}`);
+  if (narrative?.narrativeStatement)
+    lines.push(`Past cycles: ${narrative.narrativeStatement}`);
+
+  return lines.join("\n");
 }

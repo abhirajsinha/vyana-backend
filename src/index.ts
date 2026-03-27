@@ -8,6 +8,8 @@ import logRoutes from "./routes/logs";
 import insightsRoutes from "./routes/insights";
 import chatRoutes from "./routes/chat";
 import healthRoutes from "./routes/health";
+import homeRoutes from "./routes/home";
+import calendarRoutes from "./routes/calendar";
 import { errorHandler, notFound } from "./middleware/errorHandler";
 
 const app = express();
@@ -27,6 +29,8 @@ app.use("/api/logs", logRoutes);
 app.use("/api/insights", insightsRoutes);
 app.use("/api/chat", chatRoutes);
 app.use("/api/health", healthRoutes);
+app.use("/api/home", homeRoutes);
+app.use("/api/calendar", calendarRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
