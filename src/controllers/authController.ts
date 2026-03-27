@@ -5,6 +5,7 @@ import { hashPassword, MIN_PASSWORD_LENGTH, verifyPassword } from "../utils/pass
 import { toPublicUser } from "../utils/userPublic";
 import { verifyGoogleIdToken } from "../services/googleAuthService";
 import { getCycleMode } from "../services/cycleEngine";
+import { isCycleLengthDays } from "../types/cycleUser";
 
 async function issueTokens(userId: string) {
   const accessToken = signAccessToken(userId);
@@ -17,11 +18,6 @@ async function issueTokens(userId: string) {
 
 function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
-}
-
-function isValidCycleLength(value: unknown): boolean {
-  const n = Number(value);
-  return Number.isFinite(n) && n >= 21 && n <= 35;
 }
 
 export async function register(req: Request, res: Response): Promise<void> {
@@ -60,7 +56,7 @@ export async function register(req: Request, res: Response): Promise<void> {
     res.status(400).json({ error: "Invalid email" });
     return;
   }
-  if (!isValidCycleLength(cycleLength)) {
+  if (!isCycleLengthDays(cycleLength)) {
     res.status(400).json({ error: "Cycle length must be between 21 and 35 days" });
     return;
   }
@@ -151,7 +147,7 @@ export async function googleAuth(req: Request, res: Response): Promise<void> {
     res.status(400).json({ error: "Missing required profile fields" });
     return;
   }
-  if (!isValidCycleLength(cycleLength)) {
+  if (!isCycleLengthDays(cycleLength)) {
     res.status(400).json({ error: "Cycle length must be between 21 and 35 days" });
     return;
   }

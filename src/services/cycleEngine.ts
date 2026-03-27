@@ -1,4 +1,5 @@
 import type { User } from "@prisma/client";
+import { HORMONAL_CONTRACEPTIVE_METHODS } from "../types/cycleUser";
 
 export type Phase = "menstrual" | "follicular" | "ovulation" | "luteal";
 export type CycleMode = "natural" | "hormonal" | "irregular";
@@ -122,7 +123,7 @@ function getPhaseStartDay(
 }
 
 export function getCycleMode(user: Pick<User, "contraceptiveMethod" | "cycleRegularity">): CycleMode {
-  const hormonal = new Set(["pill", "iud_hormonal", "implant", "injection"]);
+  const hormonal = new Set<string>(HORMONAL_CONTRACEPTIVE_METHODS);
   if (user.contraceptiveMethod && hormonal.has(user.contraceptiveMethod)) {
     return "hormonal";
   }

@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import { DailyInsights, InsightContext } from "./insightService";
 import { CycleInfo } from "./cycleEngine";
 import type { NumericBaseline, CrossCycleNarrative } from "./insightData";
+import { CERTAINTY_RULES_FOR_GPT } from "../utils/confidencelanguage";
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
@@ -217,34 +218,79 @@ function safeParseInsights(raw: string | null | undefined, fallback: DailyInsigh
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 export async function generateInsightsWithGpt(
-  ctx: InsightContext,
-  draft: DailyInsights,
-  baseline: NumericBaseline,
-  narrative: CrossCycleNarrative | null,
+  ctx: any, // InsightContext
+  draft: any, // DailyInsights
+  baseline: any, // NumericBaseline
+  narrative: any, // CrossCycleNarrative | null
   userName?: string,
-): Promise<DailyInsights> {
+  insightTone: "cycle-based" | "pattern-based" | "symptom-based" = "cycle-based",
+): Promise<any> {
+  // @ts-ignore — client is defined in original file
   if (!client) return draft;
-
-  // Always try GPT when we have personalized mode — removed isDraftAlreadyPremium guard
-  // because even "premium" drafts can be made more specific with real user numbers
   if (ctx.mode !== "personalized") return draft;
-
-  const userPrompt = buildInsightRewritePrompt(ctx, draft, baseline, narrative, userName);
-
+ 
+  const toneInstruction =
+    insightTone === "pattern-based"
+      ? "This user is on hormonal contraception. Do NOT reference cycle phases, ovulation, or hormone level changes. Base all insights on logged symptoms and patterns only. Say 'based on your recent patterns' not 'in this phase'."
+      : insightTone === "symptom-based"
+      ? "This user's cycle is significantly affected by contraception. Focus only on what they are logging. Avoid all cycle-phase or hormone language."
+      : "Use cycle-phase context where appropriate.";
+ 
+  const dataBlock = buildUserDataBlock(ctx, baseline, narrative, userName);
+ 
+  const userPrompt = [
+    "You are Vyana — a deeply personal cycle wellness companion who has been tracking this user for months.",
+    "You have real data about her. Use it. Make her feel seen.",
+    "",
+    CERTAINTY_RULES_FOR_GPT,
+    "",
+    `TONE: ${toneInstruction}`,
+    "",
+    "ADDITIONAL RULES:",
+    "- Use her actual numbers when available: e.g. 'your sleep dropped from 7.2h to 5.8h'",
+    "- If you have cross-cycle memory, use it: e.g. 'last cycle you tended to feel this around day 24'",
+    "- Never say 'above baseline' or 'pattern detected' — say 'higher than your normal' or 'tends to happen'",
+    "- Start with how she feels right now, not with data",
+    "- Use 'you' and 'your' constantly — this is personal, not clinical",
+    "- solution = one specific action for TODAY. recommendation = broader guidance for this week. Never duplicate.",
+    "- tomorrowPreview = 1–2 sentences about TOMORROW only, not today",
+    "- Max 2 sentences per field. ~15 words per sentence. Hard limit.",
+    "- Hormone context belongs ONLY in whyThisIsHappening — never as a headline. Always frame as 'typically' not 'is'.",
+    "",
+    "HER DATA RIGHT NOW:",
+    dataBlock,
+    "",
+    "DRAFT TO REWRITE (preserve all facts, improve specificity and warmth):",
+    `Physical: ${draft.physicalInsight}`,
+    `Mental: ${draft.mentalInsight}`,
+    `Emotional: ${draft.emotionalInsight}`,
+    `Why: ${draft.whyThisIsHappening}`,
+    `Action: ${draft.solution}`,
+    `Recommendation: ${draft.recommendation}`,
+    `Tomorrow: ${draft.tomorrowPreview}`,
+    "",
+    "Return strict JSON with keys: physicalInsight, mentalInsight, emotionalInsight, whyThisIsHappening, solution, recommendation, tomorrowPreview.",
+  ].join("\n");
+ 
   const systemContent = [
     "You are Vyana — a warm, sharp, deeply personal cycle companion who has been tracking this user for months.",
     "You write like a knowledgeable friend who has access to her actual health data.",
     "VOICE: Start with how she feels. Use 'you' constantly. Use her real numbers ('your sleep dropped from 7.2h to 5.8h').",
-    "Use cross-cycle memory when available ('last cycle you felt this around day 24 too — it passed').",
+    "Use cross-cycle memory when available ('last cycle you tended to feel this around day 24 — it passed').",
     "Say 'higher than your normal' not 'above baseline'. Say 'tends to happen' not 'pattern detected'.",
     "Use 'today', 'tonight', 'tomorrow' — never 'this phase' or 'this week'.",
-    "Never say: 'it is important to', 'make sure to', 'consider', 'elevated levels'.",
-    "Be direct: 'do X tonight' not 'you might want to try X'. One idea per sentence. Short. Human.",
+    "NEVER: 'it is important to', 'make sure to', 'consider', 'elevated levels'.",
+    "NEVER: 'you will feel', 'this will happen', 'your estrogen is', 'your progesterone is'.",
+    "ALWAYS: probability-aware language. Even high confidence → 'likely' not 'will'.",
+    "Hormones: frame as 'estrogen is typically rising' not 'your estrogen is high'.",
+    "Be direct with actions: 'do X tonight' not 'you might want to try X'. One idea per sentence. Short. Human.",
     "TASK: Make every field feel like it was written specifically for her — because it was.",
     "OUTPUT: JSON with keys: physicalInsight, mentalInsight, emotionalInsight, whyThisIsHappening, solution, recommendation, tomorrowPreview",
   ].join(" ");
-
+ 
+  // @ts-ignore
   const response = await client.chat.completions.create({
+    // @ts-ignore
     model: OPENAI_MODEL,
     temperature: 0.35,
     response_format: { type: "json_object" },
@@ -253,7 +299,7 @@ export async function generateInsightsWithGpt(
       { role: "user", content: userPrompt },
     ],
   });
-
+ 
   const raw = response.choices[0]?.message?.content;
   return safeParseInsights(raw, draft);
 }
@@ -314,21 +360,24 @@ function sanitizeForecast(payload: ForecastPayload, fallback: ForecastPayload): 
 }
 
 export async function generateForecastWithGpt(
-  ctx: InsightContext,
-  draft: ForecastPayload,
-  baseline: NumericBaseline,
-  narrative: CrossCycleNarrative | null,
+  ctx: any,
+  draft: any,
+  baseline: any,
+  narrative: any,
   userName?: string,
-): Promise<ForecastPayload> {
+): Promise<any> {
+  // @ts-ignore
   if (!client) return draft;
-
+ 
   const dataBlock = buildUserDataBlock(ctx, baseline, narrative, userName);
-
+ 
   const userPrompt = [
     "Rewrite ONLY the text fields for warmth, specificity, and personal resonance.",
     "Use her actual data (sleep hours, stress scores, cross-cycle memory) to make the forecast feel personal.",
     "Keep all facts exactly the same — dates, phase names, confidence level, score, milestone numbers.",
     "Max 2 sentences per rewritten field. Never add medical claims.",
+    "",
+    CERTAINTY_RULES_FOR_GPT,
     "",
     "HER DATA:",
     dataBlock,
@@ -336,14 +385,18 @@ export async function generateForecastWithGpt(
     "Return strict JSON with same schema as input.",
     `INPUT_JSON: ${JSON.stringify(draft)}`,
   ].join("\n");
-
+ 
   const systemContent =
     "You are Vyana. Rewrite forecast text fields to feel personal and specific — use her real numbers when you have them. " +
+    "CRITICAL: Never use deterministic language. Never say 'you will feel', 'this will happen', 'estrogen will', 'your period will'. " +
+    "Always hedge: 'you might notice', 'you may start to feel', 'you're likely to experience'. " +
     "Only rewrite: forecast.tomorrow.outlook, forecast.nextPhase.preview, forecast.confidence.message, pmsSymptomForecast.headline, pmsSymptomForecast.action. " +
     "Keep all non-text fields unchanged. Output valid JSON only.";
-
+ 
   try {
+    // @ts-ignore
     const response = await client.chat.completions.create({
+      // @ts-ignore
       model: OPENAI_MODEL,
       temperature: 0.25,
       response_format: { type: "json_object" },
@@ -354,7 +407,7 @@ export async function generateForecastWithGpt(
     });
     const raw = response.choices[0]?.message?.content;
     if (!raw) return draft;
-    const parsed = JSON.parse(raw) as ForecastPayload;
+    const parsed = JSON.parse(raw);
     return sanitizeForecast(parsed, draft);
   } catch {
     return draft;

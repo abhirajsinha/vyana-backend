@@ -1,3 +1,16 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// This file shows the KEY CHANGES to insightController.ts.
+// Replace/merge these sections into your existing insightController.ts.
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// New imports to add at the top of insightController.ts:
+//
+// import { buildHormoneState, buildHormoneLanguage } from "../services/hormoneEngine";
+// import { getContraceptionBehavior, checkForecastEligibility, computeLogSpanDays, ContraceptionType } from "../services/contraceptionEngine";
+// import { softendeterministic, CERTAINTY_RULES_FOR_GPT, getForecastConfidenceLabel } from "../services/confidenceLanguage";
+//
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { Request, Response } from "express";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
@@ -39,6 +52,19 @@ import { getCycleNumber } from "../services/cycleInsightLibrary";
 import { runCorrelationEngine } from "../services/correlationEngine";
 import { buildTomorrowPreview } from "../services/tomorrowEngine";
 import { buildPmsSymptomForecast } from "../services/pmsEngine";
+import { buildHormoneState, buildHormoneLanguage } from "../services/hormoneengine";
+import {
+  getContraceptionBehavior,
+  checkForecastEligibility,
+  computeLogSpanDays,
+  type ContraceptionType,
+} from "../services/contraceptionengine";
+import {
+  softendeterministic,
+  CERTAINTY_RULES_FOR_GPT,
+  getForecastConfidenceLabel,
+  containsForbiddenLanguage,
+} from "../utils/confidencelanguage";
 
 function isInsightsPayloadCached(payload: unknown): boolean {
   return (
@@ -49,6 +75,32 @@ function isInsightsPayloadCached(payload: unknown): boolean {
     "view" in payload
   );
 }
+
+// ─── Helper: resolve contraception type from user ─────────────────────────────
+
+function resolveContraceptionType(user: { contraceptiveMethod: string | null }): ContraceptionType {
+  const method = user.contraceptiveMethod?.toLowerCase() ?? "none";
+
+  const map: Record<string, ContraceptionType> = {
+    pill: "combined_pill",
+    combined_pill: "combined_pill",
+    mini_pill: "mini_pill",
+    iud_hormonal: "iud_hormonal",
+    iud_copper: "iud_copper",
+    implant: "implant",
+    injection: "injection",
+    patch: "patch",
+    ring: "ring",
+    condom: "barrier",
+    barrier: "barrier",
+    natural: "natural",
+    none: "none",
+  };
+
+  return map[method] ?? "none";
+}
+
+// ─── GET /api/insights ────────────────────────────────────────────────────────
 
 export async function getInsights(req: Request, res: Response): Promise<void> {
   const now = new Date();
@@ -64,7 +116,6 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  // ── Rich data fetch ────────────────────────────────────────────────────────
   const data = await getUserInsightData(req.userId!);
   if (!data) {
     res.status(404).json({ error: "User not found" });
@@ -72,7 +123,10 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
   }
   const { user, recentLogs, baselineLogs, numericBaseline, crossCycleNarrative } = data;
 
-  // ── Completed cycle count — needed for progressive states ─────────────────
+  // ── Contraception routing ──────────────────────────────────────────────────
+  const contraceptionType = resolveContraceptionType(user);
+  const contraceptionBehavior = getContraceptionBehavior(contraceptionType);
+
   const completedCycleCount = await prisma.cycleHistory.count({
     where: { userId: req.userId!, endDate: { not: null }, cycleLength: { not: null } },
   });
@@ -84,6 +138,18 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
   const cycleInfo = calculateCycleInfo(user.lastPeriodStart, effectiveCycleLength, cycleMode);
   const cycleNumber = getCycleNumber(user.lastPeriodStart, effectiveCycleLength);
   const variantIndex = (cycleNumber % 3) as 0 | 1 | 2;
+
+  // ── Hormone state ──────────────────────────────────────────────────────────
+  const hormoneState = buildHormoneState(
+    cycleInfo.phase,
+    cycleInfo.currentDay,
+    effectiveCycleLength,
+    cycleMode,
+    contraceptionType,
+  );
+  const hormoneLanguage = contraceptionBehavior.showHormoneCurves
+    ? buildHormoneLanguage(hormoneState, cyclePrediction.confidence === "reliable" ? 0.8 : 0.5)
+    : null;
 
   const phaseBaselineLogs = baselineLogs.filter((log) => {
     const logPhase = calculateCycleInfoForDate(
@@ -114,6 +180,34 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
   const tomorrowPreview = buildTomorrowPreview(context, cycleInfo.daysUntilNextPhase, variantIndex);
   let draftInsights = { ...ruleBasedInsights, tomorrowPreview };
 
+  // ── Inject hormone context into whyThisIsHappening ────────────────────────
+  if (hormoneLanguage && context.mode === "personalized") {
+    // Only inject if whyThisIsHappening doesn't already have specific signal reasoning
+    const hasSpecificReason =
+      draftInsights.whyThisIsHappening.includes("sleep") ||
+      draftInsights.whyThisIsHappening.includes("stress") ||
+      draftInsights.whyThisIsHappening.includes("strain");
+
+    if (!hasSpecificReason) {
+      draftInsights = {
+        ...draftInsights,
+        whyThisIsHappening: `${draftInsights.whyThisIsHappening} ${hormoneLanguage}`.trim(),
+      };
+    }
+  }
+
+  // ── For hormonal contraception: override insight tone ──────────────────────
+  if (contraceptionBehavior.insightTone === "pattern-based" || contraceptionBehavior.insightTone === "symptom-based") {
+    // Replace phase-based language with pattern-based framing
+    draftInsights = {
+      ...draftInsights,
+      whyThisIsHappening: draftInsights.whyThisIsHappening
+        .replace(/\bthis phase\b/gi, "your recent patterns")
+        .replace(/\bin this phase\b/gi, "based on your recent logs")
+        .replace(/\bduring this phase\b/gi, "based on what you've been logging"),
+    };
+  }
+
   const previousCycleDrivers = context.mode === "personalized"
     ? await getPreviousCycleDriverHistory(req.userId!)
     : [];
@@ -140,7 +234,6 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     }
   }
 
-  // ── Inject cross-cycle narrative ───────────────────────────────────────────
   if (crossCycleNarrative?.narrativeStatement && context.mode === "personalized") {
     const narrativeSuffix = crossCycleNarrative.trend === "worsening"
       ? " This window has been getting harder across your recent cycles."
@@ -155,11 +248,21 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     }
   }
 
+  // ── Enforce non-deterministic language on all draft insights ─────────────
+  draftInsights = {
+    physicalInsight: softendeterministic(draftInsights.physicalInsight, context.confidenceScore),
+    mentalInsight: softendeterministic(draftInsights.mentalInsight, context.confidenceScore),
+    emotionalInsight: softendeterministic(draftInsights.emotionalInsight, context.confidenceScore),
+    whyThisIsHappening: softendeterministic(draftInsights.whyThisIsHappening, context.confidenceScore),
+    solution: draftInsights.solution, // Actions are direct — don't soften
+    recommendation: draftInsights.recommendation, // Same
+    tomorrowPreview: softendeterministic(draftInsights.tomorrowPreview, context.confidenceScore),
+  };
+
   const logsCount = recentLogs.length;
   const isNewUser = logsCount < 3;
   const nextMilestone = logsCount < 3 ? 3 : logsCount < 7 ? 7 : logsCount < 14 ? 14 : 30;
 
-  // ── Memory context (with user-facing narrative) ────────────────────────────
   const driverForMemory = context.priorityDrivers[0] || null;
   const memory = driverForMemory && context.mode === "personalized"
     ? await getInsightMemoryCount({ userId: req.userId!, driver: driverForMemory })
@@ -171,7 +274,20 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
 
   let insights = draftInsights;
   let aiEnhanced = false;
-  const canUseAI = logsCount >= 3 && context.mode === "personalized" && context.confidence !== "low";
+
+  // ── Improved GPT gating: signal richness, not just count ─────────────────
+  const logSpanDays = computeLogSpanDays(recentLogs);
+  const hasSignalRichness =
+    logsCount >= 3 &&
+    logSpanDays >= 2 &&
+    (numericBaseline.recentSleepAvg !== null ||
+      numericBaseline.recentStressAvg !== null ||
+      numericBaseline.recentMoodAvg !== null);
+
+  const canUseAI =
+    hasSignalRichness &&
+    context.mode === "personalized" &&
+    context.confidence !== "low";
 
   if (canUseAI) {
     try {
@@ -181,15 +297,24 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
         numericBaseline,
         crossCycleNarrative,
         user.name,
+        contraceptionBehavior.insightTone,
       );
-      insights = sanitizeInsights(raw, draftInsights);
-      aiEnhanced = JSON.stringify(insights) !== JSON.stringify(draftInsights);
+      const candidate = sanitizeInsights(raw, draftInsights);
+
+      // Final guard: reject if GPT introduced deterministic language
+      const hasForbidden = Object.values(candidate).some((v) =>
+        typeof v === "string" && containsForbiddenLanguage(v)
+      );
+
+      if (!hasForbidden) {
+        insights = candidate;
+        aiEnhanced = JSON.stringify(insights) !== JSON.stringify(draftInsights);
+      }
     } catch {
       insights = draftInsights;
     }
   }
 
-  // ── Memory-based insight escalation with numeric specificity ──────────────
   if (driverForMemory === "stress_above_baseline" && context.mode === "personalized") {
     if (existingMemoryCount <= 1) {
       insights = { ...insights, mentalInsight: `Stress levels appear elevated today.\nThis may make focusing harder than usual.`, solution: `Stress may be affecting you today.\nShort breaks can help.`, recommendation: `This week, keep a steady routine and add brief stress resets when you notice overload.` };
@@ -235,35 +360,24 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     confidenceLabel: view.confidenceLabel,
   };
 
-  // ── PMS forecast — now passes cyclesSoFar for warmup state ────────────────
-  const pmsForecastForWarning = cycleInfo.currentDay >= 18 && context.mode === "personalized"
-    ? buildPmsSymptomForecast(
-        cycleInfo.phase,
-        cycleInfo.currentDay,
-        cycleInfo.daysUntilNextPhase,
-        previousCycleDrivers,
-        completedCycleCount,           // NEW: enables warmup state
-      )
-    : null;
+  // ── PMS forecast — gated by contraception behavior ────────────────────────
+  let pmsWarning = null;
+  if (contraceptionBehavior.showPmsForecast) {
+    const pmsForecastForWarning = cycleInfo.currentDay >= 18 && context.mode === "personalized"
+      ? buildPmsSymptomForecast(cycleInfo.phase, cycleInfo.currentDay, cycleInfo.daysUntilNextPhase, previousCycleDrivers, completedCycleCount)
+      : null;
+    const pmsWarmupEarly = cycleInfo.phase === "luteal" && cycleInfo.currentDay < 18 && completedCycleCount < 2
+      ? buildPmsSymptomForecast(cycleInfo.phase, cycleInfo.currentDay, cycleInfo.daysUntilNextPhase, previousCycleDrivers, completedCycleCount)
+      : null;
 
-  // Surface warmup PMS state even when cycleDay < 18 (but still in luteal)
-  const pmsWarmupEarly = cycleInfo.phase === "luteal" && cycleInfo.currentDay < 18 && completedCycleCount < 2
-    ? buildPmsSymptomForecast(cycleInfo.phase, cycleInfo.currentDay, cycleInfo.daysUntilNextPhase, previousCycleDrivers, completedCycleCount)
-    : null;
-
-  const pmsWarning = pmsForecastForWarning && "available" in pmsForecastForWarning && pmsForecastForWarning.available
-    ? {
-        available: true,
-        headline: (pmsForecastForWarning as any).headline,
-        action: (pmsForecastForWarning as any).action,
-        likelySymptoms: (pmsForecastForWarning as any).likelySymptoms,
-        confidence: (pmsForecastForWarning as any).confidence,
-      }
-    : pmsForecastForWarning && "warmup" in pmsForecastForWarning
-    ? pmsForecastForWarning   // pass the warmup state through
-    : pmsWarmupEarly && "warmup" in pmsWarmupEarly
-    ? pmsWarmupEarly
-    : null;
+    pmsWarning = pmsForecastForWarning && "available" in pmsForecastForWarning && pmsForecastForWarning.available
+      ? { available: true, headline: (pmsForecastForWarning as any).headline, action: (pmsForecastForWarning as any).action, likelySymptoms: (pmsForecastForWarning as any).likelySymptoms, confidence: (pmsForecastForWarning as any).confidence }
+      : pmsForecastForWarning && "warmup" in pmsForecastForWarning
+      ? pmsForecastForWarning
+      : pmsWarmupEarly && "warmup" in pmsWarmupEarly
+      ? pmsWarmupEarly
+      : null;
+  }
 
   const responsePayload = {
     cycleDay: cycleInfo.currentDay,
@@ -282,14 +396,35 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     cycleContext: {
       cycleMode,
       cyclePredictionConfidence: cyclePrediction.confidence,
-      nextPeriodEstimate: cycleInfo.nextPeriodDate.toISOString().split("T")[0],
+      nextPeriodEstimate: contraceptionBehavior.showPeriodForecast
+        ? cycleInfo.nextPeriodDate.toISOString().split("T")[0]
+        : null,
       nextPeriodRange:
-        cyclePrediction.confidence === "variable" || cyclePrediction.confidence === "irregular"
+        contraceptionBehavior.showPeriodForecast &&
+        (cyclePrediction.confidence === "variable" || cyclePrediction.confidence === "irregular")
           ? {
               earliest: new Date(cycleInfo.nextPeriodDate.getTime() - cyclePrediction.stdDev * 86400000).toISOString().split("T")[0],
               latest: new Date(cycleInfo.nextPeriodDate.getTime() + cyclePrediction.stdDev * 86400000).toISOString().split("T")[0],
             }
           : undefined,
+    },
+    // ── Hormone context (new) ──────────────────────────────────────────────
+    hormoneContext: contraceptionBehavior.showHormoneCurves ? {
+      estrogen: hormoneState.estrogen,
+      progesterone: hormoneState.progesterone,
+      lh: hormoneState.lh,
+      fsh: hormoneState.fsh,
+      confidence: hormoneState.confidence,
+      // IMPORTANT: Never expose this as "your levels are X"
+      // Frontend must frame this as "typically" or "often associated with"
+      narrativeContext: hormoneLanguage,
+    } : null,
+    // ── Contraception context (new) ────────────────────────────────────────
+    contraceptionContext: {
+      type: contraceptionType,
+      contextMessage: contraceptionBehavior.contextMessage || null,
+      insightTone: contraceptionBehavior.insightTone,
+      showPhaseInsights: contraceptionBehavior.useNaturalCycleEngine,
     },
     numericSummary: {
       recentSleepAvg: numericBaseline.recentSleepAvg,
@@ -305,7 +440,6 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     crossCycleNarrative: crossCycleNarrative
       ? { matchingCycles: crossCycleNarrative.matchingCycles, totalCyclesAnalyzed: crossCycleNarrative.totalCyclesAnalyzed, narrativeStatement: crossCycleNarrative.narrativeStatement, trend: crossCycleNarrative.trend }
       : null,
-    // ── NEW: user-facing memory narrative ──────────────────────────────────
     memoryContext,
     aiEnhanced,
     correlationPattern: correlation.patternKey,
@@ -347,6 +481,8 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
   res.json(responsePayload);
 }
 
+// ─── GET /api/insights/forecast ──────────────────────────────────────────────
+
 export async function getInsightsForecast(req: Request, res: Response): Promise<void> {
   const now = new Date();
   const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
@@ -366,6 +502,10 @@ export async function getInsightsForecast(req: Request, res: Response): Promise<
   }
   const { user, recentLogs, baselineLogs, numericBaseline, crossCycleNarrative } = data;
 
+  // ── Contraception routing ──────────────────────────────────────────────────
+  const contraceptionType = resolveContraceptionType(user);
+  const contraceptionBehavior = getContraceptionBehavior(contraceptionType);
+
   const completedCycleCount = await prisma.cycleHistory.count({
     where: { userId: req.userId!, endDate: { not: null }, cycleLength: { not: null } },
   });
@@ -373,7 +513,6 @@ export async function getInsightsForecast(req: Request, res: Response): Promise<
   const cycleMode = getCycleMode(user);
   const cyclePrediction = await getCyclePredictionContext(req.userId!, user.cycleLength);
   const effectiveCycleLength = cyclePrediction.avgLength || user.cycleLength;
-
   const todayCycle = calculateCycleInfo(user.lastPeriodStart, effectiveCycleLength, cycleMode);
   const cycleNumber = getCycleNumber(user.lastPeriodStart, effectiveCycleLength);
   const variantIndex = (cycleNumber % 3) as 0 | 1 | 2;
@@ -395,18 +534,58 @@ export async function getInsightsForecast(req: Request, res: Response): Promise<
   const isNewUser = logsCount < 3;
   const nextMilestone = logsCount < 3 ? 3 : logsCount < 7 ? 7 : logsCount < 14 ? 14 : 30;
 
+  // ── Forecast eligibility check (new strict gating) ────────────────────────
+  const logSpanDays = computeLogSpanDays(recentLogs);
+  const forecastEligibility = checkForecastEligibility({
+    logsCount,
+    logsSpanDays: logSpanDays,
+    confidenceScore: context.confidenceScore,
+    cyclePredictionConfidence: cyclePrediction.confidence,
+    contraceptionBehavior,
+  });
+
+  // ── If not eligible: return warmup state instead of forecast ──────────────
+  if (!forecastEligibility.eligible) {
+    const warmupPayload = {
+      available: false,
+      isNewUser: true,
+      forecastLocked: true,
+      reason: forecastEligibility.reason,
+      warmupMessage: forecastEligibility.warmupMessage,
+      progressPercent: forecastEligibility.progressPercent,
+      progress: {
+        logsCount,
+        nextMilestone: 7,
+        logsToNextMilestone: Math.max(0, 7 - logsCount),
+        logSpanDays,
+        logSpanNeeded: 5,
+      },
+      contraceptionContext: {
+        type: contraceptionType,
+        contextMessage: contraceptionBehavior.contextMessage || null,
+      },
+    };
+
+    const forecastJson = JSON.parse(JSON.stringify(warmupPayload)) as Prisma.InputJsonValue;
+    await prisma.insightCache.upsert({
+      where: { userId_date: { userId: req.userId!, date: dayStart } },
+      update: { forecast: forecastJson },
+      create: { userId: req.userId!, date: dayStart, payload: {}, forecast: forecastJson },
+    });
+
+    res.json(warmupPayload);
+    return;
+  }
+
+  // ── Build full forecast (user is eligible) ────────────────────────────────
   const forecastPreviousCycleDrivers = context.mode === "personalized"
     ? await getPreviousCycleDriverHistory(req.userId!)
     : [];
 
-  // ── PMS forecast with warmup state ────────────────────────────────────────
-  const pmsSymptomForecast = buildPmsSymptomForecast(
-    todayCycle.phase,
-    todayCycle.currentDay,
-    todayCycle.daysUntilNextPhase,
-    forecastPreviousCycleDrivers,
-    completedCycleCount,
-  );
+  // PMS forecast only if contraception allows it
+  const pmsSymptomForecast = contraceptionBehavior.showPmsForecast
+    ? buildPmsSymptomForecast(todayCycle.phase, todayCycle.currentDay, todayCycle.daysUntilNextPhase, forecastPreviousCycleDrivers, completedCycleCount)
+    : null;
 
   const tomorrowDate = new Date();
   tomorrowDate.setDate(tomorrowDate.getDate() + 1);
@@ -414,27 +593,51 @@ export async function getInsightsForecast(req: Request, res: Response): Promise<
   const tomorrowOutlook = buildTomorrowPreview(context, todayCycle.daysUntilNextPhase, variantIndex);
 
   const nextPhaseInDays = todayCycle.daysUntilNextPhase;
-  const nextPhasePreview = nextPhaseInDays <= 2
-    ? `Your next phase transition is expected in about ${nextPhaseInDays} day(s), so energy and mood patterns may start shifting soon.`
-    : `Your current phase may continue for about ${nextPhaseInDays} day(s), with gradual changes expected near transition.`;
 
-  const forecastConfidence = context.confidenceScore >= 0.75 ? "high" : context.confidenceScore >= 0.5 ? "medium" : "low";
-  const confidenceMessage = forecastConfidence === "low"
-    ? "Forecast confidence is low due to limited recent data; this outlook will sharpen as more logs are added."
-    : forecastConfidence === "medium"
-    ? "Forecast confidence is moderate; recent signals are useful but may still shift."
-    : "Forecast confidence is high; recent trends and signals are consistent.";
+  // ── Enforce non-deterministic language on forecast text ───────────────────
+  const softenedOutlook = softendeterministic(tomorrowOutlook, context.confidenceScore);
+  const nextPhasePreview = nextPhaseInDays <= 2
+    ? `A phase shift may be approaching in about ${nextPhaseInDays} day(s) — energy and mood patterns might start shifting soon.`
+    : `Your current phase may continue for about ${nextPhaseInDays} day(s), with gradual changes possible near transition.`;
+
+  const forecastConfidenceScore = context.confidenceScore;
+  const confidenceLabel = getForecastConfidenceLabel(forecastConfidenceScore, logsCount);
+
+  // Confidence message — never deterministic
+  const confidenceMessage =
+    forecastConfidenceScore < 0.4
+      ? "We're still learning your patterns — this forecast may not reflect your individual experience yet."
+      : forecastConfidenceScore < 0.7
+      ? "This forecast is based on emerging patterns from your logs — it may shift as we learn more."
+      : "This forecast is based on your recent patterns — though individual responses can still vary.";
 
   const draftForecastPayload = {
+    available: true,
     isNewUser,
     progress: { logsCount, nextMilestone, logsToNextMilestone: Math.max(0, nextMilestone - logsCount) },
-    today: { phase: todayCycle.phase, currentDay: todayCycle.currentDay, confidenceScore: context.confidenceScore, priorityDrivers: context.priorityDrivers },
-    forecast: {
-      tomorrow: { date: tomorrowDate.toISOString().split("T")[0], phase: tomorrowCycle.phase, outlook: tomorrowOutlook },
-      nextPhase: { inDays: nextPhaseInDays, preview: nextPhasePreview },
-      confidence: { level: forecastConfidence, score: context.confidenceScore, message: confidenceMessage },
+    today: {
+      phase: contraceptionBehavior.useNaturalCycleEngine ? todayCycle.phase : null,
+      currentDay: todayCycle.currentDay,
+      confidenceScore: forecastConfidenceScore,
+      priorityDrivers: context.priorityDrivers,
     },
-    pmsSymptomForecast,   // now includes warmup state when applicable
+    forecast: {
+      tomorrow: {
+        date: tomorrowDate.toISOString().split("T")[0],
+        phase: contraceptionBehavior.useNaturalCycleEngine ? tomorrowCycle.phase : null,
+        outlook: softenedOutlook,
+      },
+      nextPhase: contraceptionBehavior.useNaturalCycleEngine
+        ? { inDays: nextPhaseInDays, preview: nextPhasePreview }
+        : null,
+      confidence: {
+        level: forecastConfidenceScore >= 0.7 ? "high" : forecastConfidenceScore >= 0.4 ? "medium" : "low",
+        score: forecastConfidenceScore,
+        label: confidenceLabel,
+        message: confidenceMessage,
+      },
+    },
+    pmsSymptomForecast,
     numericSummary: {
       recentSleepAvg: numericBaseline.recentSleepAvg,
       baselineSleepAvg: numericBaseline.baselineSleepAvg,
@@ -444,15 +647,36 @@ export async function getInsightsForecast(req: Request, res: Response): Promise<
       ? { narrativeStatement: crossCycleNarrative.narrativeStatement, trend: crossCycleNarrative.trend }
       : null,
     cyclesCompleted: completedCycleCount,
+    contraceptionContext: {
+      type: contraceptionType,
+      forecastMode: contraceptionBehavior.forecastMode,
+      contextMessage: contraceptionBehavior.contextMessage || null,
+    },
   };
 
   let forecastPayload: typeof draftForecastPayload & { forecastAiEnhanced?: boolean } = { ...draftForecastPayload, forecastAiEnhanced: false };
 
-  const canUseAIForecast = logsCount >= 3 && context.mode === "personalized" && context.confidence !== "low";
+  const canUseAIForecast = logsCount >= 7 && context.mode === "personalized" && context.confidence !== "low";
   if (canUseAIForecast) {
     try {
-      const rewritten = await generateForecastWithGpt(context, draftForecastPayload, numericBaseline, crossCycleNarrative, user.name) as typeof draftForecastPayload;
-      forecastPayload = { ...rewritten, forecastAiEnhanced: JSON.stringify(rewritten) !== JSON.stringify(draftForecastPayload) };
+      const rewritten = await generateForecastWithGpt(
+        context,
+        draftForecastPayload,
+        numericBaseline,
+        crossCycleNarrative,
+        user.name,
+      ) as typeof draftForecastPayload;
+
+      // Guard: reject if GPT introduced forbidden deterministic language
+      const forecastText = JSON.stringify(rewritten);
+      const hasForbiddenInForecast = [
+        "you will feel", "this will happen", "will improve", "will get worse",
+        "your estrogen is", "your progesterone is", "you are going to",
+      ].some((phrase) => forecastText.toLowerCase().includes(phrase));
+
+      if (!hasForbiddenInForecast) {
+        forecastPayload = { ...rewritten, forecastAiEnhanced: true };
+      }
     } catch {
       // keep draft
     }
