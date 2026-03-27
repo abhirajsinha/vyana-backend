@@ -28,6 +28,7 @@ import {
   buildVyanaContextForInsights,
   generateForecastWithGpt,
   generateInsightsWithGpt,
+  type InsightGenerationStatus,
   sanitizeInsights,
 } from "../services/aiService";
 import type {
@@ -505,8 +506,22 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
 
   let insights = draftInsights;
   let aiEnhanced = false;
+  let aiDebug:
+    | "gated"
+    | "client_missing"
+    | "empty_response_fallback"
+    | "json_shape_fallback"
+    | "parse_error_fallback"
+    | "length_guard_fallback"
+    | "sentence_guard_fallback"
+    | "strength_guard_fallback"
+    | "api_error"
+    | "forbidden_language"
+    | "accepted"
+    | "unchanged_output" = "gated";
 
   const logSpanDays = computeLogSpanDays(recentLogs);
+  // Signal-rich: has at least some logged data with numeric signals
   const hasSignalRichness =
     logsCount >= 3 &&
     logSpanDays >= 2 &&
@@ -514,14 +529,23 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
       numericBaseline.recentStressAvg !== null ||
       numericBaseline.recentMoodAvg !== null);
 
+  // High-priority physical signal — fire AI even with minimal logs
+  // Heavy bleeding and high strain are the days that need the best output
+  const hasHighPrioritySignal =
+    context.priorityDrivers.includes("bleeding_heavy") ||
+    context.priorityDrivers.includes("high_strain") ||
+    context.priorityDrivers.includes("sleep_stress_amplification");
+
+  // Cycle context — fire AI when we have phase data even without logs
+  const hasCycleContext = cycleInfo.currentDay > 0 && cycleInfo.phase !== undefined;
+
   const canUseAI =
-    hasSignalRichness &&
-    context.mode === "personalized" &&
+    (hasSignalRichness || hasHighPrioritySignal || hasCycleContext) &&
     context.confidence !== "low";
 
   if (canUseAI) {
     try {
-      const raw = await generateInsightsWithGpt(
+      const aiResult = await generateInsightsWithGpt(
         context,
         draftInsights,
         numericBaseline,
@@ -530,62 +554,78 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
         contraceptionBehavior.insightTone,
         vyanaCtx,
       );
-      const candidate = sanitizeInsights(raw, draftInsights);
+      const candidate = sanitizeInsights(aiResult.insights, draftInsights);
       const hasForbidden = Object.values(candidate).some(
         (v) => typeof v === "string" && containsForbiddenLanguage(v),
       );
       if (!hasForbidden) {
         insights = candidate;
         aiEnhanced = JSON.stringify(insights) !== JSON.stringify(draftInsights);
+        const aiStatus = aiResult.status;
+        aiDebug =
+          aiEnhanced
+            ? "accepted"
+            : aiStatus === "accepted"
+              ? "unchanged_output"
+              : (aiStatus as Exclude<
+                  InsightGenerationStatus,
+                  "accepted"
+                >);
+      } else {
+        aiDebug = "forbidden_language";
       }
     } catch {
       insights = draftInsights;
+      aiDebug = "api_error";
     }
   }
 
-  if (
-    driverForMemory === "stress_above_baseline" &&
-    context.mode === "personalized"
-  ) {
-    if (existingMemoryCount <= 1) {
+  // Memory override — ONLY applied when AI did not run or produced no improvement
+  if (!aiEnhanced) {
+    if (
+      driverForMemory === "stress_above_baseline" &&
+      context.mode === "personalized"
+    ) {
+      if (existingMemoryCount <= 1) {
+        insights = {
+          ...insights,
+          mentalInsight: `Stress levels appear elevated today.\nThis may make focusing harder than usual.`,
+          solution: `Stress may be affecting you today.\nShort breaks can help.`,
+          recommendation: `This week, keep a steady routine and add brief stress resets when you notice overload.`,
+        };
+      } else if (existingMemoryCount <= 3) {
+        insights = {
+          ...insights,
+          mentalInsight: `Stress has been consistent for ${existingMemoryCount} days now.\nMental load may be building up.`,
+          solution: `Stress has been consistent recently.\nReducing your workload slightly may help.`,
+          recommendation: `Consider lighter pacing this week and protect recovery time so stress doesn't carry over.`,
+        };
+      } else {
+        insights = {
+          ...insights,
+          mentalInsight: `Stress has been persistent for ${existingMemoryCount} days — your body is registering this.\nThis level of sustained load matters.`,
+          solution: `Stepping back and prioritizing recovery is the right call now.`,
+          recommendation: `For the next few days, prioritize recovery anchors: sleep consistency, gentle movement, and reduced decision load.`,
+        };
+      }
+    }
+
+    if (
+      driverForMemory === "sleep_below_baseline" &&
+      context.mode === "personalized" &&
+      existingMemoryCount > 3
+    ) {
+      const sleepNote =
+        numericBaseline.recentSleepAvg !== null &&
+        numericBaseline.baselineSleepAvg !== null
+          ? `Sleep has been lower than your usual for ${existingMemoryCount} days.`
+          : `Sleep has been below your usual baseline for ${existingMemoryCount} days.`;
       insights = {
         ...insights,
-        mentalInsight: `Stress levels appear elevated today.\nThis may make focusing harder than usual.`,
-        solution: `Stress may be affecting you today.\nShort breaks can help.`,
-        recommendation: `This week, keep a steady routine and add brief stress resets when you notice overload.`,
-      };
-    } else if (existingMemoryCount <= 3) {
-      insights = {
-        ...insights,
-        mentalInsight: `Stress has been consistent for ${existingMemoryCount} days now.\nMental load may be building up.`,
-        solution: `Stress has been consistent recently.\nReducing your workload slightly may help.`,
-        recommendation: `Consider lighter pacing this week and protect recovery time so stress doesn't carry over.`,
-      };
-    } else {
-      insights = {
-        ...insights,
-        mentalInsight: `Stress has been persistent for ${existingMemoryCount} days — your body is registering this.\nThis level of sustained load matters.`,
-        solution: `Stepping back and prioritizing recovery is the right call now.`,
-        recommendation: `For the next few days, prioritize recovery anchors: sleep consistency, gentle movement, and reduced decision load.`,
+        physicalInsight: `${sleepNote}\nThis can compound fatigue and slow recovery.`,
+        solution: `Prioritize an earlier wind-down tonight and protect tomorrow morning for lighter tasks.`,
       };
     }
-  }
-
-  if (
-    driverForMemory === "sleep_below_baseline" &&
-    context.mode === "personalized" &&
-    existingMemoryCount > 3
-  ) {
-    const sleepNote =
-      numericBaseline.recentSleepAvg !== null &&
-      numericBaseline.baselineSleepAvg !== null
-        ? `Sleep has dropped to ${numericBaseline.recentSleepAvg}h — ${Math.abs(numericBaseline.sleepDelta ?? 0)}h below your usual ${numericBaseline.baselineSleepAvg}h for ${existingMemoryCount} days.`
-        : `Sleep has been below your usual baseline for ${existingMemoryCount} days.`;
-    insights = {
-      ...insights,
-      physicalInsight: `${sleepNote}\nThis can compound fatigue and slow recovery.`,
-      solution: `Prioritize an earlier wind-down tonight and protect tomorrow morning for lighter tasks.`,
-    };
   }
 
   const currentPrimaryKey = resolvePrimaryInsightKey(context);
@@ -775,6 +815,7 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
       : null,
     memoryContext,
     aiEnhanced,
+    aiDebug,
     correlationPattern: correlation.patternKey,
     basedOn: {
       phase: cycleInfo.phase,

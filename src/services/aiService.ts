@@ -89,15 +89,37 @@ const STRONG_WORDS = [
   "cycle",
 ];
 
+const STRONG_SYNONYMS: Record<string, string[]> = {
+  compounding: ["accumulate", "build", "layer", "snowball"],
+  persistent: ["ongoing", "sustained", "continuous", "sticking"],
+  strain: ["load", "pressure", "overload", "taxed"],
+  loop: ["cycle", "feedback", "spiral", "pattern"],
+  baseline: ["usual", "normal", "typical"],
+  cascade: ["chain", "ripple", "domino"],
+  pattern: ["trend", "window", "recurring", "repeat"],
+  cycle: ["phase", "window", "rhythm"],
+};
+
 function hasStrengthRegression(
   draft: DailyInsights,
   output: DailyInsights,
 ): boolean {
   const draftText = Object.values(draft).join(" ").toLowerCase();
   const outputText = Object.values(output).join(" ").toLowerCase();
-  return STRONG_WORDS.some(
+  const missingStrongWords = STRONG_WORDS.filter(
     (w) => draftText.includes(w) && !outputText.includes(w),
   );
+
+  if (missingStrongWords.length === 0) return false;
+
+  // Only treat this as regression when 2+ strong cues disappear with no semantic replacement.
+  // This avoids rejecting valid GPT rewrites that keep intensity but use different wording.
+  const unreplaced = missingStrongWords.filter((w) => {
+    const synonyms = STRONG_SYNONYMS[w] ?? [];
+    return !synonyms.some((s) => outputText.includes(s));
+  });
+
+  return unreplaced.length >= 2;
 }
 
 function anyFieldExceedsTwoSentences(insights: DailyInsights): boolean {
@@ -144,11 +166,24 @@ export function sanitizeInsights(
   return candidate;
 }
 
-function safeParseInsights(
+export type InsightGenerationStatus =
+  | "accepted"
+  | "client_missing"
+  | "empty_response_fallback"
+  | "json_shape_fallback"
+  | "parse_error_fallback"
+  | "length_guard_fallback"
+  | "sentence_guard_fallback"
+  | "strength_guard_fallback"
+  | "api_error";
+
+function safeParseInsightsDetailed(
   raw: string | null | undefined,
   fallback: DailyInsights,
-): DailyInsights {
-  if (!raw?.trim()) return fallback;
+): { insights: DailyInsights; status: InsightGenerationStatus } {
+  if (!raw?.trim()) {
+    return { insights: fallback, status: "empty_response_fallback" };
+  }
   try {
     const parsed = JSON.parse(raw) as Partial<DailyInsights>;
     const keys: (keyof DailyInsights)[] = [
@@ -161,7 +196,9 @@ function safeParseInsights(
       "tomorrowPreview",
     ];
     for (const key of keys) {
-      if (typeof parsed[key] !== "string") return fallback;
+      if (typeof parsed[key] !== "string") {
+        return { insights: fallback, status: "json_shape_fallback" };
+      }
     }
     const out: DailyInsights = {
       physicalInsight: parsed.physicalInsight!,
@@ -174,13 +211,17 @@ function safeParseInsights(
     };
     const draftLen = JSON.stringify(fallback).length;
     if (JSON.stringify(out).length > Math.max(800, draftLen * 2.5))
-      return fallback;
+      return { insights: fallback, status: "length_guard_fallback" };
     const enforced = enforceTwoLinesOnInsights(out);
-    if (anyFieldExceedsTwoSentences(enforced)) return fallback;
-    if (hasStrengthRegression(fallback, enforced)) return fallback;
-    return enforced;
+    if (anyFieldExceedsTwoSentences(enforced)) {
+      return { insights: fallback, status: "sentence_guard_fallback" };
+    }
+    if (hasStrengthRegression(fallback, enforced)) {
+      return { insights: fallback, status: "strength_guard_fallback" };
+    }
+    return { insights: enforced, status: "accepted" };
   } catch {
-    return fallback;
+    return { insights: fallback, status: "parse_error_fallback" };
   }
 }
 
@@ -426,8 +467,8 @@ export async function generateInsightsWithGpt(
     | "pattern-based"
     | "symptom-based" = "cycle-based",
   vyanaCtx?: VyanaContext,
-): Promise<DailyInsights> {
-  if (!client) return draft;
+): Promise<{ insights: DailyInsights; status: InsightGenerationStatus }> {
+  if (!client) return { insights: draft, status: "client_missing" };
 
   const contextBlock = vyanaCtx
     ? serializeVyanaContext(vyanaCtx)
@@ -550,9 +591,9 @@ Return strict JSON only.
         { role: "user", content: userPrompt },
       ],
     });
-    return safeParseInsights(response.choices[0]?.message?.content, draft);
+    return safeParseInsightsDetailed(response.choices[0]?.message?.content, draft);
   } catch {
-    return draft;
+    return { insights: draft, status: "api_error" };
   }
 }
 
