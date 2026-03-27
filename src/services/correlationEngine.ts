@@ -203,7 +203,7 @@ export function detectRecurringPattern(input: RecurringPatternInput): PatternRes
     detected,
     confidence: detected ? Math.min(0.5 + pastCycleMatches * 0.15, 0.95) : 0,
     headline: `This is the window where ${driverLabel} has hit you before.`,
-    action: "Lighten your schedule for the next 2–3 days — you know this stretch.",
+    action: "Slowing down and protecting recovery time will help more than pushing through.",
   };
 }
 
@@ -258,3 +258,4 @@ export const DIFFICULT_DRIVERS = [
   "phase_deviation",
 ] as const;
 
+export type Phase_ = Phase;

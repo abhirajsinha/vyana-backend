@@ -29,26 +29,26 @@ export function buildTomorrowPreview(
 
     if (stressIncreasing && sleepDecreasing) {
       base =
-        "If today's stress and sleep patterns continue, tomorrow may feel heavier.";
+        "Tomorrow might feel a bit heavier if tonight doesn't help you reset — protect your sleep.";
     } else if (ctx.priorityDrivers[0] === "sleep_stress_amplification") {
       base =
-        "Mental load may carry into tomorrow; a consistent wind-down tonight helps.";
+        "If you wind down properly tonight, tomorrow will feel lighter — this loop breaks with one good night.";
     } else if (ctx.priorityDrivers[0] === "bleeding_heavy") {
       base =
-        "Energy may stay lower tomorrow while bleeding remains high — keep activity gentle.";
+        "Tomorrow will likely feel similar — keep activity gentle and let your body lead.";
     } else if (sleepIncreasing && !stressIncreasing) {
       base =
-        "Recovery may improve slightly tomorrow if the current sleep trend holds.";
+        "If you protect your sleep tonight, tomorrow will likely feel noticeably better.";
     } else if (moodDecreasing && !moodIncreasing) {
       base =
-        "Emotional load may stay sensitive tomorrow; a lighter schedule helps stability.";
+        "Tomorrow might feel heavier emotionally — a lighter schedule today will change what you wake up to.";
     } else if (moodIncreasing && sleepIncreasing) {
       base =
-        "Both mood and sleep are trending up — tomorrow should feel better than today.";
+        "Tomorrow should feel better — your mood and sleep are both moving in the right direction.";
     }
 
     if (highVariability) {
-      base += " Recent variability means parts of tomorrow may still feel unpredictable.";
+      base += " Your patterns have been a bit unpredictable lately, so tomorrow could still surprise you.";
     }
   }
 
@@ -56,8 +56,8 @@ export function buildTomorrowPreview(
   if (daysUntilNextPhase <= 2) {
     const phaseNote =
       daysUntilNextPhase === 1
-        ? "Your next phase begins tomorrow — energy and mood patterns are about to shift."
-        : "Your next phase is two days away — gradual changes may start soon.";
+        ? "Your next phase starts tomorrow — your energy and mood should start shifting."
+        : "Your next phase is two days away — you'll likely start feeling the change soon.";
     base = `${base} ${phaseNote}`;
   }
 

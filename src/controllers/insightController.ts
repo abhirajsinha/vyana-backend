@@ -4,17 +4,26 @@ import { prisma } from "../lib/prisma";
 import {
   calculateCycleInfo,
   calculateCycleInfoForDate,
+  getCycleMode,
 } from "../services/cycleEngine";
 import {
   buildInsightContext,
+  buildCoreInsight,
+  buildPatternReassurance,
+  generateHook,
   generateRuleBasedInsights,
+  type DailyInsightV2,
 } from "../services/insightService";
 import {
   generateForecastWithGpt,
   generateInsightsWithGpt,
   sanitizeInsights,
 } from "../services/aiService";
-import { getUserInsightData, getPreviousCycleDriverHistory } from "../services/insightData";
+import {
+  getCyclePredictionContext,
+  getUserInsightData,
+  getPreviousCycleDriverHistory,
+} from "../services/insightData";
 import {
   buildInsightView,
   resolvePrimaryInsightKey,
@@ -61,16 +70,24 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     return;
   }
   const { user, recentLogs, baselineLogs } = data;
+  const cycleMode = getCycleMode(user);
+  const cyclePrediction = await getCyclePredictionContext(req.userId!, user.cycleLength);
+  const effectiveCycleLength = cyclePrediction.avgLength || user.cycleLength;
 
-  const cycleInfo = calculateCycleInfo(user.lastPeriodStart, user.cycleLength);
-  const cycleNumber = getCycleNumber(user.lastPeriodStart, user.cycleLength);
+  const cycleInfo = calculateCycleInfo(
+    user.lastPeriodStart,
+    effectiveCycleLength,
+    cycleMode,
+  );
+  const cycleNumber = getCycleNumber(user.lastPeriodStart, effectiveCycleLength);
   const variantIndex = (cycleNumber % 3) as 0 | 1 | 2;
 
   const phaseBaselineLogs = baselineLogs.filter((log) => {
     const logPhase = calculateCycleInfoForDate(
       user.lastPeriodStart,
       new Date(log.date),
-      user.cycleLength,
+      effectiveCycleLength,
+      cycleMode,
     ).phase;
     return logPhase === cycleInfo.phase;
   });
@@ -91,6 +108,9 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     baselineForComparison,
     baselineScope,
     cycleNumber,
+    effectiveCycleLength,
+    cycleMode,
+    cyclePrediction.confidence,
   );
 
   const ruleBasedInsights = generateRuleBasedInsights(context);
@@ -225,6 +245,20 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
 
   const view = buildInsightView(context, insights, { primaryKeyOverride });
 
+  const hook = generateHook(driverForMemory, context, correlation.patternKey);
+  const core = buildCoreInsight(insights, context);
+  const pattern = buildPatternReassurance(context, correlation.patternKey);
+  const v2: DailyInsightV2 = {
+    hook,
+    core,
+    pattern,
+    why: insights.whyThisIsHappening,
+    action: insights.solution,
+    guidance: insights.recommendation,
+    tomorrow: insights.tomorrowPreview,
+    confidenceLabel: view.confidenceLabel,
+  };
+
   // PMS warning — surface when cycleDay >= 18 and symptoms expected within 3 days
   const pmsForecastForWarning = cycleInfo.currentDay >= 18 && context.mode === "personalized"
     ? buildPmsSymptomForecast(
@@ -261,6 +295,26 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     },
     mode: context.mode,
     confidence: context.confidence,
+    cycleContext: {
+      cycleMode,
+      cyclePredictionConfidence: cyclePrediction.confidence,
+      nextPeriodEstimate: cycleInfo.nextPeriodDate.toISOString().split("T")[0],
+      nextPeriodRange:
+        cyclePrediction.confidence === "variable" || cyclePrediction.confidence === "irregular"
+          ? {
+              earliest: new Date(
+                cycleInfo.nextPeriodDate.getTime() - cyclePrediction.stdDev * 86400000,
+              )
+                .toISOString()
+                .split("T")[0],
+              latest: new Date(
+                cycleInfo.nextPeriodDate.getTime() + cyclePrediction.stdDev * 86400000,
+              )
+                .toISOString()
+                .split("T")[0],
+            }
+          : undefined,
+    },
     aiEnhanced,
     correlationPattern: correlation.patternKey,
     basedOn: {
@@ -276,6 +330,7 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     },
     insights,
     view,
+    v2,
     pmsWarning,
   };
 
@@ -338,16 +393,24 @@ export async function getInsightsForecast(
     return;
   }
   const { user, recentLogs, baselineLogs } = data;
+  const cycleMode = getCycleMode(user);
+  const cyclePrediction = await getCyclePredictionContext(req.userId!, user.cycleLength);
+  const effectiveCycleLength = cyclePrediction.avgLength || user.cycleLength;
 
-  const todayCycle = calculateCycleInfo(user.lastPeriodStart, user.cycleLength);
-  const cycleNumber = getCycleNumber(user.lastPeriodStart, user.cycleLength);
+  const todayCycle = calculateCycleInfo(
+    user.lastPeriodStart,
+    effectiveCycleLength,
+    cycleMode,
+  );
+  const cycleNumber = getCycleNumber(user.lastPeriodStart, effectiveCycleLength);
   const variantIndex = (cycleNumber % 3) as 0 | 1 | 2;
 
   const phaseBaselineLogs = baselineLogs.filter((log) => {
     const logPhase = calculateCycleInfoForDate(
       user.lastPeriodStart,
       new Date(log.date),
-      user.cycleLength,
+      effectiveCycleLength,
+      cycleMode,
     ).phase;
     return logPhase === todayCycle.phase;
   });
@@ -368,6 +431,9 @@ export async function getInsightsForecast(
     baselineForComparison,
     baselineScope,
     cycleNumber,
+    effectiveCycleLength,
+    cycleMode,
+    cyclePrediction.confidence,
   );
 
   const logsCount = recentLogs.length;
@@ -391,7 +457,8 @@ export async function getInsightsForecast(
   const tomorrowCycle = calculateCycleInfoForDate(
     user.lastPeriodStart,
     tomorrowDate,
-    user.cycleLength,
+    effectiveCycleLength,
+    cycleMode,
   );
 
   // Use tomorrowEngine for the outlook (Sprint 4)

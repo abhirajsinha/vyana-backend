@@ -1,4 +1,4 @@
-import { Phase } from "./cycleEngine";
+import type { CycleMode, Phase } from "./cycleEngine";
 
 export interface DayInsight {
   cycleDay: number;
@@ -1047,14 +1047,45 @@ export function getCycleNumber(lastPeriodStart: Date, cycleLength: number): numb
   return Math.max(0, Math.floor(daysSinceEpoch / cycleLength));
 }
 
+export function getNormalizedDay(
+  cycleDay: number,
+  cycleLength: number,
+  phase: Phase,
+): number {
+  if (cycleLength === 28) return Math.max(1, Math.min(28, cycleDay));
+  if (phase === "menstrual") return Math.min(Math.max(1, cycleDay), 5);
+
+  if (phase === "follicular") {
+    const follicularLength = Math.max(1, cycleLength - 19);
+    const follicularDay = Math.max(1, cycleDay - 5);
+    const normalized = Math.round((follicularDay / follicularLength) * 8) + 5;
+    return Math.min(Math.max(6, normalized), 13);
+  }
+
+  if (phase === "ovulation") {
+    return Math.min(16, Math.max(14, cycleDay));
+  }
+
+  const daysFromEnd = cycleLength - cycleDay;
+  return Math.min(28, Math.max(17, 28 - daysFromEnd));
+}
+
 /**
  * Returns resolved day-specific insight data for any cycle day.
  * Days beyond 28 are clamped to 28 (deep luteal, longer cycles).
  * variantIndex: 0 | 1 | 2, determined by cycleNumber % 3.
  */
-export function getDayInsight(cycleDay: number, variantIndex: 0 | 1 | 2 = 0): ResolvedDayInsight {
+export function getDayInsight(
+  cycleDay: number,
+  variantIndex: 0 | 1 | 2 = 0,
+  cycleMode: CycleMode = "natural",
+): ResolvedDayInsight {
   const clamped = Math.max(1, Math.min(28, cycleDay));
-  const day = library[clamped - 1]!;
+  const effectiveDay =
+    cycleMode === "hormonal" && clamped >= 14 && clamped <= 16
+      ? 12
+      : clamped;
+  const day = library[effectiveDay - 1]!;
   return {
     hormoneNote: day.hormoneNote[variantIndex],
     physicalExpectation: day.physicalExpectation[variantIndex],

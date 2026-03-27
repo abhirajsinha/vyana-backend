@@ -4,6 +4,7 @@ import { signAccessToken, signRefreshToken, verifyToken } from "../utils/jwt";
 import { hashPassword, MIN_PASSWORD_LENGTH, verifyPassword } from "../utils/password";
 import { toPublicUser } from "../utils/userPublic";
 import { verifyGoogleIdToken } from "../services/googleAuthService";
+import { getCycleMode } from "../services/cycleEngine";
 
 async function issueTokens(userId: string) {
   const accessToken = signAccessToken(userId);
@@ -18,6 +19,11 @@ function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
 }
 
+function isValidCycleLength(value: unknown): boolean {
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 21 && n <= 35;
+}
+
 export async function register(req: Request, res: Response): Promise<void> {
   const {
     email,
@@ -28,6 +34,8 @@ export async function register(req: Request, res: Response): Promise<void> {
     weight,
     cycleLength = 28,
     lastPeriodStart,
+    contraceptiveMethod,
+    cycleRegularity,
   } = req.body;
 
   if (!email || typeof email !== "string") {
@@ -52,6 +60,10 @@ export async function register(req: Request, res: Response): Promise<void> {
     res.status(400).json({ error: "Invalid email" });
     return;
   }
+  if (!isValidCycleLength(cycleLength)) {
+    res.status(400).json({ error: "Cycle length must be between 21 and 35 days" });
+    return;
+  }
 
   const existing = await prisma.user.findUnique({ where: { email: normalizedEmail } });
   if (existing) {
@@ -60,6 +72,12 @@ export async function register(req: Request, res: Response): Promise<void> {
   }
 
   const passwordHash = await hashPassword(password);
+  const cycleMode = getCycleMode({
+    contraceptiveMethod:
+      typeof contraceptiveMethod === "string" ? contraceptiveMethod : null,
+    cycleRegularity:
+      typeof cycleRegularity === "string" ? cycleRegularity : null,
+  });
 
   const user = await prisma.user.create({
     data: {
@@ -71,6 +89,11 @@ export async function register(req: Request, res: Response): Promise<void> {
       weight: Number(weight),
       cycleLength: Number(cycleLength),
       lastPeriodStart: new Date(lastPeriodStart),
+      contraceptiveMethod:
+        typeof contraceptiveMethod === "string" ? contraceptiveMethod : null,
+      cycleRegularity:
+        typeof cycleRegularity === "string" ? cycleRegularity : null,
+      cycleMode,
     },
   });
 
@@ -116,6 +139,8 @@ export async function googleAuth(req: Request, res: Response): Promise<void> {
     weight,
     cycleLength = 28,
     lastPeriodStart,
+    contraceptiveMethod,
+    cycleRegularity,
   } = req.body;
 
   if (!idToken || typeof idToken !== "string") {
@@ -124,6 +149,10 @@ export async function googleAuth(req: Request, res: Response): Promise<void> {
   }
   if (!age || !height || !weight || !lastPeriodStart) {
     res.status(400).json({ error: "Missing required profile fields" });
+    return;
+  }
+  if (!isValidCycleLength(cycleLength)) {
+    res.status(400).json({ error: "Cycle length must be between 21 and 35 days" });
     return;
   }
 
@@ -152,6 +181,12 @@ export async function googleAuth(req: Request, res: Response): Promise<void> {
   }
 
   const displayName = (typeof name === "string" && name.trim()) || googleUser.name || "User";
+  const cycleMode = getCycleMode({
+    contraceptiveMethod:
+      typeof contraceptiveMethod === "string" ? contraceptiveMethod : null,
+    cycleRegularity:
+      typeof cycleRegularity === "string" ? cycleRegularity : null,
+  });
 
   const byGoogle = await prisma.user.findUnique({ where: { googleId: googleUser.googleId } });
   if (byGoogle) {
@@ -187,6 +222,11 @@ export async function googleAuth(req: Request, res: Response): Promise<void> {
       weight: Number(weight),
       cycleLength: Number(cycleLength),
       lastPeriodStart: new Date(lastPeriodStart),
+      contraceptiveMethod:
+        typeof contraceptiveMethod === "string" ? contraceptiveMethod : null,
+      cycleRegularity:
+        typeof cycleRegularity === "string" ? cycleRegularity : null,
+      cycleMode,
     },
   });
 

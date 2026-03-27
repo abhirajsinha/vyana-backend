@@ -24,6 +24,9 @@ model User {
   weight          Float
   cycleLength     Int            @default(28)
   lastPeriodStart DateTime
+  contraceptiveMethod String?
+  cycleRegularity String?
+  cycleMode      String         @default("natural")
   fcmToken        String?
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
@@ -34,6 +37,8 @@ model User {
   insightCaches   InsightCache[]
   insightMemories  InsightMemory[]
   insightHistories InsightHistory[]
+  cycleHistories   CycleHistory[]
+  healthPatternCache HealthPatternCache?
 }
 
 model DailyLog {
@@ -125,4 +130,26 @@ model InsightHistory {
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt(sort: Desc)])
+}
+
+model CycleHistory {
+  id          String   @id @default(uuid())
+  userId      String
+  startDate   DateTime
+  endDate     DateTime?
+  cycleLength Int?
+  createdAt   DateTime @default(now())
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, startDate(sort: Desc)])
+}
+
+model HealthPatternCache {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  result    Json
+  updatedAt DateTime @updatedAt
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

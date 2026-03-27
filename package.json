@@ -10,6 +10,7 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "demo:insights": "ts-node --transpile-only scripts/run-menstrual-insight-demo.ts",
+    "test:scenarios": "ts-node --transpile-only scripts/run-scenarios.ts",
     "test": "echo \"No tests yet\""
   },
   "repository": {

@@ -1,6 +1,10 @@
 import { DailyLog } from "@prisma/client";
-import { Phase } from "./cycleEngine";
-import { getDayInsight } from "./cycleInsightLibrary";
+import {
+  CycleMode,
+  CyclePredictionConfidence,
+  Phase,
+} from "./cycleEngine";
+import { getDayInsight, getNormalizedDay } from "./cycleInsightLibrary";
 
 type Trend = "increasing" | "decreasing" | "stable" | "insufficient";
 
@@ -28,8 +32,11 @@ interface TrendState {
 export interface InsightContext {
   recentLogsCount: number;
   cycleDay: number;
+  normalizedDay: number;
   phase: Phase;
   variantIndex: 0 | 1 | 2;
+  cycleMode: CycleMode;
+  cyclePredictionConfidence: CyclePredictionConfidence;
   physical_state: SignalState["physicalState"];
   mental_state: SignalState["mentalState"];
   emotional_state: SignalState["emotionalState"];
@@ -394,8 +401,12 @@ export function buildInsightContext(
   baselineLogs: DailyLog[] = [],
   baselineScope: InsightContext["baselineScope"] = "none",
   cycleNumber: number = 0,
+  cycleLength: number = 28,
+  cycleMode: CycleMode = "natural",
+  cyclePredictionConfidence: CyclePredictionConfidence = "unknown",
 ): InsightContext {
   const variantIndex = (cycleNumber % 3) as 0 | 1 | 2;
+  const normalizedDay = getNormalizedDay(cycleDay, cycleLength, phase);
   const recentLogsCount = recentLogs.length;
   const signals = buildSignals(recentLogs);
   const trends = buildTrends(recentLogs);
@@ -462,8 +473,11 @@ export function buildInsightContext(
   return {
     recentLogsCount,
     cycleDay,
+    normalizedDay,
     phase,
     variantIndex,
+    cycleMode,
+    cyclePredictionConfidence,
     physical_state: signals.physicalState,
     mental_state: signals.mentalState,
     emotional_state: signals.emotionalState,
@@ -487,7 +501,15 @@ export function buildInsightContext(
 
 function buildPhysicalInsight(ctx: InsightContext): string {
   if (ctx.mode === "fallback") {
-    return getDayInsight(ctx.cycleDay, ctx.variantIndex).physicalExpectation;
+    let out = getDayInsight(
+      ctx.normalizedDay,
+      ctx.variantIndex,
+      ctx.cycleMode,
+    ).physicalExpectation;
+    if (ctx.cyclePredictionConfidence === "irregular") {
+      out = out.replace(/\btoday\b/gi, "around this time").replace(/\busually\b/gi, "often");
+    }
+    return out;
   }
 
   if (ctx.bleeding_load === "heavy") {
@@ -495,7 +517,7 @@ function buildPhysicalInsight(ctx: InsightContext): string {
   }
 
   if (ctx.physical_state === "high_strain") {
-    return `Your body shows signs of higher strain today.\nConsider slowing down and focusing on recovery.`;
+    return `Your body is under more strain than usual today.\nSlowing down isn't optional right now — it's what helps.`;
   }
 
   if (ctx.priorityDrivers.includes("sleep_trend_declining")) {
@@ -509,7 +531,15 @@ function buildPhysicalInsight(ctx: InsightContext): string {
 
 function buildMentalInsight(ctx: InsightContext): string {
   if (ctx.mode === "fallback") {
-    return getDayInsight(ctx.cycleDay, ctx.variantIndex).mentalExpectation;
+    let out = getDayInsight(
+      ctx.normalizedDay,
+      ctx.variantIndex,
+      ctx.cycleMode,
+    ).mentalExpectation;
+    if (ctx.cyclePredictionConfidence === "irregular") {
+      out = out.replace(/\btoday\b/gi, "around this time").replace(/\busually\b/gi, "often");
+    }
+    return out;
   }
 
   if (ctx.mental_state === "stressed" || ctx.mental_state === "fatigued_and_stressed") {
@@ -521,14 +551,14 @@ function buildMentalInsight(ctx: InsightContext): string {
     }
 
     return isFatigued
-      ? `Stress and fatigue have been elevated recently.\nThis may increase mental load.`
-      : `Stress levels have been elevated recently.\nThis may increase mental load.`;
+      ? `Stress and fatigue have been building up.\nThis is why focusing feels harder than it should right now.`
+      : `Stress has been higher than your normal.\nIt's starting to stack up and make everything feel heavier.`;
   }
 
   if (ctx.priorityDrivers.includes("stress_trend_spiking")) {
     return ctx.recentLogsCount < 3
       ? `Your logs suggest stress may be rising.\nThis can make focusing harder.`
-      : `Stress has been building over recent days.\nThis may be increasing mental load.`;
+      : `Stress has been building for a few days.\nYour headspace is carrying more weight than it looks.`;
   }
 
   return `Your recent signal suggests a relatively balanced mental state.\nNo strong strain signals detected.`;
@@ -536,26 +566,42 @@ function buildMentalInsight(ctx: InsightContext): string {
 
 function buildEmotionalInsight(ctx: InsightContext): string {
   if (ctx.mode === "fallback") {
-    return getDayInsight(ctx.cycleDay, ctx.variantIndex).emotionalNote;
+    return getDayInsight(
+      ctx.normalizedDay,
+      ctx.variantIndex,
+      ctx.cycleMode,
+    ).emotionalNote;
   }
 
   if (ctx.emotional_state === "loaded") {
     return ctx.recentLogsCount < 3
       ? `Stress today may be affecting your mood.\nEmotional dips may feel sharper.`
-      : `You may be carrying higher emotional load recently.\nTake space to decompress.`;
+      : `How you're feeling emotionally has been heavier than usual.\nGiving yourself space to decompress will help more than pushing through.`;
   }
 
-  return `Your recent signals suggest a steady emotional state.\nNo major fluctuations detected.`;
+  return `Your emotional state looks steady right now.\nNo strong shifts in either direction.`;
 }
 
 function buildBroaderGuidance(ctx: InsightContext): string {
   if (ctx.recentLogsCount < 3) {
-    return `Log mood, sleep, and stress for the next 3 days to unlock more personalized insights.`;
+    return `Log mood, sleep, and stress for the next 3 days — the insights will get sharper fast.`;
   }
   if (ctx.phase === "menstrual") {
-    return `This week, prioritize iron-rich food, early sleep, and minimal obligations — your body is doing its hardest work right now.`;
+    return `Iron-rich food, early sleep, and fewer obligations this week — your body is doing its hardest work right now.`;
   }
-  return `This week, aim for steady basics: regular sleep, gentle movement, and brief stress resets when things feel heavy.`;
+  if (ctx.phase === "follicular") {
+    return `This week is a good time to take on harder things — your energy is on the way up and your resilience is higher than usual.`;
+  }
+  if (ctx.phase === "ovulation") {
+    return `Your peak window — use it for whatever needs your best focus or presence this week.`;
+  }
+  if (ctx.phase === "luteal" && ctx.cycleDay >= 22) {
+    return `Wind down obligations where you can this week. Your body is already working harder than it looks.`;
+  }
+  if (ctx.phase === "luteal") {
+    return `This week, keep your sleep consistent and protect your recovery time — stress lands harder in this phase.`;
+  }
+  return `Steady basics this week: regular sleep, a little movement, and short breaks when things feel heavy.`;
 }
 
 function buildRecommendation(ctx: InsightContext): string {
@@ -567,40 +613,40 @@ function buildRecommendation(ctx: InsightContext): string {
     return `Keep your current rhythm and add one anchor habit today (sleep timing or movement) for consistency.`;
   }
   if (primary === "sleep_variability_high") {
-    return `Focus on a consistent sleep window for the next 3 nights; regular timing can stabilize recovery and mood.`;
+    return `Pick a consistent bedtime and stick to it for the next 3 nights — the regularity will do more than extra hours.`;
   }
   if (primary === "sleep_below_baseline") {
-    return `Your sleep is below your usual baseline; prioritize an earlier wind-down tonight and lighter load tomorrow morning.`;
+    return `Get to bed 30 minutes earlier tonight. It will change how tomorrow feels.`;
   }
   if (primary === "stress_above_baseline") {
-    return `Stress is above your usual baseline; insert two short reset breaks today to prevent overload accumulation.`;
+    return `Two short breaks today — even 5 minutes each — will stop this from spiralling into tonight.`;
   }
   if (primary === "stress_trend_spiking") {
-    return `Stress is trending upward; add a short reset break between tasks today to prevent accumulation.`;
+    return `One short reset between tasks today will stop this from compounding — don't wait until tonight.`;
   }
   if (primary === "bleeding_heavy") {
-    return `Prioritize hydration and iron-rich meals today, and reduce exertion while bleeding is heavier.`;
+    return `Iron-rich food and extra water today — your body is losing more than usual and it needs the support.`;
   }
   if (primary === "sleep_trend_declining") {
-    return `Sleep has been declining; prioritize an earlier wind-down tonight to reverse this trend before it compounds.`;
+    return `Get to bed 30 minutes earlier tonight to start reversing this before it gets harder to shake.`;
   }
   if (primary === "sleep_stress_amplification") {
-    return `Use a 10-minute calming routine before bed and one midday reset to break the sleep-stress loop.`;
+    return `A 10-minute wind-down before bed and one midday pause today — breaking this loop now is easier than tomorrow.`;
   }
   if (primary === "mood_stress_coupling") {
-    return `Reduce decision load today and use short decompression pauses when stress spikes to protect mood stability.`;
+    return `Keep your task list short today. When stress spikes, take 5 minutes before reacting — it protects how you feel tonight.`;
   }
   if (primary === "sedentary_strain") {
-    return `Add two gentle movement breaks today; short activity can reduce stress-related body heaviness.`;
+    return `A short walk today — even 10 minutes — will help more than rest alone right now.`;
   }
   if (primary === "phase_deviation") {
-    return `Keep routines lighter today and monitor symptoms; if this mismatch persists for several days, consider extra recovery support.`;
+    return `Keep things lighter today — your body is out of its usual rhythm and pushing through rarely helps.`;
   }
   if (primary === "high_strain") {
-    return `Try one recovery action now: hydration, a warm compress, or a 20-minute low-intensity walk.`;
+    return `Pick one recovery action now: heat on your lower abdomen, hydration, or a short walk — don't wait until later.`;
   }
   if (ctx.mental_state === "stressed") {
-    return `Use a 5-minute reset block (breathing + single-priority planning) to reduce mental overload.`;
+    return `5 minutes of focused breathing now will lower the mental weight more than powering through.`;
   }
   if (ctx.mode === "fallback") {
     return getDayInsight(ctx.cycleDay, ctx.variantIndex).actionTip;
@@ -610,7 +656,11 @@ function buildRecommendation(ctx: InsightContext): string {
 
 function buildWhyThisIsHappening(ctx: InsightContext): string {
   if (ctx.recentLogsCount === 0) {
-    return getDayInsight(ctx.cycleDay, ctx.variantIndex).hormoneNote;
+    return getDayInsight(
+      ctx.normalizedDay,
+      ctx.variantIndex,
+      ctx.cycleMode,
+    ).hormoneNote;
   }
 
   // If the engine decided we have a strong signal, prefer signal-derived reasoning
@@ -626,10 +676,10 @@ function buildWhyThisIsHappening(ctx: InsightContext): string {
       return `Your recent signals combine into high body strain, likely from recovery load, symptoms, and sleep/stress mix.`;
     }
     if (ctx.mental_state === "stressed" || ctx.mental_state === "fatigued_and_stressed") {
-      return `Stress and fatigue signals can amplify mental load, making fatigue and discomfort feel stronger in this phase.`;
+      return `When stress and fatigue stack up together, they amplify each other — what feels like a lot right now probably is.`;
     }
     if (ctx.emotional_state === "loaded") {
-      return `Elevated stress or low mood signals can make your emotional system feel more loaded today.`;
+      return `Stress and low mood feed into each other — how you're feeling right now has a reason, it's not just in your head.`;
     }
     if (ctx.trends.length > 0) {
       return `Recent trends (${ctx.trends.join(", ")}) indicate your body and mood are responding to day-to-day changes.`;
@@ -658,6 +708,125 @@ function buildWhyThisIsHappening(ctx: InsightContext): string {
   return `Cycle-related hormonal shifts can naturally influence energy, mood, and symptoms even with limited logs.`;
 }
 
+export interface DailyInsightV2 {
+  hook: string;
+  core: string;
+  pattern?: string;
+  why?: string;
+  action: string;
+  guidance?: string;
+  tomorrow: string;
+  confidenceLabel: string;
+}
+
+export function generateHook(
+  driver: string | null,
+  ctx: InsightContext,
+  correlationPattern?: string | null,
+): string {
+  if (driver === "bleeding_heavy") {
+    return "Your body is doing a lot right now.";
+  }
+  if (driver === "high_strain") {
+    return "Today is one of the harder days — that's real.";
+  }
+  if (driver === "sleep_below_baseline") {
+    return "Your body hasn't been getting the rest it's used to.";
+  }
+  if (driver === "stress_above_baseline") {
+    return "It makes sense if things feel heavier today.";
+  }
+  if (driver === "stress_trend_spiking") {
+    return "Something has been building up over the last few days.";
+  }
+  if (driver === "sleep_trend_declining") {
+    return "Your sleep has been slipping and your body is noticing.";
+  }
+  if (driver === "sleep_stress_amplification") {
+    return "Poor sleep and rising stress are feeding into each other right now.";
+  }
+  if (driver === "mood_stress_coupling") {
+    return "It's not just in your head — stress and mood are connected today.";
+  }
+  if (driver === "cycle_recurrence" || correlationPattern === "cycle_recurrence") {
+    return "This tends to happen around this time in your cycle.";
+  }
+  if (ctx.phase === "menstrual" && ctx.cycleDay <= 2) {
+    return "Today can feel like the hardest day — your body is doing real work.";
+  }
+  if (ctx.phase === "menstrual") {
+    return "Your body is in recovery mode right now.";
+  }
+  if (ctx.phase === "luteal" && ctx.cycleDay >= 22) {
+    return "You might feel a bit more sensitive than usual — that's part of this phase.";
+  }
+  if (ctx.phase === "luteal") {
+    return "This phase can make everything feel slightly heavier than it is.";
+  }
+  if (ctx.phase === "ovulation") {
+    return "This should be one of your stronger days.";
+  }
+  if (ctx.phase === "follicular") {
+    return "Your energy is starting to come back.";
+  }
+  return "This shift you're feeling has a reason.";
+}
+
+export function buildCoreInsight(
+  insights: DailyInsights,
+  ctx: InsightContext,
+): string {
+  const driver = ctx.priorityDrivers[0];
+  if (
+    driver === "bleeding_heavy" ||
+    driver === "high_strain" ||
+    driver === "sleep_below_baseline" ||
+    driver === "sleep_trend_declining"
+  ) {
+    return insights.physicalInsight;
+  }
+  if (
+    driver === "stress_above_baseline" ||
+    driver === "stress_trend_spiking" ||
+    driver === "sleep_stress_amplification"
+  ) {
+    return insights.mentalInsight;
+  }
+  if (driver === "mood_stress_coupling" || driver === "mood_trend_declining") {
+    return insights.emotionalInsight;
+  }
+  return insights.physicalInsight;
+}
+
+export function buildPatternReassurance(
+  ctx: InsightContext,
+  correlationPattern: string | null,
+): string | undefined {
+  if (ctx.recentLogsCount < 3) return undefined;
+  if (correlationPattern === "cycle_recurrence") {
+    return "This tends to happen around this time in your cycle — your body follows a pattern here.";
+  }
+  if (correlationPattern === "pre_period_mood_convergence") {
+    return "This is a known window in your cycle. It passes within a day or two of your period starting.";
+  }
+  if (correlationPattern === "luteal_stress_sensitivity") {
+    return "Stress hits harder in this phase — same stressor, stronger effect. It's not you, it's timing.";
+  }
+  if (correlationPattern === "ovulation_energy_blocked") {
+    return "This should be a high-energy window. Your sleep or stress is dampening it — not permanent.";
+  }
+  if (correlationPattern === "follicular_momentum") {
+    return "Your body is in a recovery arc right now — this upward trend usually continues.";
+  }
+  if (ctx.phase === "menstrual" && ctx.cycleDay <= 3) {
+    return "The first 1–3 days are the hardest. It gets noticeably better from day 3 onward.";
+  }
+  if (ctx.phase === "luteal" && ctx.cycleDay >= 22) {
+    return "This sensitivity is hormonal and temporary — it lifts within a day or two of your period.";
+  }
+  return undefined;
+}
+
 export function generateRuleBasedInsights(ctx: InsightContext): DailyInsights {
   const solution = buildRecommendation(ctx);
   const recommendation = buildBroaderGuidance(ctx);
@@ -670,6 +839,10 @@ export function generateRuleBasedInsights(ctx: InsightContext): DailyInsights {
     recommendation,
     // Basic tomorrowPreview from day-specific library. Controller replaces with
     // trend-adjusted version from tomorrowEngine before sending to client.
-    tomorrowPreview: getDayInsight(ctx.cycleDay, ctx.variantIndex).tomorrowPreview,
+    tomorrowPreview: getDayInsight(
+      ctx.normalizedDay,
+      ctx.variantIndex,
+      ctx.cycleMode,
+    ).tomorrowPreview,
   };
 }

@@ -1,6 +1,7 @@
 import type { DailyLog, User } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import type { Phase } from "./cycleEngine";
+import { detectCycleIrregularity } from "./cycleEngine";
 
 /**
  * Fetches historical driver data from insightHistory for recurring pattern detection.
@@ -55,5 +56,45 @@ export async function getUserInsightData(userId: string): Promise<{
     user,
     recentLogs: allLogs.slice(0, 5),
     baselineLogs: allLogs.slice(5),
+  };
+}
+
+export async function getCyclePredictionContext(
+  userId: string,
+  fallbackCycleLength: number,
+): Promise<{
+  avgLength: number;
+  confidence: "reliable" | "variable" | "irregular" | "unknown";
+  stdDev: number;
+  isIrregular: boolean;
+}> {
+  const rows = await prisma.cycleHistory.findMany({
+    where: {
+      userId,
+      cycleLength: { not: null },
+    },
+    orderBy: { startDate: "desc" },
+    take: 6,
+    select: { cycleLength: true },
+  });
+  const lengths = rows
+    .map((r) => r.cycleLength)
+    .filter((v): v is number => typeof v === "number");
+
+  if (lengths.length === 0) {
+    return {
+      avgLength: fallbackCycleLength,
+      confidence: "unknown",
+      stdDev: 0,
+      isIrregular: false,
+    };
+  }
+
+  const result = detectCycleIrregularity(lengths);
+  return {
+    avgLength: result.avgLength,
+    confidence: result.confidence,
+    stdDev: result.stdDev,
+    isIrregular: result.isIrregular,
   };
 }
