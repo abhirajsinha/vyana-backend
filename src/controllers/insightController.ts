@@ -33,6 +33,7 @@ import {
 import {
   getInsightMemoryCount,
   recordInsightMemoryOccurrence,
+  buildMemoryContext,
 } from "../services/insightMemory";
 import { getCycleNumber } from "../services/cycleInsightLibrary";
 import { runCorrelationEngine } from "../services/correlationEngine";
@@ -63,13 +64,18 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  // ── Fetch rich data (upgraded: 90-day baseline + cross-cycle narrative) ──
+  // ── Rich data fetch ────────────────────────────────────────────────────────
   const data = await getUserInsightData(req.userId!);
   if (!data) {
     res.status(404).json({ error: "User not found" });
     return;
   }
   const { user, recentLogs, baselineLogs, numericBaseline, crossCycleNarrative } = data;
+
+  // ── Completed cycle count — needed for progressive states ─────────────────
+  const completedCycleCount = await prisma.cycleHistory.count({
+    where: { userId: req.userId!, endDate: { not: null }, cycleLength: { not: null } },
+  });
 
   const cycleMode = getCycleMode(user);
   const cyclePrediction = await getCyclePredictionContext(req.userId!, user.cycleLength);
@@ -128,39 +134,40 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
       : `Your past cycles show this pattern: ${patternResult.headline.toLowerCase().replace(/\.$/, "")}.`;
 
     if (!physicallyProtected) {
-      draftInsights = {
-        ...draftInsights,
-        physicalInsight: patternResult.headline,
-        solution: patternResult.action,
-        whyThisIsHappening: cycleRecurrenceWhy,
-      };
+      draftInsights = { ...draftInsights, physicalInsight: patternResult.headline, solution: patternResult.action, whyThisIsHappening: cycleRecurrenceWhy };
     } else {
-      draftInsights = {
-        ...draftInsights,
-        solution: patternResult.action,
-        whyThisIsHappening: cycleRecurrenceWhy,
-      };
+      draftInsights = { ...draftInsights, solution: patternResult.action, whyThisIsHappening: cycleRecurrenceWhy };
     }
   }
 
-  // ── Inject cross-cycle narrative into whyThisIsHappening if available ──
+  // ── Inject cross-cycle narrative ───────────────────────────────────────────
   if (crossCycleNarrative?.narrativeStatement && context.mode === "personalized") {
     const narrativeSuffix = crossCycleNarrative.trend === "worsening"
       ? " This window has been getting harder across your recent cycles."
       : crossCycleNarrative.trend === "improving"
       ? " The good news: this window has been getting easier across your recent cycles."
       : "";
-    draftInsights = {
-      ...draftInsights,
-      whyThisIsHappening: draftInsights.whyThisIsHappening.includes("last")
-        ? draftInsights.whyThisIsHappening
-        : `${draftInsights.whyThisIsHappening} ${crossCycleNarrative.narrativeStatement}${narrativeSuffix}`.trim(),
-    };
+    if (!draftInsights.whyThisIsHappening.includes("last")) {
+      draftInsights = {
+        ...draftInsights,
+        whyThisIsHappening: `${draftInsights.whyThisIsHappening} ${crossCycleNarrative.narrativeStatement}${narrativeSuffix}`.trim(),
+      };
+    }
   }
 
   const logsCount = recentLogs.length;
   const isNewUser = logsCount < 3;
   const nextMilestone = logsCount < 3 ? 3 : logsCount < 7 ? 7 : logsCount < 14 ? 14 : 30;
+
+  // ── Memory context (with user-facing narrative) ────────────────────────────
+  const driverForMemory = context.priorityDrivers[0] || null;
+  const memory = driverForMemory && context.mode === "personalized"
+    ? await getInsightMemoryCount({ userId: req.userId!, driver: driverForMemory })
+    : { count: 0, lastSeen: null };
+  const existingMemoryCount = memory.count;
+  const memoryContext = driverForMemory
+    ? buildMemoryContext(driverForMemory, existingMemoryCount)
+    : null;
 
   let insights = draftInsights;
   let aiEnhanced = false;
@@ -168,7 +175,6 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
 
   if (canUseAI) {
     try {
-      // ── Pass real user numbers and cross-cycle narrative to GPT ──
       const raw = await generateInsightsWithGpt(
         context,
         draftInsights,
@@ -183,65 +189,33 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     }
   }
 
-  const driverForMemory = context.priorityDrivers[0] || null;
-  const memory = driverForMemory && context.mode === "personalized"
-    ? await getInsightMemoryCount({ userId: req.userId!, driver: driverForMemory })
-    : { count: 0, lastSeen: null };
-  const existingMemoryCount = memory.count;
+  // ── Memory-based insight escalation with numeric specificity ──────────────
+  if (driverForMemory === "stress_above_baseline" && context.mode === "personalized") {
+    if (existingMemoryCount <= 1) {
+      insights = { ...insights, mentalInsight: `Stress levels appear elevated today.\nThis may make focusing harder than usual.`, solution: `Stress may be affecting you today.\nShort breaks can help.`, recommendation: `This week, keep a steady routine and add brief stress resets when you notice overload.` };
+    } else if (existingMemoryCount <= 3) {
+      insights = { ...insights, mentalInsight: `Stress has been consistent for ${existingMemoryCount} days now.\nMental load may be building up.`, solution: `Stress has been consistent recently.\nReducing your workload slightly may help.`, recommendation: `Consider lighter pacing this week and protect recovery time so stress doesn't carry over.` };
+    } else {
+      insights = { ...insights, mentalInsight: `Stress has been persistent for ${existingMemoryCount} days — your body is registering this.\nThis level of sustained load matters.`, solution: `Stepping back and prioritizing recovery is the right call now.`, recommendation: `For the next few days, prioritize recovery anchors: sleep consistency, gentle movement, and reduced decision load.` };
+    }
+  }
+
+  if (driverForMemory === "sleep_below_baseline" && context.mode === "personalized" && existingMemoryCount > 3) {
+    const sleepNote = numericBaseline.recentSleepAvg !== null && numericBaseline.baselineSleepAvg !== null
+      ? `Sleep has dropped to ${numericBaseline.recentSleepAvg}h — ${Math.abs(numericBaseline.sleepDelta ?? 0)}h below your usual ${numericBaseline.baselineSleepAvg}h for ${existingMemoryCount} days.`
+      : `Sleep has been below your usual baseline for ${existingMemoryCount} days.`;
+    insights = { ...insights, physicalInsight: `${sleepNote}\nThis can compound fatigue and slow recovery.`, solution: `Prioritize an earlier wind-down tonight and protect tomorrow morning for lighter tasks.` };
+  }
 
   const currentPrimaryKey = resolvePrimaryInsightKey(context);
-
   const recentHistory = context.mode === "personalized"
-    ? await prisma.insightHistory.findMany({
-        where: { userId: req.userId! },
-        orderBy: { createdAt: "desc" },
-        take: 3,
-        select: { primaryKey: true },
-      })
+    ? await prisma.insightHistory.findMany({ where: { userId: req.userId! }, orderBy: { createdAt: "desc" }, take: 3, select: { primaryKey: true } })
     : [];
 
   let primaryKeyOverride: typeof currentPrimaryKey | null = null;
   if (context.mode === "personalized" && shouldSuppressPrimary(currentPrimaryKey, recentHistory)) {
     primaryKeyOverride = pickNovelPrimaryKey(currentPrimaryKey, recentHistory, driverForMemory);
   }
-
-  // ── Memory-based insight escalation (unchanged) ──
-  if (driverForMemory === "stress_above_baseline" && context.mode === "personalized") {
-    if (existingMemoryCount <= 1) {
-      insights = {
-        ...insights,
-        mentalInsight: `Stress levels appear elevated today.\nThis may make focusing harder than usual.`,
-        solution: `Stress may be affecting you today.\nShort breaks can help.`,
-        recommendation: `This week, keep a steady routine and add brief stress resets when you notice overload.`,
-      };
-    } else if (existingMemoryCount <= 3) {
-      insights = {
-        ...insights,
-        mentalInsight: `Stress has been consistent across recent days.\nMental load may be building up.`,
-        solution: `Stress has been consistent recently.\nReducing your workload slightly may help.`,
-        recommendation: `Consider lighter pacing this week and protect recovery time so stress doesn't carry over.`,
-      };
-    } else {
-      insights = {
-        ...insights,
-        mentalInsight: `Stress has been persistent over several days.\nThis may be increasing overall mental load.`,
-        solution: `Stress has been persistent for several days.\nStepping back and prioritizing recovery can help.`,
-        recommendation: `For the next few days, prioritize recovery anchors (sleep consistency, gentle movement, and reduced decision load).`,
-      };
-    }
-  }
-
-  if (driverForMemory === "sleep_below_baseline" && context.mode === "personalized" && existingMemoryCount > 3) {
-    const sleepNote = numericBaseline.recentSleepAvg !== null && numericBaseline.baselineSleepAvg !== null
-      ? `Sleep has dropped to ${numericBaseline.recentSleepAvg}h — ${Math.abs(numericBaseline.sleepDelta ?? 0)}h below your usual ${numericBaseline.baselineSleepAvg}h.`
-      : `Sleep has been below your usual baseline for several days.`;
-    insights = {
-      ...insights,
-      physicalInsight: `${sleepNote}\nThis can compound fatigue and slow recovery.`,
-      solution: `Prioritize an earlier wind-down tonight and protect tomorrow morning for lighter tasks.`,
-    };
-  }
-
   if (driverForMemory === "bleeding_heavy" || driverForMemory === "high_strain") {
     primaryKeyOverride = null;
   }
@@ -261,21 +235,34 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     confidenceLabel: view.confidenceLabel,
   };
 
+  // ── PMS forecast — now passes cyclesSoFar for warmup state ────────────────
   const pmsForecastForWarning = cycleInfo.currentDay >= 18 && context.mode === "personalized"
     ? buildPmsSymptomForecast(
         cycleInfo.phase,
         cycleInfo.currentDay,
         cycleInfo.daysUntilNextPhase,
         previousCycleDrivers,
+        completedCycleCount,           // NEW: enables warmup state
       )
     : null;
-  const pmsWarning = pmsForecastForWarning?.available
+
+  // Surface warmup PMS state even when cycleDay < 18 (but still in luteal)
+  const pmsWarmupEarly = cycleInfo.phase === "luteal" && cycleInfo.currentDay < 18 && completedCycleCount < 2
+    ? buildPmsSymptomForecast(cycleInfo.phase, cycleInfo.currentDay, cycleInfo.daysUntilNextPhase, previousCycleDrivers, completedCycleCount)
+    : null;
+
+  const pmsWarning = pmsForecastForWarning && "available" in pmsForecastForWarning && pmsForecastForWarning.available
     ? {
-        headline: pmsForecastForWarning.headline,
-        action: pmsForecastForWarning.action,
-        likelySymptoms: pmsForecastForWarning.likelySymptoms,
-        confidence: pmsForecastForWarning.confidence,
+        available: true,
+        headline: (pmsForecastForWarning as any).headline,
+        action: (pmsForecastForWarning as any).action,
+        likelySymptoms: (pmsForecastForWarning as any).likelySymptoms,
+        confidence: (pmsForecastForWarning as any).confidence,
       }
+    : pmsForecastForWarning && "warmup" in pmsForecastForWarning
+    ? pmsForecastForWarning   // pass the warmup state through
+    : pmsWarmupEarly && "warmup" in pmsWarmupEarly
+    ? pmsWarmupEarly
     : null;
 
   const responsePayload = {
@@ -289,11 +276,7 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
       confidence: context.confidence,
     },
     isNewUser,
-    progress: {
-      logsCount,
-      nextMilestone,
-      logsToNextMilestone: Math.max(0, nextMilestone - logsCount),
-    },
+    progress: { logsCount, nextMilestone, logsToNextMilestone: Math.max(0, nextMilestone - logsCount) },
     mode: context.mode,
     confidence: context.confidence,
     cycleContext: {
@@ -303,14 +286,11 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
       nextPeriodRange:
         cyclePrediction.confidence === "variable" || cyclePrediction.confidence === "irregular"
           ? {
-              earliest: new Date(cycleInfo.nextPeriodDate.getTime() - cyclePrediction.stdDev * 86400000)
-                .toISOString().split("T")[0],
-              latest: new Date(cycleInfo.nextPeriodDate.getTime() + cyclePrediction.stdDev * 86400000)
-                .toISOString().split("T")[0],
+              earliest: new Date(cycleInfo.nextPeriodDate.getTime() - cyclePrediction.stdDev * 86400000).toISOString().split("T")[0],
+              latest: new Date(cycleInfo.nextPeriodDate.getTime() + cyclePrediction.stdDev * 86400000).toISOString().split("T")[0],
             }
           : undefined,
     },
-    // ── New: expose numeric baseline so frontend can show real numbers ──
     numericSummary: {
       recentSleepAvg: numericBaseline.recentSleepAvg,
       baselineSleepAvg: numericBaseline.baselineSleepAvg,
@@ -322,13 +302,11 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
         ? (numericBaseline.recentMoodAvg >= 2.4 ? "positive" : numericBaseline.recentMoodAvg <= 1.6 ? "low" : "neutral")
         : null,
     },
-    // ── New: expose cross-cycle narrative ──
-    crossCycleNarrative: crossCycleNarrative ? {
-      matchingCycles: crossCycleNarrative.matchingCycles,
-      totalCyclesAnalyzed: crossCycleNarrative.totalCyclesAnalyzed,
-      narrativeStatement: crossCycleNarrative.narrativeStatement,
-      trend: crossCycleNarrative.trend,
-    } : null,
+    crossCycleNarrative: crossCycleNarrative
+      ? { matchingCycles: crossCycleNarrative.matchingCycles, totalCyclesAnalyzed: crossCycleNarrative.totalCyclesAnalyzed, narrativeStatement: crossCycleNarrative.narrativeStatement, trend: crossCycleNarrative.trend }
+      : null,
+    // ── NEW: user-facing memory narrative ──────────────────────────────────
+    memoryContext,
     aiEnhanced,
     correlationPattern: correlation.patternKey,
     basedOn: {
@@ -355,13 +333,7 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
   if (context.mode === "personalized") {
     const resolvedPrimaryKey = primaryKeyOverride ?? currentPrimaryKey;
     await prisma.insightHistory.create({
-      data: {
-        userId: req.userId!,
-        primaryKey: resolvedPrimaryKey,
-        driver: driverForMemory,
-        cycleDay: cycleInfo.currentDay,
-        phase: cycleInfo.phase,
-      },
+      data: { userId: req.userId!, primaryKey: resolvedPrimaryKey, driver: driverForMemory, cycleDay: cycleInfo.currentDay, phase: cycleInfo.phase },
     });
   }
 
@@ -394,6 +366,10 @@ export async function getInsightsForecast(req: Request, res: Response): Promise<
   }
   const { user, recentLogs, baselineLogs, numericBaseline, crossCycleNarrative } = data;
 
+  const completedCycleCount = await prisma.cycleHistory.count({
+    where: { userId: req.userId!, endDate: { not: null }, cycleLength: { not: null } },
+  });
+
   const cycleMode = getCycleMode(user);
   const cyclePrediction = await getCyclePredictionContext(req.userId!, user.cycleLength);
   const effectiveCycleLength = cyclePrediction.avgLength || user.cycleLength;
@@ -403,12 +379,7 @@ export async function getInsightsForecast(req: Request, res: Response): Promise<
   const variantIndex = (cycleNumber % 3) as 0 | 1 | 2;
 
   const phaseBaselineLogs = baselineLogs.filter((log) => {
-    const logPhase = calculateCycleInfoForDate(
-      user.lastPeriodStart,
-      new Date(log.date),
-      effectiveCycleLength,
-      cycleMode,
-    ).phase;
+    const logPhase = calculateCycleInfoForDate(user.lastPeriodStart, new Date(log.date), effectiveCycleLength, cycleMode).phase;
     return logPhase === todayCycle.phase;
   });
   const hasPhaseBaseline = phaseBaselineLogs.length >= 7;
@@ -416,15 +387,8 @@ export async function getInsightsForecast(req: Request, res: Response): Promise<
   const baselineScope = hasPhaseBaseline ? "phase" : baselineForComparison.length >= 7 ? "global" : "none";
 
   const context = buildInsightContext(
-    todayCycle.phase,
-    todayCycle.currentDay,
-    recentLogs,
-    baselineForComparison,
-    baselineScope,
-    cycleNumber,
-    effectiveCycleLength,
-    cycleMode,
-    cyclePrediction.confidence,
+    todayCycle.phase, todayCycle.currentDay, recentLogs, baselineForComparison,
+    baselineScope, cycleNumber, effectiveCycleLength, cycleMode, cyclePrediction.confidence,
   );
 
   const logsCount = recentLogs.length;
@@ -435,87 +399,63 @@ export async function getInsightsForecast(req: Request, res: Response): Promise<
     ? await getPreviousCycleDriverHistory(req.userId!)
     : [];
 
+  // ── PMS forecast with warmup state ────────────────────────────────────────
   const pmsSymptomForecast = buildPmsSymptomForecast(
     todayCycle.phase,
     todayCycle.currentDay,
     todayCycle.daysUntilNextPhase,
     forecastPreviousCycleDrivers,
+    completedCycleCount,
   );
 
   const tomorrowDate = new Date();
   tomorrowDate.setDate(tomorrowDate.getDate() + 1);
-  const tomorrowCycle = calculateCycleInfoForDate(
-    user.lastPeriodStart,
-    tomorrowDate,
-    effectiveCycleLength,
-    cycleMode,
-  );
-
+  const tomorrowCycle = calculateCycleInfoForDate(user.lastPeriodStart, tomorrowDate, effectiveCycleLength, cycleMode);
   const tomorrowOutlook = buildTomorrowPreview(context, todayCycle.daysUntilNextPhase, variantIndex);
 
   const nextPhaseInDays = todayCycle.daysUntilNextPhase;
-  const nextPhasePreview =
-    nextPhaseInDays <= 2
-      ? `Your next phase transition is expected in about ${nextPhaseInDays} day(s), so energy and mood patterns may start shifting soon.`
-      : `Your current phase may continue for about ${nextPhaseInDays} day(s), with gradual changes expected near transition.`;
+  const nextPhasePreview = nextPhaseInDays <= 2
+    ? `Your next phase transition is expected in about ${nextPhaseInDays} day(s), so energy and mood patterns may start shifting soon.`
+    : `Your current phase may continue for about ${nextPhaseInDays} day(s), with gradual changes expected near transition.`;
 
-  const forecastConfidence =
-    context.confidenceScore >= 0.75 ? "high" : context.confidenceScore >= 0.5 ? "medium" : "low";
-  const confidenceMessage =
-    forecastConfidence === "low"
-      ? "Forecast confidence is low due to limited recent data; this outlook will sharpen as more logs are added."
-      : forecastConfidence === "medium"
-      ? "Forecast confidence is moderate; recent signals are useful but may still shift."
-      : "Forecast confidence is high; recent trends and signals are consistent.";
+  const forecastConfidence = context.confidenceScore >= 0.75 ? "high" : context.confidenceScore >= 0.5 ? "medium" : "low";
+  const confidenceMessage = forecastConfidence === "low"
+    ? "Forecast confidence is low due to limited recent data; this outlook will sharpen as more logs are added."
+    : forecastConfidence === "medium"
+    ? "Forecast confidence is moderate; recent signals are useful but may still shift."
+    : "Forecast confidence is high; recent trends and signals are consistent.";
 
   const draftForecastPayload = {
     isNewUser,
     progress: { logsCount, nextMilestone, logsToNextMilestone: Math.max(0, nextMilestone - logsCount) },
-    today: {
-      phase: todayCycle.phase,
-      currentDay: todayCycle.currentDay,
-      confidenceScore: context.confidenceScore,
-      priorityDrivers: context.priorityDrivers,
-    },
+    today: { phase: todayCycle.phase, currentDay: todayCycle.currentDay, confidenceScore: context.confidenceScore, priorityDrivers: context.priorityDrivers },
     forecast: {
-      tomorrow: {
-        date: tomorrowDate.toISOString().split("T")[0],
-        phase: tomorrowCycle.phase,
-        outlook: tomorrowOutlook,
-      },
+      tomorrow: { date: tomorrowDate.toISOString().split("T")[0], phase: tomorrowCycle.phase, outlook: tomorrowOutlook },
       nextPhase: { inDays: nextPhaseInDays, preview: nextPhasePreview },
       confidence: { level: forecastConfidence, score: context.confidenceScore, message: confidenceMessage },
     },
-    pmsSymptomForecast,
-    // Expose numeric summary in forecast too
+    pmsSymptomForecast,   // now includes warmup state when applicable
     numericSummary: {
       recentSleepAvg: numericBaseline.recentSleepAvg,
       baselineSleepAvg: numericBaseline.baselineSleepAvg,
       sleepDelta: numericBaseline.sleepDelta,
     },
-    crossCycleNarrative: crossCycleNarrative ? {
-      narrativeStatement: crossCycleNarrative.narrativeStatement,
-      trend: crossCycleNarrative.trend,
-    } : null,
+    crossCycleNarrative: crossCycleNarrative
+      ? { narrativeStatement: crossCycleNarrative.narrativeStatement, trend: crossCycleNarrative.trend }
+      : null,
+    cyclesCompleted: completedCycleCount,
   };
 
-  let forecastPayload: (typeof draftForecastPayload & { forecastAiEnhanced?: boolean }) | Record<string, unknown> =
-    draftForecastPayload;
-  let forecastAiEnhanced = false;
+  let forecastPayload: typeof draftForecastPayload & { forecastAiEnhanced?: boolean } = { ...draftForecastPayload, forecastAiEnhanced: false };
 
   const canUseAIForecast = logsCount >= 3 && context.mode === "personalized" && context.confidence !== "low";
   if (canUseAIForecast) {
-    const rewritten = await generateForecastWithGpt(
-      context,
-      draftForecastPayload,
-      numericBaseline,
-      crossCycleNarrative,
-      user.name,
-    ) as typeof draftForecastPayload;
-    forecastAiEnhanced = JSON.stringify(rewritten) !== JSON.stringify(draftForecastPayload);
-    forecastPayload = { ...rewritten, forecastAiEnhanced };
-  } else {
-    forecastPayload = { ...draftForecastPayload, forecastAiEnhanced: false };
+    try {
+      const rewritten = await generateForecastWithGpt(context, draftForecastPayload, numericBaseline, crossCycleNarrative, user.name) as typeof draftForecastPayload;
+      forecastPayload = { ...rewritten, forecastAiEnhanced: JSON.stringify(rewritten) !== JSON.stringify(draftForecastPayload) };
+    } catch {
+      // keep draft
+    }
   }
 
   const forecastJson = JSON.parse(JSON.stringify(forecastPayload)) as Prisma.InputJsonValue;

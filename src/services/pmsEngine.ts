@@ -13,6 +13,24 @@ export interface PmsForecast {
   action: string;
 }
 
+/**
+ * NEW: Warmup state — shown when user is in luteal phase but we don't have
+ * enough past cycles for a full forecast yet. Keeps users engaged and sets
+ * expectation that the forecast is coming.
+ */
+export interface PmsForecastWarmup {
+  available: false;
+  warmup: true;
+  cyclesSoFar: number;
+  cyclesNeeded: number;
+  progressPercent: number;
+  message: string;           // "You're X cycle away from your first PMS forecast"
+  tip: string;               // actionable tip for this luteal phase while we wait
+  logPrompt: string;         // what to log this cycle so the forecast is accurate
+}
+
+export type PmsForecastResult = PmsForecast | PmsForecastWarmup | null;
+
 export interface DriverHistory {
   driver: string;
   cycleDay: number;
@@ -31,7 +49,6 @@ const DRIVER_TO_SYMPTOM: Record<string, string> = {
   phase_deviation: "energy_mismatch",
 };
 
-/** Late luteal window: days 18–28 */
 const LATE_LUTEAL_START = 18;
 const LATE_LUTEAL_END = 28;
 
@@ -39,34 +56,20 @@ function isLateLuteal(cycleDay: number, phase: Phase): boolean {
   return phase === "luteal" && cycleDay >= LATE_LUTEAL_START && cycleDay <= LATE_LUTEAL_END;
 }
 
-/**
- * Groups driver history entries into discrete past cycles by detecting
- * phase boundaries. Each contiguous run of luteal entries is one cycle window.
- * Returns an array of entry arrays, one per detected cycle window.
- */
-function groupIntoCycleWindows(
-  lateLutealEntries: DriverHistory[],
-): DriverHistory[][] {
+function groupIntoCycleWindows(lateLutealEntries: DriverHistory[]): DriverHistory[][] {
   if (lateLutealEntries.length === 0) return [];
 
-  // Sort by time so cycle-day drops can indicate a new cycle window.
-  // Fallback to cycleDay ordering only if timestamps are unavailable.
   const sorted = [...lateLutealEntries].sort((a, b) => {
-    if (a.createdAt && b.createdAt) {
-      return a.createdAt.getTime() - b.createdAt.getTime();
-    }
+    if (a.createdAt && b.createdAt) return a.createdAt.getTime() - b.createdAt.getTime();
     return a.cycleDay - b.cycleDay;
   });
 
-  // Split into windows: a new window starts when cycleDay resets (goes lower)
   const windows: DriverHistory[][] = [];
   let current: DriverHistory[] = [sorted[0]!];
 
   for (let i = 1; i < sorted.length; i++) {
     const prev = sorted[i - 1]!;
     const curr = sorted[i]!;
-    // Detect a cycle boundary: cycle day resets lower after period.
-    // Example: ...25 -> 22 should start a new window.
     if (curr.cycleDay < prev.cycleDay) {
       windows.push(current);
       current = [curr];
@@ -75,8 +78,45 @@ function groupIntoCycleWindows(
     }
   }
   windows.push(current);
-
   return windows;
+}
+
+/**
+ * Build a warmup state for users currently in luteal phase but without
+ * enough past cycle data for a full forecast.
+ */
+function buildWarmupState(
+  cycleDay: number,
+  cyclesSoFar: number,
+): PmsForecastWarmup {
+  const cyclesNeeded = 2;
+  const progressPercent = Math.round((cyclesSoFar / cyclesNeeded) * 100);
+
+  const cyclesLeft = cyclesNeeded - cyclesSoFar;
+
+  const message =
+    cyclesSoFar === 0
+      ? "Complete your first cycle and we'll start building your personal PMS forecast."
+      : `You're ${cyclesLeft} cycle${cyclesLeft === 1 ? "" : "s"} away from your first personalized PMS forecast.`;
+
+  const tip =
+    cycleDay >= 22
+      ? "For now: lighter schedule, earlier bedtime, and avoid high-stakes decisions in the next few days — these help most people in this window."
+      : "For now: protect your sleep and keep stress low in the second half of your cycle — these are the two biggest levers for PMS symptoms.";
+
+  const logPrompt =
+    "Log your mood, sleep, and stress daily this cycle — the more you log, the more accurate your first forecast will be.";
+
+  return {
+    available: false,
+    warmup: true,
+    cyclesSoFar,
+    cyclesNeeded,
+    progressPercent: Math.min(99, progressPercent),
+    message,
+    tip,
+    logPrompt,
+  };
 }
 
 export function buildPmsSymptomForecast(
@@ -84,23 +124,22 @@ export function buildPmsSymptomForecast(
   cycleDay: number,
   daysUntilNextPhase: number,
   previousCycleDrivers: DriverHistory[],
-): PmsForecast | null {
-  // Only surface forecast when user is in or approaching luteal phase
-  const inLutealWindow = phase === "luteal";
-  if (!inLutealWindow) return null;
+  cyclesSoFar: number = 0,
+): PmsForecastResult {
+  // Only surface in luteal phase
+  if (phase !== "luteal") return null;
 
-  const lateLutealHistory = previousCycleDrivers.filter((d) =>
-    isLateLuteal(d.cycleDay, d.phase),
-  );
-
+  const lateLutealHistory = previousCycleDrivers.filter((d) => isLateLuteal(d.cycleDay, d.phase));
   const cycleWindows = groupIntoCycleWindows(lateLutealHistory);
 
-  // Need at least 2 past cycles of late luteal data
-  if (cycleWindows.length < 2) return null;
+  // ── Warmup state: in luteal but not enough past cycles ─────────────────────
+  if (cycleWindows.length < 2) {
+    return buildWarmupState(cycleDay, cyclesSoFar);
+  }
 
+  // ── Full forecast ──────────────────────────────────────────────────────────
   const cyclesAnalyzed = cycleWindows.length;
 
-  // Count how many cycles each symptom appeared in
   const symptomCycleCount: Record<string, number> = {};
   for (const window of cycleWindows) {
     const symptomsInWindow = new Set<string>();
@@ -113,7 +152,6 @@ export function buildPmsSymptomForecast(
     }
   }
 
-  // Include symptoms that appeared in >= 2 of the last 3 cycles
   const recentWindows = cycleWindows.slice(-3);
   const threshold = Math.min(2, recentWindows.length);
   const likelySymptoms = Object.entries(symptomCycleCount)
@@ -121,25 +159,25 @@ export function buildPmsSymptomForecast(
     .sort((a, b) => b[1] - a[1])
     .map(([symptom]) => symptom);
 
-  if (likelySymptoms.length === 0) return null;
+  if (likelySymptoms.length === 0) {
+    // Enough cycles but no consistent symptoms — still show warmup with encouragement
+    return buildWarmupState(cycleDay, cyclesSoFar);
+  }
 
-  // Estimate symptom window from past data
   const allDaysWithSymptoms = lateLutealHistory
     .filter((d) => DRIVER_TO_SYMPTOM[d.driver])
     .map((d) => d.cycleDay);
 
-  const startDay = allDaysWithSymptoms.length > 0
-    ? Math.min(...allDaysWithSymptoms)
-    : 22;
-  const peakDay = allDaysWithSymptoms.length > 0
-    ? Math.round(allDaysWithSymptoms.reduce((a, b) => a + b, 0) / allDaysWithSymptoms.length)
-    : 25;
+  const startDay = allDaysWithSymptoms.length > 0 ? Math.min(...allDaysWithSymptoms) : 22;
+  const peakDay =
+    allDaysWithSymptoms.length > 0
+      ? Math.round(allDaysWithSymptoms.reduce((a, b) => a + b, 0) / allDaysWithSymptoms.length)
+      : 25;
 
   const confidence: PmsForecast["confidence"] =
     cyclesAnalyzed >= 4 ? "high" : cyclesAnalyzed >= 3 ? "medium" : "low";
 
   const daysUntilWindow = cycleDay >= LATE_LUTEAL_START ? 0 : LATE_LUTEAL_START - cycleDay;
-
   const symptomLabels = likelySymptoms.slice(0, 3).join(", ").replace(/_/g, " ");
 
   const headline =
