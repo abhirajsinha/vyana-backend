@@ -174,7 +174,7 @@ function stateToScore(state: string, map: Record<string, number>): number {
 
 function buildSignals(logs: DailyLog[]): SignalState {
   const latest = logs[0];
-  const ordered = [...logs].slice(0, 5).reverse();
+  const ordered = [...logs].reverse();
 
   const sleepSeries = ordered.map((l) => (typeof l.sleep === "number" ? l.sleep : null));
   const stressSeries = ordered.map((l) => {
@@ -270,7 +270,7 @@ function buildSignals(logs: DailyLog[]): SignalState {
 }
 
 function buildTrends(logs: DailyLog[]): TrendState {
-  const ordered = [...logs].slice(0, 5).reverse();
+  const ordered = [...logs].reverse();
   const sleepSeries = ordered.map((l) => (typeof l.sleep === "number" ? l.sleep : null));
   const stressSeries = ordered.map((l) => {
     if (!l.stress?.trim()) return null;
