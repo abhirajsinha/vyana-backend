@@ -6,12 +6,17 @@
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "build": "tsc -p tsconfig.json",
+    "typecheck:tests": "tsc -p tsconfig.tests.json --noEmit",
     "start": "node dist/index.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "demo:insights": "ts-node --transpile-only scripts/run-menstrual-insight-demo.ts",
-    "test:scenarios": "ts-node --transpile-only scripts/run-scenarios.ts",
-    "test": "echo \"No tests yet\""
+    "test:scenarios": "ts-node --transpile-only scripts/run-scenarios.ts",    
+    "test": "jest",
+    "test:unit": "jest --testPathPatterns=tests/units",
+    "test:integration": "jest --testPathPatterns=tests/integration",
+    "test:fuzz": "jest --testPathPatterns=fuzz",
+    "test:coverage": "jest --coverage --testPathPatterns=tests/units"
   },
   "repository": {
     "type": "git",
@@ -39,8 +44,11 @@
   "devDependencies": {
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
+    "@types/jest": "^30.0.0",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^25.5.0",
+    "jest": "^30.3.0",
+    "ts-jest": "^29.4.6",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.9.3"
   }

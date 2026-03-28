@@ -58,7 +58,11 @@ export function enforceTwoLines(text: string): string {
   }
 
   // No sentence boundary → return first line only (never truncate mid-sentence)
-  return twoLines[0] ?? joined;
+  const firstLine = twoLines[0] ?? joined;
+  if (firstLine.length > 400) {
+    return firstLine.slice(0, 350).trimEnd();
+  }
+  return firstLine;
 }
 
 function enforceTwoLinesOnInsights(insights: DailyInsights): DailyInsights {
@@ -181,6 +185,10 @@ export function sanitizeInsights(
   for (const key of keys) {
     if (typeof o[key] !== "string") return fallback;
   }
+  const rawStrings = keys.map((k) => o[k] as string);
+  const MAX_RAW_FIELD_LEN = 400;
+  if (rawStrings.some((s) => s.length > MAX_RAW_FIELD_LEN)) return fallback;
+
   const trimmed = enforceMaxSentencesOnInsights(
     {
       physicalInsight: o.physicalInsight as string,

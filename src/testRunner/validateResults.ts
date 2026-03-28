@@ -168,10 +168,11 @@ function main() {
     if (ex.shouldBePeriodDelayed && !err) {
       delayedTotal++;
       const home = out?.home as { isPeriodDelayed?: boolean } | undefined;
-      if (home?.isPeriodDelayed === true) delayedOk++;
+      const top = typeof out?.isPeriodDelayed === "boolean" ? out.isPeriodDelayed : undefined;
+      if (top === true || home?.isPeriodDelayed === true) delayedOk++;
       else
         failures.push(
-          `${r.testId} — period delayed: expected home.isPeriodDelayed true`,
+          `${r.testId} — period delayed: expected isPeriodDelayed true (slim response or merged home)`,
         );
     }
   }

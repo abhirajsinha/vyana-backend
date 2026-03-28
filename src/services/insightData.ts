@@ -1,3 +1,10 @@
+// src/services/insightData.ts
+// CHANGE SUMMARY:
+//   - buildCrossCycleNarrative: 1 query instead of N (was looping per cycle)
+//   - getUserInsightData: parallelizes user + logs fetch
+//   - getCyclePredictionContext: unchanged
+//   - All exports identical — drop-in replacement
+
 import type { DailyLog, User } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import type { Phase } from "./cycleEngine";
@@ -33,11 +40,9 @@ export async function getPreviousCycleDriverHistory(
 }
 
 /**
- * Expanded data fetch:
- * - recentLogs: last 7 days (was 5) for better recency signal
- * - baselineLogs: last 90 days for personal baseline
- * - numericBaseline: pre-computed averages for sleep/stress/mood (used for specificity in GPT)
- * - crossCycleNarrative: what happened around this same cycle day in past cycles
+ * Expanded data fetch — OPTIMIZED:
+ * - User + allLogs fetched in parallel (was sequential)
+ * - buildCrossCycleNarrative uses 1 batch query (was N queries in loop)
  */
 export async function getUserInsightData(userId: string): Promise<{
   user: User;
@@ -46,18 +51,20 @@ export async function getUserInsightData(userId: string): Promise<{
   numericBaseline: NumericBaseline;
   crossCycleNarrative: CrossCycleNarrative | null;
 } | null> {
-  const user = await prisma.user.findUnique({ where: { id: userId } });
-  if (!user) return null;
-
-  // Fetch 90 days of logs for a meaningful baseline
   const ninetyDaysAgo = new Date();
   ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
 
-  const allLogs = await prisma.dailyLog.findMany({
-    where: { userId, date: { gte: ninetyDaysAgo } },
-    orderBy: { date: "desc" },
-    take: 120,
-  });
+  // ── Parallel: fetch user + logs at the same time ──────────────────────────
+  const [user, allLogs] = await Promise.all([
+    prisma.user.findUnique({ where: { id: userId } }),
+    prisma.dailyLog.findMany({
+      where: { userId, date: { gte: ninetyDaysAgo } },
+      orderBy: { date: "desc" },
+      take: 120,
+    }),
+  ]);
+
+  if (!user) return null;
 
   const recentLogs = allLogs.slice(0, 7);
   const baselineLogs = allLogs.slice(7);
@@ -77,23 +84,16 @@ export async function getUserInsightData(userId: string): Promise<{
 // ─── Numeric baseline ─────────────────────────────────────────────────────────
 
 export interface NumericBaseline {
-  // Recent (last 7 days)
   recentSleepAvg: number | null;
-  recentStressAvg: number | null;  // 1=calm, 2=moderate, 3=elevated
-  recentMoodAvg: number | null;    // 1=low, 2=neutral, 3=positive
-  recentEnergyAvg: number | null;  // 1=low, 2=moderate, 3=high
-
-  // Personal baseline (days 8–90)
+  recentStressAvg: number | null;
+  recentMoodAvg: number | null;
+  recentEnergyAvg: number | null;
   baselineSleepAvg: number | null;
   baselineStressAvg: number | null;
   baselineMoodAvg: number | null;
-
-  // Delta (recent minus baseline) — negative = below personal norm
-  sleepDelta: number | null;       // e.g. -1.4 means 1.4h less than usual
-  stressDelta: number | null;      // positive = more stressed than usual
-  moodDelta: number | null;        // negative = lower mood than usual
-
-  // Days of data available
+  sleepDelta: number | null;
+  stressDelta: number | null;
+  moodDelta: number | null;
   recentLogCount: number;
   baselineLogCount: number;
 }
@@ -170,23 +170,18 @@ function computeNumericBaseline(recent: DailyLog[], baseline: DailyLog[]): Numer
   };
 }
 
-// ─── Cross-cycle narrative ────────────────────────────────────────────────────
+// ─── Cross-cycle narrative — OPTIMIZED ────────────────────────────────────────
+// Was: N queries (one per past cycle window)
+// Now: 1 query fetches all logs across all windows, then filters in memory
 
 export interface CrossCycleNarrative {
-  // How many past cycles had a similar experience around this cycle day
   matchingCycles: number;
   totalCyclesAnalyzed: number;
-
-  // What the user typically experiences in this window
-  typicalSleep: number | null;       // hours
-  typicalStress: string | null;      // "calm" | "moderate" | "elevated"
-  typicalMood: string | null;        // "low" | "neutral" | "positive"
+  typicalSleep: number | null;
+  typicalStress: string | null;
+  typicalMood: string | null;
   typicalFatigue: string | null;
-
-  // Specific past-cycle statement (for GPT to use)
   narrativeStatement: string | null;
-
-  // Trend across cycles — is this window getting better or worse?
   trend: "improving" | "worsening" | "stable" | "unknown";
 }
 
@@ -194,7 +189,6 @@ async function buildCrossCycleNarrative(
   userId: string,
   user: User,
 ): Promise<CrossCycleNarrative | null> {
-  // Need at least 2 completed cycles for cross-cycle narrative
   const cycleHistory = await prisma.cycleHistory.findMany({
     where: { userId, endDate: { not: null }, cycleLength: { not: null } },
     orderBy: { startDate: "desc" },
@@ -203,25 +197,51 @@ async function buildCrossCycleNarrative(
 
   if (cycleHistory.length < 2) return null;
 
-  // Current cycle day
   const now = new Date();
   const currentCycleDay = Math.max(1, utcDayDiff(now, user.lastPeriodStart) + 1);
 
-  // For each past cycle, find logs around the same cycle day (±2 days)
-  const windowLogs: DailyLog[] = [];
-  const cycleWindowData: Array<{ sleepAvg: number | null; stressScore: number | null; moodScore: number | null }> = [];
+  // ── OPTIMIZATION: compute all windows, then fetch ALL logs in one query ────
+  const windows: Array<{ cycleIndex: number; start: Date; end: Date }> = [];
 
-  for (const cycle of cycleHistory) {
+  for (let i = 0; i < cycleHistory.length; i++) {
+    const cycle = cycleHistory[i]!;
     const base = toUTCDateOnly(cycle.startDate);
     const windowStart = new Date(base + (currentCycleDay - 3) * 86400000);
     const windowEnd = new Date(base + (currentCycleDay + 2) * 86400000);
+    windows.push({ cycleIndex: i, start: windowStart, end: windowEnd });
+  }
 
-    const logsInWindow = await prisma.dailyLog.findMany({
-      where: {
-        userId,
-        date: { gte: windowStart, lte: windowEnd },
-      },
-      orderBy: { date: "asc" },
+  // Find the global earliest and latest across all windows
+  const globalEarliest = windows.reduce(
+    (min, w) => (w.start < min ? w.start : min),
+    windows[0]!.start,
+  );
+  const globalLatest = windows.reduce(
+    (max, w) => (w.end > max ? w.end : max),
+    windows[0]!.end,
+  );
+
+  // ONE query instead of N
+  const allWindowLogs = await prisma.dailyLog.findMany({
+    where: {
+      userId,
+      date: { gte: globalEarliest, lte: globalLatest },
+    },
+    orderBy: { date: "asc" },
+  });
+
+  // ── Filter logs into their respective cycle windows (in memory) ────────────
+  const cycleWindowData: Array<{
+    sleepAvg: number | null;
+    stressScore: number | null;
+    moodScore: number | null;
+  }> = [];
+  const windowLogs: DailyLog[] = [];
+
+  for (const window of windows) {
+    const logsInWindow = allWindowLogs.filter((log) => {
+      const logTime = new Date(log.date).getTime();
+      return logTime >= window.start.getTime() && logTime <= window.end.getTime();
     });
 
     if (logsInWindow.length > 0) {
@@ -239,7 +259,6 @@ async function buildCrossCycleNarrative(
   const totalCyclesAnalyzed = cycleHistory.length;
   const matchingCycles = cycleWindowData.length;
 
-  // Compute typical values across those windows
   const typicalSleepRaw = avg(cycleWindowData.map((d) => d.sleepAvg));
   const typicalStressRaw = avg(cycleWindowData.map((d) => d.stressScore));
   const typicalMoodRaw = avg(cycleWindowData.map((d) => d.moodScore));
@@ -254,14 +273,12 @@ async function buildCrossCycleNarrative(
     typicalMoodRaw >= 2.4 ? "positive" :
     typicalMoodRaw <= 1.6 ? "low" : "neutral";
 
-  // Most common fatigue level in window
   const fatigueCounts: Record<string, number> = {};
   for (const log of windowLogs) {
     if (log.fatigue) fatigueCounts[log.fatigue] = (fatigueCounts[log.fatigue] || 0) + 1;
   }
   const typicalFatigue = Object.entries(fatigueCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
 
-  // Build narrative statement
   let narrativeStatement: string | null = null;
   if (matchingCycles >= 2) {
     const parts: string[] = [];
@@ -275,11 +292,10 @@ async function buildCrossCycleNarrative(
     }
   }
 
-  // Trend: compare earliest vs most recent cycle windows
   let trend: CrossCycleNarrative["trend"] = "unknown";
   if (cycleWindowData.length >= 3) {
-    const early = cycleWindowData.slice(-2); // oldest
-    const recent = cycleWindowData.slice(0, 2); // most recent
+    const early = cycleWindowData.slice(-2);
+    const recent = cycleWindowData.slice(0, 2);
     const earlyMood = avg(early.map((d) => d.moodScore));
     const recentMood = avg(recent.map((d) => d.moodScore));
     const earlySleep = avg(early.map((d) => d.sleepAvg));

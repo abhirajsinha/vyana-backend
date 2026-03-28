@@ -74,6 +74,7 @@ import {
   isStableInsightState,
   type PrimaryInsightCause,
 } from "../services/insightCause";
+import { buildMonitorEntry, recordInsightGeneration } from "../services/insigtMonitor";
 
 function isInsightsPayloadCached(payload: unknown): boolean {
   return (
@@ -167,6 +168,7 @@ async function fetchEmotionalMemoryInput(
 
 export async function getInsights(req: Request, res: Response): Promise<void> {
   const now = new Date();
+  const pipelineStart = Date.now();
   const dayStart = new Date(
     Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
   );
@@ -951,6 +953,24 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     update: { payload: payloadJson },
     create: { userId: req.userId!, date: dayStart, payload: payloadJson },
   });
+
+  recordInsightGeneration(buildMonitorEntry({
+    userId: req.userId!,
+    cycleDay: cycleInfo.currentDay,
+    phase: cycleInfo.phase,
+    cycleMode,
+    aiEnhanced,
+    aiDebug,
+    draft: draftInsights,
+    output: insights,
+    primaryDriver: driverForMemory,
+    primaryCause: primaryInsightCause,
+    driverCount: context.priorityDrivers.length,
+    confidence: context.confidence,
+    confidenceScore: context.confidenceScore,
+    mode: context.mode,
+    pipelineMs: Date.now() - pipelineStart,
+  }));
 
   res.json(responsePayload);
 }

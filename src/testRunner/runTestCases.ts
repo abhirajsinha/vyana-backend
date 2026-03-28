@@ -10,7 +10,7 @@ import {
   type TestExpect,
 } from "./generateTestCases";
 
-import { getInsights } from "../controllers/insightController";
+import { getInsights, getInsightsContext } from "../controllers/insightController";
 
 const CLEANUP = true;
 const DEFAULT_OUT = "test-results-500.json";
@@ -91,6 +91,7 @@ async function run() {
     const label = `[${i + 1}/${total}]`;
     const t0 = Date.now();
     let jsonResponse: unknown = null;
+    let contextResponse: unknown = null;
     let error: string | undefined;
 
     try {
@@ -125,6 +126,18 @@ async function run() {
 
       await getInsights(mockReq as never, mockRes as never);
 
+      const ctxRes = {
+        json: (data: unknown) => {
+          contextResponse = data;
+        },
+        status: (_code: number) => ({
+          json: (data: unknown) => {
+            contextResponse = { error: data, status: _code };
+          },
+        }),
+      };
+      await getInsightsContext(mockReq as never, ctxRes as never);
+
       if (CLEANUP) {
         await cleanupUser(user.id);
       }
@@ -134,22 +147,42 @@ async function run() {
     }
 
     const output = jsonResponse as Record<string, unknown> | null;
+    const ctxOut = contextResponse as Record<string, unknown> | null;
+    const basedOn = ctxOut?.basedOn as
+      | { phase?: string; priorityDrivers?: string[] }
+      | undefined;
+    const drivers = basedOn?.priorityDrivers ?? [];
+    const mergedOutput =
+      output && ctxOut && !("status" in (ctxOut ?? {}))
+        ? {
+            ...output,
+            correlationPattern: ctxOut.correlationPattern ?? null,
+            basedOn: ctxOut.basedOn ?? null,
+            home: {
+              phase: basedOn?.phase,
+              primaryDriver: drivers[0] ?? null,
+              isPeriodDelayed: output.isPeriodDelayed,
+            },
+          }
+        : output;
+
     const durationMs = Date.now() - t0;
     const row = {
       testId: test.id,
       description: test.description,
       expect: test.expect ?? null,
-      phase: (output as { home?: { phase?: string } })?.home?.phase,
+      phase: basedOn?.phase ?? (output as { home?: { phase?: string } })?.home?.phase,
       cycleDay: (output as { cycleDay?: number })?.cycleDay,
-      primaryDriver: (output as { home?: { primaryDriver?: string | null } })?.home
+      primaryDriver: drivers[0] ?? (output as { home?: { primaryDriver?: string | null } })?.home
         ?.primaryDriver,
       aiEnhanced: (output as { aiEnhanced?: boolean })?.aiEnhanced,
-      aiDebug: (output as { aiDebug?: string })?.aiDebug,
-      correlationPattern: (output as { correlationPattern?: string | null })
-        ?.correlationPattern,
+      aiDebug: (ctxOut?.aiDebug as string | undefined) ?? (output as { aiDebug?: string })?.aiDebug,
+      correlationPattern:
+        (ctxOut?.correlationPattern as string | null | undefined) ??
+        (output as { correlationPattern?: string | null })?.correlationPattern,
       durationMs,
       error: error ?? null,
-      output: output ?? null,
+      output: mergedOutput ?? output ?? null,
     };
 
     results.push(row);
