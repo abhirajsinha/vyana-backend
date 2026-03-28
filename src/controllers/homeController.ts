@@ -18,6 +18,7 @@ import {
   getContraceptionBehavior,
   resolveContraceptionType,
 } from "../services/contraceptionengine";
+import { buildTransitionWarmup } from "../services/transitionWarmup";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -269,6 +270,8 @@ export async function getHomeScreen(req: Request, res: Response): Promise<void> 
   const user = await prisma.user.findUnique({ where: { id: req.userId! } });
   if (!user) { res.status(404).json({ error: "User not found" }); return; }
 
+  const transitionWarmup = buildTransitionWarmup(user.contraceptionChangedAt ?? null);
+
   const cycleMode = getCycleMode(user);
   const cyclePrediction = await getCyclePredictionContext(req.userId!, user.cycleLength);
   const effectiveCycleLength = cyclePrediction.avgLength || user.cycleLength;
@@ -303,5 +306,6 @@ export async function getHomeScreen(req: Request, res: Response): Promise<void> 
     ctaLogPhase: cycleInfo.phase,
     quickLogFields: getQuickLogFields(cycleInfo.phase, isPeriodDelayed, isHormonalMode),
     isHormonalMode,
+    transitionWarmup,
   });
 }

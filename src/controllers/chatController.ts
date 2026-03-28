@@ -1,18 +1,19 @@
 import "../types/express";
 import { Request, Response } from "express";
 import { prisma } from "../lib/prisma";
-import { calculateCycleInfo, getCycleMode } from "../services/cycleEngine";
+import { calculateCycleInfo, getCycleMode, utcDayDiff } from "../services/cycleEngine";
 import {
   askVyanaWithGpt,
   buildVyanaContextForInsights,
   type ChatHistoryItem,
 } from "../services/aiService";
 import { classifyIntent } from "../services/chatService";
-import { getUserInsightData } from "../services/insightData";
+import { getCyclePredictionContext, getUserInsightData } from "../services/insightData";
 import { buildInsightContext } from "../services/insightService";
 import { getCycleNumber } from "../services/cycleInsightLibrary";
 import { buildHormoneState, buildHormoneLanguage } from "../services/hormoneengine";
 import { detectPrimaryInsightCause } from "../services/insightCause";
+import { resolveContraceptionType } from "../services/contraceptionengine";
 
 export async function chat(req: Request, res: Response): Promise<void> {
   const { message, history } = req.body as { message?: string; history?: ChatHistoryItem[] };
@@ -23,7 +24,6 @@ export async function chat(req: Request, res: Response): Promise<void> {
 
   const safeHistory = Array.isArray(history) ? history : [];
   const intent = classifyIntent(message, safeHistory);
-  console.log(`[chat] intent="${intent}" message="${message}"`);
 
   // Lightweight path — no insight pipeline for casual messages
   if (intent === "casual") {
@@ -65,27 +65,46 @@ export async function chat(req: Request, res: Response): Promise<void> {
 
   const { user, recentLogs, baselineLogs, numericBaseline, crossCycleNarrative } = data;
   const cycleMode = getCycleMode(user);
-  const cycleInfo = calculateCycleInfo(user.lastPeriodStart, user.cycleLength, cycleMode);
+
+  // FIX: Use prediction-adjusted cycle length (was user.cycleLength)
+  const cyclePrediction = await getCyclePredictionContext(req.userId!, user.cycleLength);
+  const effectiveCycleLength = cyclePrediction.avgLength || user.cycleLength;
+
+  const cycleInfo = calculateCycleInfo(user.lastPeriodStart, effectiveCycleLength, cycleMode);
+
+  // FIX: Compute delayed period (was hardcoded false)
+  const rawDiffDays = utcDayDiff(new Date(), user.lastPeriodStart);
+  const daysOverdue = Math.max(0, rawDiffDays - effectiveCycleLength);
+  const isPeriodDelayed =
+    daysOverdue > 0 &&
+    cyclePrediction.confidence !== "irregular" &&
+    cycleMode !== "hormonal";
+  const isIrregular = cycleMode !== "hormonal" && cyclePrediction.isIrregular;
 
   const totalLogCount = recentLogs.length + baselineLogs.length;
 
+  // FIX: Pass cyclePredictionConfidence as 9th arg (was missing)
   const context = buildInsightContext(
     cycleInfo.phase,
     cycleInfo.currentDay,
     recentLogs,
     baselineLogs,
     baselineLogs.length >= 7 ? "global" : "none",
-    getCycleNumber(user.lastPeriodStart, user.cycleLength),
-    user.cycleLength,
+    getCycleNumber(user.lastPeriodStart, effectiveCycleLength),
+    effectiveCycleLength,
     cycleMode,
+    cyclePrediction.confidence,
   );
+
+  // FIX: Use actual contraception type (was hardcoded "none")
+  const contraceptionType = resolveContraceptionType(user.contraceptiveMethod);
 
   const hormoneState = buildHormoneState(
     cycleInfo.phase,
     cycleInfo.currentDay,
-    user.cycleLength,
+    effectiveCycleLength,
     cycleMode,
-    "none",
+    contraceptionType,
   );
 
   const primaryInsightCause = detectPrimaryInsightCause({
@@ -104,13 +123,13 @@ export async function chat(req: Request, res: Response): Promise<void> {
     phase: cycleInfo.phase,
     cycleDay: cycleInfo.currentDay,
     phaseDay: cycleInfo.phaseDay,
-    cycleLength: user.cycleLength,
+    cycleLength: effectiveCycleLength,
     cycleMode,
     daysUntilNextPhase: cycleInfo.daysUntilNextPhase,
     daysUntilNextPeriod: cycleInfo.daysUntilNextPeriod,
-    isPeriodDelayed: false,
-    daysOverdue: 0,
-    isIrregular: false,
+    isPeriodDelayed,
+    daysOverdue,
+    isIrregular,
     memoryDriver: context.priorityDrivers[0] ?? null,
     memoryCount: 0,
     userName: user.name ?? null,

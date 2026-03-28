@@ -71,7 +71,7 @@ export async function recordInsightMemoryOccurrence(params: {
  * This is the "we've noticed this X times" layer that makes the app feel
  * like it's genuinely paying attention to her over time.
  */
-export function buildMemoryNarrative(driver: string, count: number): string | null {
+function buildMemoryNarrative(driver: string, count: number): string | null {
   if (count < 2) return null; // first occurrence — no narrative yet
 
   const driverLabels: Record<string, { what: string; when: string }> = {

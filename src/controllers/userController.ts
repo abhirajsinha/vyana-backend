@@ -199,6 +199,7 @@ export async function updateProfile(req: Request, res: Response): Promise<void> 
       newCycleMode: transitionResult.newCycleMode,
       contextMessage: transitionResult.contextMessage,
       baselineReset: transitionResult.baselineReset,
+      periodStartReset: transitionResult.periodStartReset,
     };
   }
 

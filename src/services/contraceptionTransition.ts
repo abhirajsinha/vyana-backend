@@ -22,6 +22,7 @@ export interface ContraceptionTransitionResult {
   cachesCleared: boolean;
   cycleHistoryMarked: boolean;
   baselineReset: boolean;
+  periodStartReset: boolean;
 }
 
 export type TransitionType =
@@ -189,6 +190,7 @@ export async function handleContraceptionTransition(params: {
       cachesCleared: false,
       cycleHistoryMarked: false,
       baselineReset: false,
+      periodStartReset: false,
     };
   }
 
@@ -208,6 +210,26 @@ export async function handleContraceptionTransition(params: {
     cycleHistoryMarked = await markCycleAsTransitional(userId);
     await resetBaselineData(userId);
     baselineReset = true;
+
+    if (transitionType === "natural_to_hormonal") {
+      await prisma.user.update({
+        where: { id: userId },
+        data: { lastPeriodStart: new Date(), contraceptionChangedAt: new Date() },
+      });
+    } else {
+      // hormonal_to_natural or hormonal_to_hormonal
+      await prisma.user.update({
+        where: { id: userId },
+        data: { contraceptionChangedAt: new Date() },
+      });
+    }
+  }
+
+  if (transitionType === "natural_to_natural") {
+    await prisma.user.update({
+      where: { id: userId },
+      data: { contraceptionChangedAt: new Date() },
+    });
   }
 
   return {
@@ -220,5 +242,6 @@ export async function handleContraceptionTransition(params: {
     cachesCleared: true,
     cycleHistoryMarked,
     baselineReset,
+    periodStartReset: transitionType === "natural_to_hormonal" && needsFullReset,
   };
 }

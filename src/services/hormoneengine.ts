@@ -225,69 +225,6 @@ export function buildHormoneState(
   return buildNaturalHormoneState(phase, cycleDay, cycleLength);
 }
 
-// ─── Hormone-to-experience mapping ───────────────────────────────────────────
-
-export interface HormoneExperienceHints {
-  energyExpectation: "low" | "building" | "high" | "declining" | "variable";
-  moodExpectation: "sensitive" | "stable" | "positive" | "variable";
-  focusExpectation: "poor" | "moderate" | "sharp" | "variable";
-  physicalExpectation: "rest" | "light" | "moderate" | "peak" | "variable";
-}
-
-export function deriveExperienceFromHormones(state: HormoneState): HormoneExperienceHints {
-  if (!state.surfaceHormones || state.confidence === "unreliable") {
-    return {
-      energyExpectation: "variable",
-      moodExpectation: "variable",
-      focusExpectation: "variable",
-      physicalExpectation: "variable",
-    };
-  }
-
-  // Estrogen rising/peak → energy + mood up
-  const energyExpectation =
-    state.estrogen === "peak" || state.lh === "peak"
-      ? "high"
-      : state.estrogen === "rising"
-      ? "building"
-      : state.progesterone === "peak"
-      ? "declining"
-      : state.estrogen === "low" && state.progesterone === "low"
-      ? "low"
-      : "variable";
-
-  const moodExpectation =
-    state.estrogen === "peak" || state.estrogen === "rising"
-      ? "positive"
-      : state.estrogen === "low" && state.progesterone === "falling"
-      ? "sensitive"
-      : state.progesterone === "peak"
-      ? "stable"
-      : "variable";
-
-  const focusExpectation =
-    state.estrogen === "peak" || state.lh === "peak"
-      ? "sharp"
-      : state.estrogen === "rising"
-      ? "moderate"
-      : state.estrogen === "low"
-      ? "poor"
-      : "variable";
-
-  const physicalExpectation =
-    state.lh === "peak" || state.estrogen === "peak"
-      ? "peak"
-      : state.estrogen === "rising"
-      ? "moderate"
-      : state.progesterone === "peak"
-      ? "light"
-      : state.estrogen === "low" && state.progesterone === "low"
-      ? "rest"
-      : "variable";
-
-  return { energyExpectation, moodExpectation, focusExpectation, physicalExpectation };
-}
-
 // ─── Safe hormone language builder ───────────────────────────────────────────
 // Always framed as approximation. Never "your estrogen is X" — always "estrogen is typically X"
 

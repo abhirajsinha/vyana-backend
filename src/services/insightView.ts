@@ -19,19 +19,6 @@ export function resolvePrimaryInsightKey(ctx: InsightContext): BodyKey {
   return "physicalInsight";
 }
 
-export function getRelevantKeysForDriver(driver: string | null): readonly BodyKey[] {
-  if (!driver) return BODY_KEYS;
-  if (driver.includes("stress") || driver.includes("sleep_stress")) {
-    return ["mentalInsight", "emotionalInsight"];
-  }
-  if (driver.includes("sleep") || driver.includes("bleeding") || driver === "high_strain") {
-    return ["physicalInsight"];
-  }
-  if (driver.includes("mood")) {
-    return ["emotionalInsight", "mentalInsight"];
-  }
-  return BODY_KEYS;
-}
 
 export function getConfidenceLabel(ctx: InsightContext): string {
   if (ctx.recentLogsCount === 0) return "Phase-based guidance";

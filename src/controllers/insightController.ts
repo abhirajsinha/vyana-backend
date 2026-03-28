@@ -75,6 +75,7 @@ import {
   type PrimaryInsightCause,
 } from "../services/insightCause";
 import { buildMonitorEntry, recordInsightGeneration } from "../services/insightMonitor";
+import { buildTransitionWarmup } from "../services/transitionWarmup";
 
 function isInsightsPayloadCached(payload: unknown): boolean {
   return (
@@ -230,6 +231,8 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     numericBaseline,
     crossCycleNarrative,
   } = data;
+
+  const transitionWarmup = buildTransitionWarmup(user.contraceptionChangedAt ?? null);
 
   const contraceptionType = resolveContraceptionType(user.contraceptiveMethod);
   const contraceptionBehavior = getContraceptionBehavior(contraceptionType);
@@ -984,6 +987,7 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     insights: cachePayload.insights,
     view: cachePayload.view,
     aiEnhanced: cachePayload.aiEnhanced,
+    transitionWarmup,
   };
 
   if (driverForMemory && context.mode === "personalized") {
@@ -1109,6 +1113,8 @@ export async function getInsightsForecast(
     numericBaseline,
     crossCycleNarrative,
   } = data;
+
+  const forecastTransitionWarmup = buildTransitionWarmup(user.contraceptionChangedAt ?? null);
 
   const contraceptionType = resolveContraceptionType(user.contraceptiveMethod);
   const contraceptionBehavior = getContraceptionBehavior(contraceptionType);
@@ -1337,6 +1343,49 @@ export async function getInsightsForecast(
     forecastAiEnhanced?: boolean;
   } = { ...draftForecastPayload, forecastAiEnhanced: false };
 
+  // Build VyanaContext for forecast GPT (was missing — forecast missed identity/anticipation layers)
+  const forecastContraceptionType = resolveContraceptionType(user.contraceptiveMethod);
+  const forecastHormoneState = buildHormoneState(
+    todayCycle.phase,
+    todayCycle.currentDay,
+    effectiveCycleLength,
+    cycleMode,
+    forecastContraceptionType,
+  );
+  const forecastHormoneLanguage = contraceptionBehavior.showHormoneCurves
+    ? buildHormoneLanguage(forecastHormoneState, cyclePrediction.confidence === "reliable" ? 0.8 : 0.5)
+    : null;
+
+  const forecastPrimaryInsightCause = detectPrimaryInsightCause({
+    baselineDeviation: context.baselineDeviation,
+    trends: context.trends,
+    sleepDelta: numericBaseline.sleepDelta,
+    priorityDrivers: context.priorityDrivers,
+  });
+
+  const forecastVyanaCtx = buildVyanaContextForInsights({
+    ctx: context,
+    baseline: numericBaseline,
+    crossCycleNarrative,
+    hormoneState: forecastHormoneState,
+    hormoneLanguage: forecastHormoneLanguage,
+    phase: todayCycle.phase,
+    cycleDay: todayCycle.currentDay,
+    phaseDay: todayCycle.phaseDay,
+    cycleLength: effectiveCycleLength,
+    cycleMode,
+    daysUntilNextPhase: todayCycle.daysUntilNextPhase,
+    daysUntilNextPeriod: todayCycle.daysUntilNextPeriod,
+    isPeriodDelayed: false,
+    daysOverdue: 0,
+    isIrregular: cycleMode !== "hormonal" && cyclePrediction.isIrregular,
+    memoryDriver: context.priorityDrivers[0] ?? null,
+    memoryCount: 0,
+    userName: user.name ?? null,
+    userId: req.userId!,
+    primaryInsightCause: forecastPrimaryInsightCause,
+  });
+
   const canUseAIForecast =
     logsCount >= 7 &&
     context.mode === "personalized" &&
@@ -1349,6 +1398,7 @@ export async function getInsightsForecast(
         numericBaseline,
         crossCycleNarrative,
         user.name,
+        forecastVyanaCtx,
       )) as typeof draftForecastPayload;
 
       const forecastText = JSON.stringify(rewritten);
@@ -1384,5 +1434,5 @@ export async function getInsightsForecast(
     },
   });
 
-  res.json(forecastPayload);
+  res.json({ ...forecastPayload, transitionWarmup: forecastTransitionWarmup });
 }
