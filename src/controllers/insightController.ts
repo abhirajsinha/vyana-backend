@@ -52,7 +52,7 @@ import {
 import { getCycleNumber } from "../services/cycleInsightLibrary";
 import { runCorrelationEngine } from "../services/correlationEngine";
 import { buildTomorrowPreview } from "../services/tomorrowEngine";
-import { buildPmsSymptomForecast } from "../services/pmsEngine";
+import { buildPmsSymptomForecast, type PmsForecast } from "../services/pmsEngine";
 import {
   buildHormoneState,
   buildHormoneLanguage,
@@ -61,7 +61,7 @@ import {
   getContraceptionBehavior,
   checkForecastEligibility,
   computeLogSpanDays,
-  type ContraceptionType,
+  resolveContraceptionType,
 } from "../services/contraceptionengine";
 import {
   softendeterministic,
@@ -90,27 +90,6 @@ function isInsightsPayloadCached(payload: unknown): boolean {
   );
 }
 
-function resolveContraceptionType(user: {
-  contraceptiveMethod: string | null;
-}): ContraceptionType {
-  const method = user.contraceptiveMethod?.toLowerCase() ?? "none";
-  const map: Record<string, ContraceptionType> = {
-    pill: "combined_pill",
-    combined_pill: "combined_pill",
-    mini_pill: "mini_pill",
-    iud_hormonal: "iud_hormonal",
-    iud_copper: "iud_copper",
-    implant: "implant",
-    injection: "injection",
-    patch: "patch",
-    ring: "ring",
-    condom: "barrier",
-    barrier: "barrier",
-    natural: "natural",
-    none: "none",
-  };
-  return map[method] ?? "none";
-}
 
 function getAnticipationState(
   cached: { payload?: unknown } | null,
@@ -218,7 +197,7 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     crossCycleNarrative,
   } = data;
 
-  const contraceptionType = resolveContraceptionType(user);
+  const contraceptionType = resolveContraceptionType(user.contraceptiveMethod);
   const contraceptionBehavior = getContraceptionBehavior(contraceptionType);
 
   const completedCycleCount = await prisma.cycleHistory.count({
@@ -305,9 +284,15 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
   );
 
   const stableCandidate = isStableInsightState(recentLogs, numericBaseline);
+  const isPeakPhaseWithPositiveSignals =
+    (cycleInfo.phase === "ovulation" || cycleInfo.phase === "follicular") &&
+    context.emotional_state === "uplifted" &&
+    context.mental_state === "balanced" &&
+    context.physical_state === "stable";
   const effectiveStable =
     stableCandidate &&
     !isPeriodDelayed &&
+    !isPeakPhaseWithPositiveSignals &&
     context.mode === "personalized";
 
   if (effectiveStable) {
@@ -782,18 +767,20 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
           )
         : null;
 
-    pmsWarning =
+    if (
       pmsForecastForWarning &&
       "available" in pmsForecastForWarning &&
       pmsForecastForWarning.available
-        ? {
-            available: true,
-            headline: (pmsForecastForWarning as any).headline,
-            action: (pmsForecastForWarning as any).action,
-            likelySymptoms: (pmsForecastForWarning as any).likelySymptoms,
-            confidence: (pmsForecastForWarning as any).confidence,
-          }
-        : null;
+    ) {
+      const pms = pmsForecastForWarning as PmsForecast;
+      pmsWarning = {
+        available: true,
+        headline: pms.headline,
+        action: pms.action,
+        likelySymptoms: pms.likelySymptoms,
+        confidence: pms.confidence,
+      };
+    }
   }
 
   const responsePayload = {
@@ -988,7 +975,7 @@ export async function getInsightsForecast(
     crossCycleNarrative,
   } = data;
 
-  const contraceptionType = resolveContraceptionType(user);
+  const contraceptionType = resolveContraceptionType(user.contraceptiveMethod);
   const contraceptionBehavior = getContraceptionBehavior(contraceptionType);
 
   const completedCycleCount = await prisma.cycleHistory.count({
@@ -1134,10 +1121,11 @@ export async function getInsightsForecast(
     tomorrowOutlook,
     context.confidenceScore,
   );
+  const dayWord = nextPhaseInDays === 1 ? "day" : "days";
   const nextPhasePreview =
     nextPhaseInDays <= 2
-      ? `A phase shift may be approaching in about ${nextPhaseInDays} day(s) — energy and mood patterns might start shifting soon.`
-      : `Your current phase may continue for about ${nextPhaseInDays} day(s), with gradual changes possible near transition.`;
+      ? `A phase shift may be approaching in about ${nextPhaseInDays} ${dayWord} — energy and mood patterns might start shifting soon.`
+      : `Your current phase may continue for about ${nextPhaseInDays} ${dayWord}, with gradual changes possible near transition.`;
 
   const forecastConfidenceScore = context.confidenceScore;
   const confidenceLabel = getForecastConfidenceLabel(

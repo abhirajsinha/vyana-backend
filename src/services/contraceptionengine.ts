@@ -125,24 +125,26 @@ export function getContraceptionBehavior(type: ContraceptionType): Contraception
   }
 }
 
-// ─── Derive cycleMode from contraceptionType ─────────────────────────────────
+// ─── Shared contraception type resolver ───────────────────────────────────────
 
-export function cycleModefromContraception(
-  contraceptionType: ContraceptionType,
-  cycleRegularity: string | null,
-): CycleMode {
-  // Non-hormonal → natural (unless irregular)
-  if (
-    contraceptionType === "none" ||
-    contraceptionType === "barrier" ||
-    contraceptionType === "natural" ||
-    contraceptionType === "iud_copper"
-  ) {
-    return cycleRegularity === "irregular" ? "irregular" : "natural";
-  }
+const CONTRACEPTION_MAP: Record<string, ContraceptionType> = {
+  pill: "combined_pill",
+  combined_pill: "combined_pill",
+  mini_pill: "mini_pill",
+  iud_hormonal: "iud_hormonal",
+  iud_copper: "iud_copper",
+  implant: "implant",
+  injection: "injection",
+  patch: "patch",
+  ring: "ring",
+  condom: "barrier",
+  barrier: "barrier",
+  natural: "natural",
+  none: "none",
+};
 
-  // All hormonal types → hormonal mode
-  return "hormonal";
+export function resolveContraceptionType(method: string | null): ContraceptionType {
+  return CONTRACEPTION_MAP[method?.toLowerCase() ?? "none"] ?? "none";
 }
 
 // ─── Forecast eligibility check ──────────────────────────────────────────────

@@ -12,8 +12,10 @@ import {
   type Phase,
 } from "../services/cycleEngine";
 import { getCyclePredictionContext } from "../services/insightData";
-import { getContraceptionBehavior } from "../services/contraceptionengine";
-import type { ContraceptionType } from "../services/contraceptionengine";
+import {
+  getContraceptionBehavior,
+  resolveContraceptionType,
+} from "../services/contraceptionengine";
 
 // ─── Phase colors (match your UI design) ─────────────────────────────────────
 
@@ -23,20 +25,6 @@ const PHASE_COLORS: Record<Phase, string> = {
   ovulation: "#F5A623",
   luteal: "#9B59B6",
 };
-
-// ─── Contraception resolver ───────────────────────────────────────────────────
-
-function resolveContraceptionType(method: string | null): ContraceptionType {
-  const m = method?.toLowerCase() ?? "none";
-  const map: Record<string, ContraceptionType> = {
-    pill: "combined_pill", combined_pill: "combined_pill",
-    mini_pill: "mini_pill", iud_hormonal: "iud_hormonal",
-    iud_copper: "iud_copper", implant: "implant",
-    injection: "injection", patch: "patch", ring: "ring",
-    condom: "barrier", barrier: "barrier", natural: "natural", none: "none",
-  };
-  return map[m] ?? "none";
-}
 
 // ─── Phase position ratio ─────────────────────────────────────────────────────
 

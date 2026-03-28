@@ -320,7 +320,7 @@ function modeFor(logs: DailyLog[], signals: SignalState): InsightContext["mode"]
 function buildBaselineDeviation(recentLogs: DailyLog[], baselineLogs: DailyLog[]): string[] {
   if (baselineLogs.length < 7 || recentLogs.length === 0) return [];
 
-  const recent = recentLogs.slice(0, 5);
+  const recent = recentLogs.slice(0, 7);
   const recentSleep = weightedAverageNullable(recent.map((l) => (typeof l.sleep === "number" ? l.sleep : null)));
   const baselineSleep = weightedAverageNullable(
     baselineLogs.map((l) => (typeof l.sleep === "number" ? l.sleep : null)),

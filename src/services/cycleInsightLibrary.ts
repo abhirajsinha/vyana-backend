@@ -1052,6 +1052,7 @@ export function getNormalizedDay(
   cycleLength: number,
   phase: Phase,
 ): number {
+  if (cycleDay > cycleLength) return 28;
   if (cycleLength === 28) return Math.max(1, Math.min(28, cycleDay));
   if (phase === "menstrual") return Math.min(Math.max(1, cycleDay), 5);
 

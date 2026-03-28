@@ -9,8 +9,12 @@ export type PrimaryInsightCause =
   | "stress_led"
   | "cycle";
 
+const STABLE_STRESS = new Set(["low", "moderate", "calm", "mild"]);
+const STABLE_MOOD = new Set(["neutral", "good", "positive", "calm", "happy"]);
+
 /**
- * Log-grounded steady state: recent days look the same (sleep ~7h, moderate stress, neutral mood).
+ * Log-grounded steady state: recent days are consistent and non-distressed.
+ * Accepts healthy states (calm stress, good mood) — not just "moderate/neutral".
  * Uses raw recent logs so aggregate/baseline split bugs cannot force a fake "crisis" mode.
  */
 export function isStableInsightState(
@@ -21,14 +25,14 @@ export function isStableInsightState(
 
   const slice = recentLogs.slice(0, 7);
   for (const log of slice) {
-    if (typeof log.sleep !== "number" || log.sleep < 6.35 || log.sleep > 7.85) {
+    if (typeof log.sleep !== "number" || log.sleep < 6.0 || log.sleep > 8.5) {
       return false;
     }
     const st = log.stress?.trim().toLowerCase() ?? "";
-    if (st !== "moderate") return false;
+    if (!STABLE_STRESS.has(st)) return false;
 
     const mo = log.mood?.trim().toLowerCase() ?? "";
-    if (mo !== "neutral") return false;
+    if (!STABLE_MOOD.has(mo)) return false;
 
     if (Array.isArray(log.symptoms) && log.symptoms.length > 0) return false;
 

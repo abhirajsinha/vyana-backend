@@ -63,6 +63,7 @@ async function cleanupUser(userId: string) {
   await prisma.chatMessage.deleteMany({ where: { userId } });
   await prisma.refreshToken.deleteMany({ where: { userId } });
   await prisma.dailyLog.deleteMany({ where: { userId } });
+  // Tables may not exist in all environments — safe to skip
   await prisma.cycleHistory.deleteMany({ where: { userId } }).catch(() => {});
   await prisma.healthPatternCache.deleteMany({ where: { userId } }).catch(() => {});
   await prisma.user.delete({ where: { id: userId } });

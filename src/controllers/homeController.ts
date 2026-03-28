@@ -11,8 +11,10 @@ import {
   type CycleMode,
 } from "../services/cycleEngine";
 import { getCyclePredictionContext } from "../services/insightData";
-import { getContraceptionBehavior } from "../services/contraceptionengine";
-import type { ContraceptionType } from "../services/contraceptionengine";
+import {
+  getContraceptionBehavior,
+  resolveContraceptionType,
+} from "../services/contraceptionengine";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -41,20 +43,6 @@ export interface QuickLogField {
   type: "emoji_mood" | "slider" | "text_input" | "chips";
   options?: string[];
   placeholder?: string;
-}
-
-// ─── Contraception resolver ───────────────────────────────────────────────────
-
-function resolveContraceptionType(method: string | null): ContraceptionType {
-  const m = method?.toLowerCase() ?? "none";
-  const map: Record<string, ContraceptionType> = {
-    pill: "combined_pill", combined_pill: "combined_pill",
-    mini_pill: "mini_pill", iud_hormonal: "iud_hormonal",
-    iud_copper: "iud_copper", implant: "implant",
-    injection: "injection", patch: "patch", ring: "ring",
-    condom: "barrier", barrier: "barrier", natural: "natural", none: "none",
-  };
-  return map[m] ?? "none";
 }
 
 // ─── Phase label ──────────────────────────────────────────────────────────────
