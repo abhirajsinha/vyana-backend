@@ -9,6 +9,7 @@ import {
   calculateCycleInfo,
   calculateCycleInfoForDate,
   getCycleMode,
+  utcDayDiff,
   type Phase,
 } from "../services/cycleEngine";
 import { getCyclePredictionContext } from "../services/insightData";
@@ -214,8 +215,8 @@ export async function getCalendar(req: Request, res: Response): Promise<void> {
   const todayIso = now.toISOString().split("T")[0]!;
 
   // Delayed period detection
-  const rawDiffDays = Math.floor((now.getTime() - new Date(user.lastPeriodStart).getTime()) / 86400000);
-  const daysOverdue = Math.max(0, rawDiffDays - effectiveCycleLength + 1);
+  const rawDiffDays = utcDayDiff(now, user.lastPeriodStart);
+  const daysOverdue = Math.max(0, rawDiffDays - effectiveCycleLength);
   const isPeriodDelayedGlobal =
     daysOverdue > 0 &&
     cyclePrediction.confidence !== "irregular" &&
@@ -318,8 +319,8 @@ export async function getCalendarDayInsight(req: Request, res: Response): Promis
   const contraceptionType = resolveContraceptionType(user.contraceptiveMethod);
   const contraceptionBehavior = getContraceptionBehavior(contraceptionType);
 
-  const rawDiffDays = Math.floor((now.getTime() - new Date(user.lastPeriodStart).getTime()) / 86400000);
-  const daysOverdue = Math.max(0, rawDiffDays - effectiveCycleLength + 1);
+  const rawDiffDays = utcDayDiff(now, user.lastPeriodStart);
+  const daysOverdue = Math.max(0, rawDiffDays - effectiveCycleLength);
   const isPeriodDelayed =
     isToday && daysOverdue > 0 &&
     cyclePrediction.confidence !== "irregular" &&

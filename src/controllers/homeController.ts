@@ -7,6 +7,7 @@ import { prisma } from "../lib/prisma";
 import {
   calculateCycleInfo,
   getCycleMode,
+  utcDayDiff,
   type Phase,
   type CycleMode,
 } from "../services/cycleEngine";
@@ -265,8 +266,8 @@ export async function getHomeScreen(req: Request, res: Response): Promise<void> 
   const cycleInfo = calculateCycleInfo(user.lastPeriodStart, effectiveCycleLength, cycleMode);
 
   // Delayed period detection
-  const rawDiffDays = Math.floor((Date.now() - new Date(user.lastPeriodStart).getTime()) / 86400000);
-  const daysOverdue = Math.max(0, rawDiffDays - effectiveCycleLength + 1);
+  const rawDiffDays = utcDayDiff(Date.now(), user.lastPeriodStart);
+  const daysOverdue = Math.max(0, rawDiffDays - effectiveCycleLength);
   const isPeriodDelayed =
     daysOverdue > 0 &&
     cyclePrediction.confidence !== "irregular" &&

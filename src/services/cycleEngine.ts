@@ -29,14 +29,23 @@ export function calculateCycleInfo(
   return calculateCycleInfoForDate(lastPeriodStart, new Date(), cycleLength, cycleMode);
 }
 
+export function toUTCDateOnly(d: Date | number): number {
+  const dt = new Date(d);
+  return Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate());
+}
+
+export function utcDayDiff(a: Date | number, b: Date | number): number {
+  return Math.round((toUTCDateOnly(a) - toUTCDateOnly(b)) / 86400000);
+}
+
 export function calculateCycleInfoForDate(
   lastPeriodStart: Date,
   targetDate: Date,
   cycleLength: number = 28,
   cycleMode: CycleMode = "natural",
 ): CycleInfo {
-  const diffMs = new Date(targetDate).getTime() - new Date(lastPeriodStart).getTime();
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  const diffMs = toUTCDateOnly(targetDate) - toUTCDateOnly(lastPeriodStart);
+  const diffDays = Math.round(diffMs / 86400000);
   const normalized = ((diffDays % cycleLength) + cycleLength) % cycleLength;
   const currentDay = normalized + 1;
   const phase = calculatePhaseFromCycleLength(currentDay, cycleLength, cycleMode);

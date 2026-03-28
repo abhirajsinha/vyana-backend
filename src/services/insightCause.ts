@@ -25,7 +25,7 @@ export function isStableInsightState(
 
   const slice = recentLogs.slice(0, 7);
   for (const log of slice) {
-    if (typeof log.sleep !== "number" || log.sleep < 6.0 || log.sleep > 8.5) {
+    if (typeof log.sleep !== "number" || log.sleep < 6.0 || log.sleep > 9.5) {
       return false;
     }
     const st = log.stress?.trim().toLowerCase() ?? "";

@@ -15,6 +15,7 @@ import {
   calculateCycleInfo,
   calculateCycleInfoForDate,
   getCycleMode,
+  utcDayDiff,
   type Phase,
 } from "../services/cycleEngine";
 import {
@@ -216,10 +217,8 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
   const effectiveCycleLength = cyclePrediction.avgLength || user.cycleLength;
 
   // ── NEW: Detect delayed period ─────────────────────────────────────────────
-  const rawDiffDays = Math.floor(
-    (now.getTime() - new Date(user.lastPeriodStart).getTime()) / 86400000,
-  );
-  const daysOverdue = Math.max(0, rawDiffDays - effectiveCycleLength + 1);
+  const rawDiffDays = utcDayDiff(now, user.lastPeriodStart);
+  const daysOverdue = Math.max(0, rawDiffDays - effectiveCycleLength);
   const isPeriodDelayed =
     daysOverdue > 0 &&
     cyclePrediction.confidence !== "irregular" &&
