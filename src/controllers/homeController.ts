@@ -266,7 +266,7 @@ export async function getHomeScreen(req: Request, res: Response): Promise<void> 
   const cycleInfo = calculateCycleInfo(user.lastPeriodStart, effectiveCycleLength, cycleMode);
 
   // Delayed period detection
-  const rawDiffDays = utcDayDiff(Date.now(), user.lastPeriodStart);
+  const rawDiffDays = utcDayDiff(new Date(), user.lastPeriodStart);
   const daysOverdue = Math.max(0, rawDiffDays - effectiveCycleLength);
   const isPeriodDelayed =
     daysOverdue > 0 &&

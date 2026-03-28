@@ -57,7 +57,7 @@ export async function register(req: Request, res: Response): Promise<void> {
     return;
   }
   if (!isCycleLengthDays(cycleLength)) {
-    res.status(400).json({ error: "Cycle length must be between 21 and 35 days" });
+    res.status(400).json({ error: "Cycle length must be between 21 and 45 days" });
     return;
   }
 
@@ -148,7 +148,7 @@ export async function googleAuth(req: Request, res: Response): Promise<void> {
     return;
   }
   if (!isCycleLengthDays(cycleLength)) {
-    res.status(400).json({ error: "Cycle length must be between 21 and 35 days" });
+    res.status(400).json({ error: "Cycle length must be between 21 and 45 days" });
     return;
   }
 

@@ -1,7 +1,7 @@
 import type { DailyLog, User } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import type { Phase } from "./cycleEngine";
-import { detectCycleIrregularity } from "./cycleEngine";
+import { detectCycleIrregularity, utcDayDiff } from "./cycleEngine";
 
 export async function getPreviousCycleDriverHistory(
   userId: string,
@@ -205,8 +205,7 @@ async function buildCrossCycleNarrative(
 
   // Current cycle day
   const now = new Date();
-  const diffMs = now.getTime() - new Date(user.lastPeriodStart).getTime();
-  const currentCycleDay = Math.max(1, Math.floor(diffMs / 86400000) + 1);
+  const currentCycleDay = Math.max(1, utcDayDiff(now, user.lastPeriodStart) + 1);
 
   // For each past cycle, find logs around the same cycle day (±2 days)
   const windowLogs: DailyLog[] = [];
