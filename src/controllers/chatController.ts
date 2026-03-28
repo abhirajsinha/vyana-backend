@@ -7,6 +7,7 @@ import {
   buildVyanaContextForInsights,
   type ChatHistoryItem,
 } from "../services/aiService";
+import { classifyIntent } from "../services/chatService";
 import { getUserInsightData } from "../services/insightData";
 import { buildInsightContext } from "../services/insightService";
 import { getCycleNumber } from "../services/cycleInsightLibrary";
@@ -20,6 +21,42 @@ export async function chat(req: Request, res: Response): Promise<void> {
     return;
   }
 
+  const safeHistory = Array.isArray(history) ? history : [];
+  const intent = classifyIntent(message, safeHistory);
+  console.log(`[chat] intent="${intent}" message="${message}"`);
+
+  // Lightweight path — no insight pipeline for casual messages
+  if (intent === "casual") {
+    const user = await prisma.user.findUnique({ where: { id: req.userId! } });
+    if (!user) {
+      res.status(404).json({ error: "User not found" });
+      return;
+    }
+
+    const cycleMode = getCycleMode(user);
+    const cycleInfo = calculateCycleInfo(user.lastPeriodStart, user.cycleLength, cycleMode);
+
+    const reply = await askVyanaWithGpt({
+      userName: user.name ?? "",
+      question: message,
+      cycleInfo,
+      recentLogs: [],
+      history: safeHistory,
+      totalLogCount: 0,
+      lightMode: true,
+    });
+
+    await prisma.chatMessage.createMany({
+      data: [
+        { userId: req.userId!, role: "user", content: message },
+        { userId: req.userId!, role: "assistant", content: reply },
+      ],
+    });
+    res.json({ reply });
+    return;
+  }
+
+  // Full pipeline for health and ambiguous messages
   const data = await getUserInsightData(req.userId!);
   if (!data) {
     res.status(404).json({ error: "User not found" });
@@ -30,7 +67,6 @@ export async function chat(req: Request, res: Response): Promise<void> {
   const cycleMode = getCycleMode(user);
   const cycleInfo = calculateCycleInfo(user.lastPeriodStart, user.cycleLength, cycleMode);
 
-  // Count total logs (recent + baseline) to know actual data availability
   const totalLogCount = recentLogs.length + baselineLogs.length;
 
   const context = buildInsightContext(
@@ -83,11 +119,11 @@ export async function chat(req: Request, res: Response): Promise<void> {
   });
 
   const reply = await askVyanaWithGpt({
-    userName: user.name,
+    userName: user.name ?? "",
     question: message,
     cycleInfo,
     recentLogs,
-    history: Array.isArray(history) ? history : undefined,
+    history: safeHistory,
     numericBaseline,
     crossCycleNarrative,
     vyanaCtx,
