@@ -292,7 +292,7 @@ export async function getHomeScreen(req: Request, res: Response): Promise<void> 
     cycleLength: effectiveCycleLength,
     isPeriodDelayed,
     daysOverdue,
-    isIrregular: cyclePrediction.isIrregular,
+    isIrregular: cycleMode !== "hormonal" && cyclePrediction.isIrregular,
     cyclePredictionConfidence: cyclePrediction.confidence,
     showPhaseInsights: contraceptionBehavior.useNaturalCycleEngine,
     contraceptionNote: contraceptionBehavior.contextMessage || null,

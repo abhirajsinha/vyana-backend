@@ -276,7 +276,7 @@ export async function getCalendar(req: Request, res: Response): Promise<void> {
     cycleLength: effectiveCycleLength,
     cycleMode,
     cyclePredictionConfidence: cyclePrediction.confidence,
-    isIrregular: cyclePrediction.isIrregular,
+    isIrregular: cycleMode !== "hormonal" && cyclePrediction.isIrregular,
     isPeriodDelayed: isPeriodDelayedGlobal,
     daysOverdue,
     showPhaseInsights,

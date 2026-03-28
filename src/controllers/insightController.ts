@@ -256,7 +256,9 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     daysOverdue > 0 &&
     cyclePrediction.confidence !== "irregular" &&
     cycleMode !== "hormonal";
-  const isIrregular = cyclePrediction.isIrregular;
+  // Irregular flag is only meaningful for natural cycle users — hormonal mode uses pattern-based
+  // insights regardless, so applying irregular language on top creates a confusing mix
+  const isIrregular = cycleMode !== "hormonal" && cyclePrediction.isIrregular;
   // ── END NEW ────────────────────────────────────────────────────────────────
 
   const cycleInfo = calculateCycleInfo(
@@ -371,15 +373,50 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     contraceptionBehavior.insightTone === "pattern-based" ||
     contraceptionBehavior.insightTone === "symptom-based"
   ) {
-    draftInsights = {
-      ...draftInsights,
-      whyThisIsHappening: draftInsights.whyThisIsHappening
+    const stripHormonalLanguage = (text: string): string =>
+      text
         .replace(/\bthis phase\b/gi, "your recent patterns")
         .replace(/\bin this phase\b/gi, "based on your recent logs")
-        .replace(
-          /\bduring this phase\b/gi,
-          "based on what you've been logging",
-        ),
+        .replace(/\bduring this phase\b/gi, "based on what you've been logging")
+        .replace(/\bthe ovulation window\b/gi, "your energy peak")
+        .replace(/\bovulation window\b/gi, "your energy peak")
+        .replace(/\bthe ovulatory window\b/gi, "your energy peak")
+        .replace(/\bovulatory window\b/gi, "your energy peak")
+        .replace(/\bthe ovulatory shift\b/gi, "the next shift")
+        .replace(/\bovulatory shift\b/gi, "the next shift")
+        .replace(/\bthe ovulatory phase\b/gi, "the next part of your cycle")
+        .replace(/\bovulatory phase\b/gi, "the next part of your cycle")
+        .replace(/\bovulatory buildup\b/gi, "your energy building")
+        .replace(/\bovulatory peak\b/gi, "your energy peak")
+        .replace(/\bpre-ovulatory\b/gi, "pre-peak")
+        .replace(/\bpost-ovulatory\b/gi, "post-peak")
+        .replace(/\bovulation is occurring\b/gi, "your energy is peaking")
+        .replace(/\bovulation is happening\b/gi, "your energy is peaking")
+        .replace(/\bovulation is imminent\b/gi, "your peak is close")
+        .replace(/\bovulation is approaching\b/gi, "your peak is approaching")
+        .replace(/\bovulation\b/gi, "your cycle's peak")
+        .replace(/\bLH surge\b/gi, "your cycle's shift")
+        .replace(/\bLH peaks\b/gi, "your cycle peaks")
+        .replace(/\bLH begins surging\b/gi, "your cycle is shifting")
+        .replace(/\bLuteinizing hormone\b/gi, "Your cycle")
+        .replace(/\bEstrogen [a-z]+s\b/gi, "Energy")
+        .replace(/\bEstrogen\b/gi, "Your energy levels")
+        .replace(/\bProgesterone\b/gi, "Your body")
+        .replace(/\bmost fertile window\b/gi, "your energy peak")
+        .replace(/\bfertile window\b/gi, "your energy peak")
+        .replace(/\bfollicles are developing\b/gi, "your cycle is progressing")
+        .replace(/\bcervical mucus[^.!?]*[.!?]?/gi, "")
+        .replace(/\s{2,}/g, " ")
+        .trim();
+
+    draftInsights = {
+      physicalInsight: stripHormonalLanguage(draftInsights.physicalInsight),
+      mentalInsight: stripHormonalLanguage(draftInsights.mentalInsight),
+      emotionalInsight: stripHormonalLanguage(draftInsights.emotionalInsight),
+      whyThisIsHappening: stripHormonalLanguage(draftInsights.whyThisIsHappening),
+      solution: stripHormonalLanguage(draftInsights.solution),
+      recommendation: stripHormonalLanguage(draftInsights.recommendation),
+      tomorrowPreview: stripHormonalLanguage(draftInsights.tomorrowPreview),
     };
   }
 
