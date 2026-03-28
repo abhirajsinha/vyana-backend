@@ -8,6 +8,54 @@ import { getDayInsight, getNormalizedDay } from "./cycleInsightLibrary";
 
 type Trend = "increasing" | "decreasing" | "stable" | "insufficient";
 
+export type PhaseTone = "recovery" | "build" | "growth" | "peak" | "stable_focus" | "decline";
+
+export function getPhaseTone(cycleDay: number, cycleLength: number): PhaseTone {
+  const lutealStart = Math.max(10, cycleLength - 13);
+  const ovStart = Math.max(6, lutealStart - 3);
+  const midLuteal = lutealStart + Math.floor((cycleLength - lutealStart) / 2);
+
+  if (cycleDay <= 5) return "recovery";
+  if (cycleDay <= Math.floor((ovStart - 5) / 2) + 5) return "build";
+  if (cycleDay < ovStart) return "growth";
+  if (cycleDay <= ovStart + 2) return "peak";
+  if (cycleDay <= midLuteal) return "stable_focus";
+  return "decline";
+}
+
+export const PHASE_TONE_PROMPTS: Record<PhaseTone, { description: string; allow: string; avoid: string }> = {
+  recovery: {
+    description: "Energy is low. Validate rest. Reduce expectations.",
+    allow: "resting, recovering, easing, your body is doing real work, take it slow",
+    avoid: "peak, strongest, best, push harder, high performance",
+  },
+  build: {
+    description: "Energy is returning but NOT at peak. Gradual improvement.",
+    allow: "improving, building, getting easier, coming back, growing, starting to feel",
+    avoid: "peak, strongest, best, at its highest, monthly high, at its best",
+  },
+  growth: {
+    description: "Energy is actively rising. Momentum is building. Confidence growing.",
+    allow: "getting sharper, momentum building, confidence growing, stronger each day",
+    avoid: "peak (unless 'approaching peak'), at its highest, at its best",
+  },
+  peak: {
+    description: "This is the high point. Peak energy, confidence, clarity.",
+    allow: "peak, strongest, best, sharpest, most capable, highest",
+    avoid: "rest, take it slow, low energy, winding down",
+  },
+  stable_focus: {
+    description: "Post-peak stability. Good for deep work, less social energy.",
+    allow: "steady, focused, structured, consistent, independent work",
+    avoid: "peak, strongest, rising, most energetic",
+  },
+  decline: {
+    description: "Energy dropping. Sensitivity rising. Protect bandwidth.",
+    allow: "winding down, heavier, more sensitive, lighter load, protect energy",
+    avoid: "peak, strongest, best performance, push through",
+  },
+};
+
 interface SignalState {
   sleepState: "poor" | "moderate" | "optimal" | "unknown";
   stressState: "calm" | "moderate" | "elevated" | "unknown";
@@ -56,6 +104,7 @@ export interface InsightContext {
   mood_state: SignalState["moodState"];
   priorityDrivers: string[];
   reasoning: string[];
+  phaseTone: PhaseTone;
 }
 
 export interface DailyInsights {
@@ -501,6 +550,7 @@ export function buildInsightContext(
     mood_variability: trends.moodVariability,
     priorityDrivers,
     reasoning,
+    phaseTone: getPhaseTone(cycleDay, cycleLength),
   };
 }
 // ===================== UPDATED SERVICE =====================
@@ -652,8 +702,12 @@ function buildBroaderGuidance(ctx: InsightContext): string {
   if (ctx.recentLogsCount < 3) {
     return `Log mood, sleep, and stress for the next 3 days — the insights will get sharper fast.`;
   }
+  const tone = getPhaseTone(ctx.cycleDay, ctx.phase === "menstrual" ? 28 : 28);
   if (ctx.phase === "menstrual") {
     return `Iron-rich food, early sleep, and fewer obligations this week — your body is doing its hardest work right now.`;
+  }
+  if (ctx.phase === "follicular" && (tone === "build" || tone === "recovery")) {
+    return `Your energy is starting to come back — ease into things this week and let momentum build naturally.`;
   }
   if (ctx.phase === "follicular") {
     return `This week is a good time to take on harder things — your energy is on the way up and your resilience is higher than usual.`;

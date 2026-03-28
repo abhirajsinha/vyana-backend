@@ -269,6 +269,8 @@ Invalid/expired token returns `401 { "error": "Invalid or expired token" }`.
 
 **Auth:** Required
 
+`GET` on this path is not supported (opening the URL in a browser returns `405` with a hint to use `POST`). Use a client or `curl` as below.
+
 **Request Body**
 
 | Field | Type | Required | Notes |
@@ -437,32 +439,80 @@ When health alerts exist:
 
 **Auth:** Required
 
-Returns cached response if available for the current UTC day.
+Returns the daily insight payload for the current user. Cached per UTC day.
 
 **Response** `200`
 
 ```json
 {
   "cycleDay": 14,
-  "home": {
-    "phase": "ovulation",
-    "currentDay": 14,
-    "isNewUser": false,
-    "primaryDriver": "stress_above_baseline",
-    "logsToNextMilestone": 3,
-    "confidence": "high",
-    "isPeriodDelayed": false,
-    "daysOverdue": 0,
-    "isIrregular": false
-  },
   "isNewUser": false,
   "progress": {
     "logsCount": 15,
     "nextMilestone": 21,
     "logsToNextMilestone": 6
   },
-  "mode": "personalized",
   "confidence": "high",
+  "isPeriodDelayed": false,
+  "daysOverdue": 0,
+  "isIrregular": false,
+  "insights": {
+    "physicalInsight": "Your body feels energised today...",
+    "mentalInsight": "Focus may feel sharper than usual...",
+    "emotionalInsight": "Mood has been affected by rising stress...",
+    "whyThisIsHappening": "Stress has been building over the last few days...",
+    "solution": "Take short breaks to manage stress load...",
+    "recommendation": "Use this energy window — but pace yourself...",
+    "tomorrowPreview": "If stress eases, tomorrow should feel lighter..."
+  },
+  "view": {
+    "primaryInsight": "Stress is elevated — but your energy is still strong.",
+    "supportingInsights": [
+      "Mood has been dipping with stress",
+      "Sleep is holding steady"
+    ],
+    "action": "Take breaks between demanding tasks",
+    "recommendation": "Use this energy window — but pace yourself.",
+    "tomorrowPreview": "If stress eases, tomorrow should feel lighter.",
+    "confidenceLabel": "Based on 15 days of data"
+  },
+  "aiEnhanced": true
+}
+```
+
+**Errors**
+
+| Status | Message |
+|--------|---------|
+| `404` | `User not found` |
+
+---
+
+### `GET /api/insights/context`
+
+**Auth:** Required
+
+Returns detailed context data for today's insights (cycle, hormones, signals, memory, debug info). Requires `GET /api/insights` to have been called first for the current UTC day.
+
+**Response** `200`
+
+```json
+{
+  "cycleDay": 14,
+  "mode": "personalized",
+  "aiDebug": "accepted",
+  "correlationPattern": "ovulation_energy_blocked",
+  "basedOn": {
+    "phase": "ovulation",
+    "recentLogsCount": 7,
+    "confidenceScore": 0.92,
+    "baselineDeviation": ["stress_above_personal_baseline"],
+    "baselineScope": "global",
+    "priorityDrivers": ["stress_above_baseline", "stress_trend_spiking"],
+    "interactionFlags": ["mood_stress_coupling"],
+    "trends": ["Stress increasing", "Mood decreasing"],
+    "reasoning": ["Phase is ovulation", "Stress rising over 3 days"]
+  },
   "cycleContext": {
     "cycleMode": "natural",
     "cyclePredictionConfidence": "global",
@@ -483,7 +533,7 @@ Returns cached response if available for the current UTC day.
   "contraceptionContext": {
     "type": "none",
     "contextMessage": null,
-    "insightTone": "natural",
+    "insightTone": "cycle-based",
     "showPhaseInsights": true
   },
   "numericSummary": {
@@ -496,7 +546,7 @@ Returns cached response if available for the current UTC day.
   "crossCycleNarrative": {
     "matchingCycles": 2,
     "totalCyclesAnalyzed": 3,
-    "narrativeStatement": "Your past cycles show a similar pattern around this day.",
+    "narrativeStatement": "Your past cycles show a similar pattern.",
     "trend": "consistent"
   },
   "memoryContext": {
@@ -505,48 +555,7 @@ Returns cached response if available for the current UTC day.
     "narrative": "This is the third time stress has been elevated this cycle.",
     "severity": "moderate"
   },
-  "aiEnhanced": true,
-  "aiDebug": "accepted",
-  "correlationPattern": "ovulation_energy_blocked",
-  "basedOn": {
-    "phase": "ovulation",
-    "recentLogsCount": 7,
-    "confidenceScore": 0.92,
-    "baselineDeviation": ["stress_above_personal_baseline"],
-    "baselineScope": "global",
-    "priorityDrivers": ["stress_above_baseline", "stress_trend_spiking"],
-    "interactionFlags": ["mood_stress_coupling"],
-    "trends": ["Stress increasing", "Mood decreasing"],
-    "reasoning": [
-      "Phase is ovulation",
-      "Stress has been rising over the last 3 days.",
-      "Mood has been declining alongside stress."
-    ]
-  },
-  "insights": {
-    "physicalInsight": "Your body feels energised today...",
-    "mentalInsight": "Focus may feel sharper than usual...",
-    "emotionalInsight": "Mood has been affected by rising stress...",
-    "whyThisIsHappening": "Stress has been building over the last few days...",
-    "solution": "Take short breaks to manage stress load...",
-    "recommendation": "Use this energy window — but pace yourself...",
-    "tomorrowPreview": "If stress eases, tomorrow should feel lighter..."
-  },
-  "view": {
-    "primaryInsight": "Stress is elevated — but your energy is still strong.",
-    "supportingInsights": [
-      "Mood has been dipping with stress",
-      "Sleep is holding steady"
-    ],
-    "action": "Take breaks between demanding tasks",
-    "explanation": "Rising stress is the main signal today.",
-    "recommendation": "Use this energy window — but pace yourself.",
-    "tomorrowPreview": "If stress eases, tomorrow should feel lighter.",
-    "confidenceLabel": "Based on 15 days of data"
-  },
-  "pmsWarning": null,
-  "lastAnticipationCycleDay": null,
-  "lastAnticipationTypeKey": null
+  "pmsWarning": null
 }
 ```
 
@@ -554,7 +563,7 @@ Returns cached response if available for the current UTC day.
 
 | Status | Message |
 |--------|---------|
-| `404` | `User not found` |
+| `404` | `No insights generated yet today. Call GET /api/insights first.` |
 
 ---
 

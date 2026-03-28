@@ -6,7 +6,7 @@
 //   - Everything else identical to v4
 
 import OpenAI from "openai";
-import { DailyInsights, InsightContext } from "./insightService";
+import { DailyInsights, InsightContext, PHASE_TONE_PROMPTS } from "./insightService";
 import { CycleInfo, type Phase, type CycleMode } from "./cycleEngine";
 import type { NumericBaseline, CrossCycleNarrative } from "./insightData";
 import { CERTAINTY_RULES_FOR_GPT } from "../utils/confidencelanguage";
@@ -1096,9 +1096,14 @@ export async function generateInsightsWithGpt(
       ? `\nSIGNAL-POSITIVE OVERRIDE: Her logged signals are clearly positive (mood good, stress low, sleep adequate). Do NOT inject negative phase language even if she is in menstrual phase. Acknowledge her actual state. Tone should be warm, calm, and affirmative — not cautionary or sympathetic.`
       : "";
 
+  const toneRule = PHASE_TONE_PROMPTS[ctx.phaseTone];
+  const phaseToneInstruction = `\nPHASE TONE (${ctx.phaseTone.toUpperCase()}): ${toneRule.description}
+USE language like: ${toneRule.allow}
+DO NOT use: ${toneRule.avoid}`;
+
   const userPrompt = `
 TONE: ${toneInstruction}
-${phaseVoiceInstruction}${signalPositiveOverride}
+${phaseVoiceInstruction}${phaseToneInstruction}${signalPositiveOverride}
 ${historicalClaimsBlockInstruction}
 ${primaryDriverInstruction}
 ${priorityBlock}

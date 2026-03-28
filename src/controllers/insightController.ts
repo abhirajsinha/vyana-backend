@@ -1,11 +1,5 @@
 // src/controllers/insightController.ts
-// CHANGE SUMMARY vs your current pushed version:
-// ADDED: isPeriodDelayed, daysOverdue, isIrregular detection block (lines marked NEW)
-// ADDED: isPeriodDelayed + daysOverdue + isIrregular to responsePayload.home
-// ADDED: isIrregular + isPeriodDelayed + daysOverdue to responsePayload.cycleContext
-// ADDED: irregular cycle language softening on draftInsights
-// ADDED: delayed period insight override block
-// EVERYTHING ELSE: identical to your current pushed version — pmsWarning, all engines, all imports
+// Insight controller — GET /api/insights, GET /api/insights/context, GET /api/insights/forecast
 
 import "../types/express";
 import { Request, Response } from "express";
@@ -181,7 +175,19 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     where: { userId_date: { userId: req.userId!, date: dayStart } },
   });
   if (cached?.payload && isInsightsPayloadCached(cached.payload)) {
-    res.json(cached.payload);
+    const full = cached.payload as Record<string, unknown>;
+    res.json({
+      cycleDay: full.cycleDay,
+      isNewUser: full.isNewUser,
+      progress: full.progress,
+      confidence: full.confidence,
+      isPeriodDelayed: full.isPeriodDelayed,
+      daysOverdue: full.daysOverdue,
+      isIrregular: full.isIrregular,
+      insights: full.insights,
+      view: full.view,
+      aiEnhanced: full.aiEnhanced,
+    });
     return;
   }
 
@@ -782,131 +788,139 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     }
   }
 
-  const responsePayload = {
+  // Full payload — written to cache for internal use (anticipation state, context endpoint)
+  const cachePayload = {
     cycleDay: cycleInfo.currentDay,
-    home: {
-      phase: cycleInfo.phase,
-      currentDay: cycleInfo.currentDay,
-      isNewUser,
-      primaryDriver: context.priorityDrivers[0] || null,
-      logsToNextMilestone: Math.max(0, nextMilestone - logsCount),
-      confidence: context.confidence,
-      // ── NEW additions to home object ──────────────────────────────────────
-      isPeriodDelayed,
-      daysOverdue,
-      isIrregular,
-    },
     isNewUser,
     progress: {
       logsCount,
       nextMilestone,
       logsToNextMilestone: Math.max(0, nextMilestone - logsCount),
     },
-    mode: context.mode,
     confidence: context.confidence,
-    cycleContext: {
-      cycleMode,
-      cyclePredictionConfidence: cyclePrediction.confidence,
-      nextPeriodEstimate: contraceptionBehavior.showPeriodForecast
-        ? cycleInfo.nextPeriodDate.toISOString().split("T")[0]
-        : null,
-      nextPeriodRange:
-        contraceptionBehavior.showPeriodForecast &&
-        (cyclePrediction.confidence === "variable" ||
-          cyclePrediction.confidence === "irregular")
-          ? {
-              earliest: new Date(
-                cycleInfo.nextPeriodDate.getTime() -
-                  cyclePrediction.stdDev * 86400000,
-              )
-                .toISOString()
-                .split("T")[0],
-              latest: new Date(
-                cycleInfo.nextPeriodDate.getTime() +
-                  cyclePrediction.stdDev * 86400000,
-              )
-                .toISOString()
-                .split("T")[0],
-            }
-          : undefined,
-      // ── NEW additions to cycleContext ─────────────────────────────────────
-      isIrregular,
-      isPeriodDelayed,
-      daysOverdue,
-    },
-    hormoneContext: contraceptionBehavior.showHormoneCurves
-      ? {
-          estrogen: hormoneState.estrogen,
-          progesterone: hormoneState.progesterone,
-          lh: hormoneState.lh,
-          fsh: hormoneState.fsh,
-          confidence: hormoneState.confidence,
-          narrativeContext: hormoneLanguage,
-        }
-      : null,
-    contraceptionContext: {
-      type: contraceptionType,
-      contextMessage: contraceptionBehavior.contextMessage || null,
-      insightTone: contraceptionBehavior.insightTone,
-      showPhaseInsights: contraceptionBehavior.useNaturalCycleEngine,
-    },
-    numericSummary: {
-      recentSleepAvg: numericBaseline.recentSleepAvg,
-      baselineSleepAvg: numericBaseline.baselineSleepAvg,
-      sleepDelta: numericBaseline.sleepDelta,
-      recentStressLabel:
-        numericBaseline.recentStressAvg !== null
-          ? numericBaseline.recentStressAvg >= 2.4
-            ? "elevated"
-            : numericBaseline.recentStressAvg >= 1.6
-              ? "moderate"
-              : "calm"
-          : null,
-      recentMoodLabel:
-        numericBaseline.recentMoodAvg !== null
-          ? numericBaseline.recentMoodAvg >= 2.4
-            ? "positive"
-            : numericBaseline.recentMoodAvg <= 1.6
-              ? "low"
-              : "neutral"
-          : null,
-    },
-    crossCycleNarrative: crossCycleNarrative
-      ? {
-          matchingCycles: crossCycleNarrative.matchingCycles,
-          totalCyclesAnalyzed: crossCycleNarrative.totalCyclesAnalyzed,
-          narrativeStatement: crossCycleNarrative.narrativeStatement,
-          trend: crossCycleNarrative.trend,
-        }
-      : null,
-    memoryContext,
-    aiEnhanced,
-    aiDebug,
-    correlationPattern: effectiveStable
-      ? "stable_state"
-      : primaryInsightCause === "sleep_disruption"
-        ? "sleep_disruption_primary"
-        : correlation.patternKey,
-    basedOn: {
-      phase: cycleInfo.phase,
-      recentLogsCount: logsCount,
-      confidenceScore: context.confidenceScore,
-      baselineDeviation: context.baselineDeviation,
-      baselineScope: context.baselineScope,
-      priorityDrivers: context.priorityDrivers,
-      interactionFlags: context.interaction_flags,
-      trends: context.trends,
-      reasoning: context.reasoning,
-    },
+    isPeriodDelayed,
+    daysOverdue,
+    isIrregular,
     insights,
     view,
-    pmsWarning,
-    lastAnticipationCycleDay: vyanaCtx.anticipation.anticipationType
-      ? cycleInfo.currentDay
-      : (anticipationFrequencyState.lastShownCycleDay ?? null),
-    lastAnticipationTypeKey: vyanaCtx.anticipation.anticipationType
-      ? vyanaCtx.anticipation.anticipationType
-      : (anticipationFrequencyState.lastShownType ?? null),
+    aiEnhanced,
+    // ── Internal fields (not returned to client, stored for context endpoint / cache reads) ──
+    _internal: {
+      mode: context.mode,
+      aiDebug,
+      correlationPattern: effectiveStable
+        ? "stable_state"
+        : primaryInsightCause === "sleep_disruption"
+          ? "sleep_disruption_primary"
+          : correlation.patternKey,
+      basedOn: {
+        phase: cycleInfo.phase,
+        recentLogsCount: logsCount,
+        confidenceScore: context.confidenceScore,
+        baselineDeviation: context.baselineDeviation,
+        baselineScope: context.baselineScope,
+        priorityDrivers: context.priorityDrivers,
+        interactionFlags: context.interaction_flags,
+        trends: context.trends,
+        reasoning: context.reasoning,
+      },
+      cycleContext: {
+        cycleMode,
+        cyclePredictionConfidence: cyclePrediction.confidence,
+        nextPeriodEstimate: contraceptionBehavior.showPeriodForecast
+          ? cycleInfo.nextPeriodDate.toISOString().split("T")[0]
+          : null,
+        nextPeriodRange:
+          contraceptionBehavior.showPeriodForecast &&
+          (cyclePrediction.confidence === "variable" ||
+            cyclePrediction.confidence === "irregular")
+            ? {
+                earliest: new Date(
+                  cycleInfo.nextPeriodDate.getTime() -
+                    cyclePrediction.stdDev * 86400000,
+                )
+                  .toISOString()
+                  .split("T")[0],
+                latest: new Date(
+                  cycleInfo.nextPeriodDate.getTime() +
+                    cyclePrediction.stdDev * 86400000,
+                )
+                  .toISOString()
+                  .split("T")[0],
+              }
+            : undefined,
+        isIrregular,
+        isPeriodDelayed,
+        daysOverdue,
+      },
+      hormoneContext: contraceptionBehavior.showHormoneCurves
+        ? {
+            estrogen: hormoneState.estrogen,
+            progesterone: hormoneState.progesterone,
+            lh: hormoneState.lh,
+            fsh: hormoneState.fsh,
+            confidence: hormoneState.confidence,
+            narrativeContext: hormoneLanguage,
+          }
+        : null,
+      contraceptionContext: {
+        type: contraceptionType,
+        contextMessage: contraceptionBehavior.contextMessage || null,
+        insightTone: contraceptionBehavior.insightTone,
+        showPhaseInsights: contraceptionBehavior.useNaturalCycleEngine,
+      },
+      numericSummary: {
+        recentSleepAvg: numericBaseline.recentSleepAvg,
+        baselineSleepAvg: numericBaseline.baselineSleepAvg,
+        sleepDelta: numericBaseline.sleepDelta,
+        recentStressLabel:
+          numericBaseline.recentStressAvg !== null
+            ? numericBaseline.recentStressAvg >= 2.4
+              ? "elevated"
+              : numericBaseline.recentStressAvg >= 1.6
+                ? "moderate"
+                : "calm"
+            : null,
+        recentMoodLabel:
+          numericBaseline.recentMoodAvg !== null
+            ? numericBaseline.recentMoodAvg >= 2.4
+              ? "positive"
+              : numericBaseline.recentMoodAvg <= 1.6
+                ? "low"
+                : "neutral"
+            : null,
+      },
+      crossCycleNarrative: crossCycleNarrative
+        ? {
+            matchingCycles: crossCycleNarrative.matchingCycles,
+            totalCyclesAnalyzed: crossCycleNarrative.totalCyclesAnalyzed,
+            narrativeStatement: crossCycleNarrative.narrativeStatement,
+            trend: crossCycleNarrative.trend,
+          }
+        : null,
+      memoryContext,
+      pmsWarning,
+      lastAnticipationCycleDay: vyanaCtx.anticipation.anticipationType
+        ? cycleInfo.currentDay
+        : (anticipationFrequencyState.lastShownCycleDay ?? null),
+      lastAnticipationTypeKey: vyanaCtx.anticipation.anticipationType
+        ? vyanaCtx.anticipation.anticipationType
+        : (anticipationFrequencyState.lastShownType ?? null),
+    },
+  };
+
+  // Client response — only what the insights UI needs
+  const responsePayload = {
+    cycleDay: cachePayload.cycleDay,
+    isNewUser: cachePayload.isNewUser,
+    progress: cachePayload.progress,
+    confidence: cachePayload.confidence,
+    isPeriodDelayed: cachePayload.isPeriodDelayed,
+    daysOverdue: cachePayload.daysOverdue,
+    isIrregular: cachePayload.isIrregular,
+    insights: cachePayload.insights,
+    view: cachePayload.view,
+    aiEnhanced: cachePayload.aiEnhanced,
   };
 
   if (driverForMemory && context.mode === "personalized") {
@@ -931,7 +945,7 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
   }
 
   const payloadJson = JSON.parse(
-    JSON.stringify(responsePayload),
+    JSON.stringify(cachePayload),
   ) as Prisma.InputJsonValue;
   await prisma.insightCache.upsert({
     where: { userId_date: { userId: req.userId!, date: dayStart } },
@@ -940,6 +954,47 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
   });
 
   res.json(responsePayload);
+}
+
+// ─── GET /api/insights/context — detailed signals, hormone, cycle, memory data ─
+
+export async function getInsightsContext(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const now = new Date();
+  const dayStart = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+  );
+
+  const cached = await prisma.insightCache.findUnique({
+    where: { userId_date: { userId: req.userId!, date: dayStart } },
+  });
+
+  if (!cached?.payload || !isInsightsPayloadCached(cached.payload)) {
+    res.status(404).json({
+      error: "No insights generated yet today. Call GET /api/insights first.",
+    });
+    return;
+  }
+
+  const full = cached.payload as Record<string, unknown>;
+  const internal = (full._internal ?? {}) as Record<string, unknown>;
+
+  res.json({
+    cycleDay: full.cycleDay,
+    mode: internal.mode ?? null,
+    aiDebug: internal.aiDebug ?? null,
+    correlationPattern: internal.correlationPattern ?? null,
+    basedOn: internal.basedOn ?? null,
+    cycleContext: internal.cycleContext ?? null,
+    hormoneContext: internal.hormoneContext ?? null,
+    contraceptionContext: internal.contraceptionContext ?? null,
+    numericSummary: internal.numericSummary ?? null,
+    crossCycleNarrative: internal.crossCycleNarrative ?? null,
+    memoryContext: internal.memoryContext ?? null,
+    pmsWarning: internal.pmsWarning ?? null,
+  });
 }
 
 // ─── GET /api/insights/forecast — IDENTICAL TO YOUR CURRENT PUSHED VERSION ───
