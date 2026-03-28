@@ -1,3 +1,5 @@
+import type { DailyInsights } from "../services/insightService";
+
 // ─── Confidence tone system ───────────────────────────────────────────────────
 // Every forecast and insight that makes a forward-looking claim must go through
 // this layer. Nothing reaches the user that sounds 100% certain.
@@ -74,6 +76,31 @@ export const FORBIDDEN_DETERMINISTIC_PHRASES = [
 export function containsForbiddenLanguage(text: string): boolean {
   const lower = text.toLowerCase();
   return FORBIDDEN_DETERMINISTIC_PHRASES.some((phrase) => lower.includes(phrase));
+}
+
+/** Run certainty softening on every insight field (GPT often omits solution/recommendation in draft soften pass). */
+export function softenDailyInsights(
+  insights: DailyInsights,
+  confidenceScore: number,
+): DailyInsights {
+  return {
+    physicalInsight: softendeterministic(insights.physicalInsight, confidenceScore),
+    mentalInsight: softendeterministic(insights.mentalInsight, confidenceScore),
+    emotionalInsight: softendeterministic(
+      insights.emotionalInsight,
+      confidenceScore,
+    ),
+    whyThisIsHappening: softendeterministic(
+      insights.whyThisIsHappening,
+      confidenceScore,
+    ),
+    solution: softendeterministic(insights.solution, confidenceScore),
+    recommendation: softendeterministic(insights.recommendation, confidenceScore),
+    tomorrowPreview: softendeterministic(
+      insights.tomorrowPreview,
+      confidenceScore,
+    ),
+  };
 }
 
 // Strip deterministic language from a string — replaces with tone-appropriate hedges

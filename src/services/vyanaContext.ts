@@ -10,6 +10,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { NumericBaseline, CrossCycleNarrative } from "./insightData";
+import type { PrimaryInsightCause } from "./insightCause";
 import type { InsightContext } from "./insightService";
 import type { Phase, CycleMode } from "./cycleEngine";
 import type { HormoneState } from "./hormoneengine";
@@ -149,6 +150,8 @@ export interface VyanaContext {
   confidence: "low" | "medium" | "high";
   /** Whether current state is high-severity — gates delight type (Fix 5) */
   isHighSeverity: boolean;
+  /** Life-factor vs cycle attribution — steers GPT and suppresses wrong cycle narratives */
+  primaryInsightCause: PrimaryInsightCause;
 }
 
 // ─── Fix 5: Anticipation persistence contract ─────────────────────────────────
@@ -233,8 +236,21 @@ function buildSurpriseInsight(params: {
   memoryDriver: string | null;
   memoryCount: number;
   userId: string;
+  primaryInsightCause: PrimaryInsightCause;
 }): VyanaSurpriseInsight {
-  const { ctx, sleep, stress, mood, phase, cycleDay, cycleLength, memoryDriver, memoryCount, userId } = params;
+  const {
+    ctx,
+    sleep,
+    stress,
+    mood,
+    phase,
+    cycleDay,
+    cycleLength,
+    memoryDriver,
+    memoryCount,
+    userId,
+    primaryInsightCause,
+  } = params;
 
   // Fix 4 applied here too — user-specific seed
   const surpriseSeed = (cycleDay * 13 + cycleLength * 7 + userHash(userId)) % 40;
@@ -277,6 +293,9 @@ function buildSurpriseInsight(params: {
     };
   }
   if (phase === "follicular" && cycleDay <= 8 && sleep.deviationMeaningful && sleepDecreasing) {
+    if (primaryInsightCause === "sleep_disruption") {
+      return { insight: null, shouldSurface: false };
+    }
     return {
       insight: `energy can lag even when sleep is improving — iron takes a few days to recover after a period`,
       shouldSurface: true,
@@ -831,6 +850,7 @@ export function buildVyanaContext(params: {
   userId: string;                          // Fix 4: required for user-specific hashing
   anticipationFrequencyState?: AnticipationFrequencyState;
   emotionalMemoryInput?: EmotionalMemoryInput | null; // NEW
+  primaryInsightCause?: PrimaryInsightCause;
 }): VyanaContext {
   const {
     ctx, baseline, crossCycleNarrative, hormoneState, hormoneLanguage,
@@ -840,6 +860,7 @@ export function buildVyanaContext(params: {
     memoryDriver, memoryCount, userName, userId,
     anticipationFrequencyState = { lastShownCycleDay: null, lastShownType: null },
     emotionalMemoryInput = null,
+    primaryInsightCause = "cycle",
   } = params;
 
   const daysLeft = cycleLength - cycleDay;
@@ -905,7 +926,19 @@ export function buildVyanaContext(params: {
   const anticipation = buildAnticipation({ phase, cycleDay, cycleLength, daysUntilNextPhase, memoryDriver, memoryCount, ctx, crossCycleNarrative, isIrregular, frequencyState: anticipationFrequencyState, userId });
 
   // Fix 3 + Fix 4: surprise insight
-  const surpriseInsight = buildSurpriseInsight({ ctx, sleep, stress, mood, phase, cycleDay, cycleLength, memoryDriver, memoryCount, userId });
+  const surpriseInsight = buildSurpriseInsight({
+    ctx,
+    sleep,
+    stress,
+    mood,
+    phase,
+    cycleDay,
+    cycleLength,
+    memoryDriver,
+    memoryCount,
+    userId,
+    primaryInsightCause,
+  });
 
   // Fix 2: mutual exclusivity — surprise takes priority, delight suppressed
   const delightParams = {
@@ -991,6 +1024,7 @@ export function buildVyanaContext(params: {
     emotionalMemory, confidenceMapping,
     mode: ctx.mode, confidence: ctx.confidence,
     isHighSeverity: highSeverity,
+    primaryInsightCause,
   };
 }
 
@@ -1001,6 +1035,15 @@ export function serializeVyanaContext(vc: VyanaContext): string {
 
   if (vc.userName) lines.push(`User: ${vc.userName}`);
   lines.push(`Cycle: ${vc.cycle.cycleSummary} — ${vc.cycle.phasePositionHuman}`);
+  if (vc.primaryInsightCause === "sleep_disruption") {
+    lines.push(
+      `PRIMARY CAUSE (mandatory): sleep / recovery — NOT hormones, NOT iron recovery, NOT "past cycles show". Explain how she feels as sleep-driven. Phase is context only.`,
+    );
+  } else if (vc.primaryInsightCause === "stress_led") {
+    lines.push(
+      `PRIMARY CAUSE: elevated stress — prioritize stress as driver; hormones only as light context in why if at all.`,
+    );
+  }
   if (vc.cycle.delayedPeriodHuman) lines.push(`⚠ Period: ${vc.cycle.delayedPeriodHuman}`);
   if (vc.cycle.nextPeriodHuman) lines.push(`Period: ${vc.cycle.nextPeriodHuman}`);
   if (vc.cycle.irregularCaveat) lines.push(`Note: ${vc.cycle.irregularCaveat}`);
@@ -1011,7 +1054,13 @@ export function serializeVyanaContext(vc: VyanaContext): string {
   if (vc.memory.persistenceNarrative) lines.push(`Persistence: ${vc.memory.persistenceNarrative}`);
   if (vc.crossCycle.narrative) { lines.push(`Past cycles: ${vc.crossCycle.narrative}`); if (vc.crossCycle.trendHuman) lines.push(`Trend: ${vc.crossCycle.trendHuman}`); }
   if (vc.identity.useThisOutput && vc.identity.userPatternNarrative) lines.push(`Your pattern: ${vc.identity.userPatternNarrative}`);
-  if (vc.hormones.surface && vc.hormones.narrative) lines.push(`Hormone context (for "why this is happening" only): ${vc.hormones.narrative}`);
+  if (
+    vc.hormones.surface &&
+    vc.hormones.narrative &&
+    vc.primaryInsightCause === "cycle"
+  ) {
+    lines.push(`Hormone context (for "why this is happening" only): ${vc.hormones.narrative}`);
+  }
   if (vc.anticipation.shouldSurface && vc.anticipation.narrative) lines.push(`Anticipation: ${vc.anticipation.narrative}`);
   // NEW: emotional memory in context
   if (vc.emotionalMemory.hasMemory && vc.emotionalMemory.recallNarrative) lines.push(`Emotional memory: ${vc.emotionalMemory.recallNarrative}`);

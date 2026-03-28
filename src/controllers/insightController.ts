@@ -18,11 +18,7 @@ import {
 } from "../services/cycleEngine";
 import {
   buildInsightContext,
-  buildCoreInsight,
-  buildPatternReassurance,
-  generateHook,
   generateRuleBasedInsights,
-  type DailyInsightV2,
 } from "../services/insightService";
 import {
   buildVyanaContextForInsights,
@@ -70,7 +66,12 @@ import {
   CERTAINTY_RULES_FOR_GPT,
   getForecastConfidenceLabel,
   containsForbiddenLanguage,
+  softenDailyInsights,
 } from "../utils/confidencelanguage";
+import {
+  detectPrimaryInsightCause,
+  applySleepDisruptionNarrative,
+} from "../services/insightCause";
 
 function isInsightsPayloadCached(payload: unknown): boolean {
   return (
@@ -296,6 +297,12 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     cyclePrediction.confidence,
   );
 
+  const primaryInsightCause = detectPrimaryInsightCause({
+    baselineDeviation: context.baselineDeviation,
+    trends: context.trends,
+    sleepDelta: numericBaseline.sleepDelta,
+  });
+
   const ruleBasedInsights = generateRuleBasedInsights(context);
   const tomorrowPreview = buildTomorrowPreview(
     context,
@@ -304,7 +311,11 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
   );
   let draftInsights = { ...ruleBasedInsights, tomorrowPreview };
 
-  if (hormoneLanguage && context.mode === "personalized") {
+  if (
+    hormoneLanguage &&
+    context.mode === "personalized" &&
+    primaryInsightCause !== "sleep_disruption"
+  ) {
     const hasSpecificReason =
       draftInsights.whyThisIsHappening.includes("sleep") ||
       draftInsights.whyThisIsHappening.includes("stress") ||
@@ -414,6 +425,7 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
   }
 
   if (
+    primaryInsightCause !== "sleep_disruption" &&
     crossCycleNarrative?.narrativeStatement &&
     context.mode === "personalized"
   ) {
@@ -430,6 +442,10 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
           `${draftInsights.whyThisIsHappening} ${crossCycleNarrative.narrativeStatement}${narrativeSuffix}`.trim(),
       };
     }
+  }
+
+  if (primaryInsightCause === "sleep_disruption" && context.mode === "personalized") {
+    draftInsights = applySleepDisruptionNarrative(draftInsights, numericBaseline);
   }
 
   draftInsights = {
@@ -502,6 +518,7 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     userId: req.userId!,
     anticipationFrequencyState,
     emotionalMemoryInput,
+    primaryInsightCause,
   });
 
   let insights = draftInsights;
@@ -518,6 +535,8 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     | "api_error"
     | "forbidden_language"
     | "accepted"
+    | "accepted_strength_bypassed"
+    | "accepted_vague_fixed"
     | "unchanged_output" = "gated";
 
   const logSpanDays = computeLogSpanDays(recentLogs);
@@ -534,13 +553,27 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
   const hasHighPrioritySignal =
     context.priorityDrivers.includes("bleeding_heavy") ||
     context.priorityDrivers.includes("high_strain") ||
-    context.priorityDrivers.includes("sleep_stress_amplification");
+    context.priorityDrivers.includes("sleep_stress_amplification") ||
+    context.baselineDeviation.includes("sleep_below_personal_baseline") ||
+    (numericBaseline.sleepDelta !== null && numericBaseline.sleepDelta <= -1.5);
 
   // Cycle context — fire AI when we have phase data even without logs
   const hasCycleContext = cycleInfo.currentDay > 0 && cycleInfo.phase !== undefined;
 
+  // Peak positive days (e.g. ovulation): high mood + calm stress — still deserve GPT even with empty priorityDrivers
+  const hasPositivePeakSignal =
+    logsCount >= 3 &&
+    numericBaseline.recentMoodAvg !== null &&
+    numericBaseline.recentMoodAvg >= 2.4 &&
+    numericBaseline.recentStressAvg !== null &&
+    numericBaseline.recentStressAvg < 1.6 &&
+    (cycleInfo.phase === "ovulation" || cycleInfo.phase === "follicular");
+
   const canUseAI =
-    (hasSignalRichness || hasHighPrioritySignal || hasCycleContext) &&
+    (hasSignalRichness ||
+      hasHighPrioritySignal ||
+      hasCycleContext ||
+      hasPositivePeakSignal) &&
     context.confidence !== "low";
 
   if (canUseAI) {
@@ -553,8 +586,15 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
         user.name,
         contraceptionBehavior.insightTone,
         vyanaCtx,
+        {
+          insightMemoryCount: existingMemoryCount,
+          hasCrossCycleNarrative: crossCycleNarrative !== null,
+        },
       );
-      const candidate = sanitizeInsights(aiResult.insights, draftInsights);
+      const candidate = softenDailyInsights(
+        sanitizeInsights(aiResult.insights, draftInsights),
+        context.confidenceScore,
+      );
       const hasForbidden = Object.values(candidate).some(
         (v) => typeof v === "string" && containsForbiddenLanguage(v),
       );
@@ -582,6 +622,28 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
 
   // Memory override — ONLY applied when AI did not run or produced no improvement
   if (!aiEnhanced) {
+    if (
+      context.interaction_flags.includes("sleep_stress_amplification") &&
+      primaryInsightCause !== "sleep_disruption"
+    ) {
+      insights = {
+        ...insights,
+        physicalInsight:
+          "Sleep dropping and stress rising are feeding into each other.\nThat feedback loop is why everything feels heavier right now.",
+      };
+    }
+
+    if (cycleInfo.currentDay >= 25) {
+      const daysToPeriod = Math.max(0, cycleInfo.daysUntilNextPeriod);
+      insights = {
+        ...insights,
+        tomorrowPreview:
+          daysToPeriod <= 2
+            ? `You are very close to your period (${daysToPeriod} day${daysToPeriod === 1 ? "" : "s"} away) — this is usually the heaviest stretch, and things tend to ease once it starts.`
+            : `You are in the late luteal window (${daysToPeriod} days to your period) — this can stay heavy briefly before easing as your period begins.`,
+      };
+    }
+
     if (
       driverForMemory === "stress_above_baseline" &&
       context.mode === "personalized"
@@ -658,37 +720,11 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
   }
 
   const view = buildInsightView(context, insights, { primaryKeyOverride });
-  const hook = generateHook(driverForMemory, context, correlation.patternKey);
-  const core = buildCoreInsight(insights, context);
-  const pattern = buildPatternReassurance(context, correlation.patternKey);
-  const v2: DailyInsightV2 = {
-    hook,
-    core,
-    pattern,
-    why: insights.whyThisIsHappening,
-    action: insights.solution,
-    guidance: insights.recommendation,
-    tomorrow: insights.tomorrowPreview,
-    confidenceLabel: view.confidenceLabel,
-  };
 
-  // ── PMS forecast — UNCHANGED FROM YOUR CURRENT VERSION ───────────────────
   let pmsWarning = null;
-  if (contraceptionBehavior.showPmsForecast) {
+  if (contraceptionBehavior.showPmsForecast && completedCycleCount >= 2) {
     const pmsForecastForWarning =
       cycleInfo.currentDay >= 18 && context.mode === "personalized"
-        ? buildPmsSymptomForecast(
-            cycleInfo.phase,
-            cycleInfo.currentDay,
-            cycleInfo.daysUntilNextPhase,
-            previousCycleDrivers,
-            completedCycleCount,
-          )
-        : null;
-    const pmsWarmupEarly =
-      cycleInfo.phase === "luteal" &&
-      cycleInfo.currentDay < 18 &&
-      completedCycleCount < 2
         ? buildPmsSymptomForecast(
             cycleInfo.phase,
             cycleInfo.currentDay,
@@ -709,11 +745,7 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
             likelySymptoms: (pmsForecastForWarning as any).likelySymptoms,
             confidence: (pmsForecastForWarning as any).confidence,
           }
-        : pmsForecastForWarning && "warmup" in pmsForecastForWarning
-          ? pmsForecastForWarning
-          : pmsWarmupEarly && "warmup" in pmsWarmupEarly
-            ? pmsWarmupEarly
-            : null;
+        : null;
   }
 
   const responsePayload = {
@@ -816,7 +848,10 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     memoryContext,
     aiEnhanced,
     aiDebug,
-    correlationPattern: correlation.patternKey,
+    correlationPattern:
+      primaryInsightCause === "sleep_disruption"
+        ? "sleep_disruption_primary"
+        : correlation.patternKey,
     basedOn: {
       phase: cycleInfo.phase,
       recentLogsCount: logsCount,
@@ -830,8 +865,7 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     },
     insights,
     view,
-    v2,
-    pmsWarning, // ── UNCHANGED — still here exactly as before
+    pmsWarning,
     lastAnticipationCycleDay: vyanaCtx.anticipation.anticipationType
       ? cycleInfo.currentDay
       : (anticipationFrequencyState.lastShownCycleDay ?? null),

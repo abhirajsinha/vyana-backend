@@ -19,6 +19,7 @@ import {
   type EmotionalMemoryInput,
 } from "./vyanaContext";
 import type { HormoneState } from "./hormoneengine";
+import type { PrimaryInsightCause } from "./insightCause";
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
@@ -76,6 +77,30 @@ function countSentences(text: string): number {
   const trimmed = text.trim();
   if (!trimmed) return 0;
   return (trimmed.match(/[.!?]+/g) || []).length;
+}
+
+/** Keeps at most N sentence boundaries (., !, ?) so GPT output passes the 2-sentence guard. */
+function truncateToMaxSentences(text: string, max: number): string {
+  const t = text.trim();
+  if (!t || max <= 0) return t;
+  const parts = t.split(/(?<=[.!?])\s+/).filter(Boolean);
+  if (parts.length <= max) return t;
+  return parts.slice(0, max).join(" ").trim();
+}
+
+function enforceMaxSentencesOnInsights(
+  insights: DailyInsights,
+  max: number,
+): DailyInsights {
+  return {
+    physicalInsight: truncateToMaxSentences(insights.physicalInsight, max),
+    mentalInsight: truncateToMaxSentences(insights.mentalInsight, max),
+    emotionalInsight: truncateToMaxSentences(insights.emotionalInsight, max),
+    whyThisIsHappening: truncateToMaxSentences(insights.whyThisIsHappening, max),
+    solution: truncateToMaxSentences(insights.solution, max),
+    recommendation: truncateToMaxSentences(insights.recommendation, max),
+    tomorrowPreview: truncateToMaxSentences(insights.tomorrowPreview, max),
+  };
 }
 
 const STRONG_WORDS = [
@@ -153,21 +178,97 @@ export function sanitizeInsights(
   for (const key of keys) {
     if (typeof o[key] !== "string") return fallback;
   }
-  const candidate = enforceTwoLinesOnInsights({
-    physicalInsight: o.physicalInsight as string,
-    mentalInsight: o.mentalInsight as string,
-    emotionalInsight: o.emotionalInsight as string,
-    whyThisIsHappening: o.whyThisIsHappening as string,
-    solution: o.solution as string,
-    recommendation: o.recommendation as string,
-    tomorrowPreview: o.tomorrowPreview as string,
-  });
+  const trimmed = enforceMaxSentencesOnInsights(
+    {
+      physicalInsight: o.physicalInsight as string,
+      mentalInsight: o.mentalInsight as string,
+      emotionalInsight: o.emotionalInsight as string,
+      whyThisIsHappening: o.whyThisIsHappening as string,
+      solution: o.solution as string,
+      recommendation: o.recommendation as string,
+      tomorrowPreview: o.tomorrowPreview as string,
+    },
+    2,
+  );
+  const candidate = enforceTwoLinesOnInsights(trimmed);
   if (anyFieldExceedsTwoSentences(candidate)) return fallback;
   return candidate;
 }
 
+const VAGUE_PHRASES = [
+  "this tends to happen around this time",
+  "this tends to happen",
+  "around this time in your cycle",
+  "your body is feeling the strain",
+  "feels like a bigger challenge",
+  "take a moment to slow down",
+  "protect your recovery time",
+  "slowing down and protecting recovery",
+  "might feel a bit heavier",
+  "you're likely to notice",
+  "you might find",
+  "you might notice",
+  "you may find",
+  "you may notice",
+  "a little lower than usual",
+  "clarity is harder to grasp",
+  "feels a bit heavier",
+  "everything feels a bit heavier",
+  "more overwhelming than expected",
+];
+
+function containsVagueLanguage(insights: DailyInsights): boolean {
+  const text = Object.values(insights).join(" ").toLowerCase();
+  return VAGUE_PHRASES.some((p) => text.includes(p));
+}
+
+function fixVagueLanguage(insights: DailyInsights): DailyInsights {
+  const replacements: Array<[string, string]> = [
+    ["this tends to happen around this time in your cycle", "for you, this part of your cycle tends to bring this pattern"],
+    ["this tends to happen around this time", "your past cycles show the same pattern here"],
+    ["this tends to happen", "your cycles tend to show this"],
+    ["around this time in your cycle", "in this part of your cycle"],
+    ["your body is feeling the strain", "your body is under more strain than usual"],
+    ["feels like a bigger challenge", "takes more effort than it should"],
+    ["take a moment to slow down", "keep your schedule lighter today"],
+    ["protect your recovery time", "reduce your load over the next couple of days"],
+    ["slowing down and protecting recovery", "keeping your pace lighter today"],
+    ["might feel a bit heavier", "may still feel heavy"],
+    ["you're likely to notice", ""],
+    ["you might find", ""],
+    ["you might notice", ""],
+    ["you may find", ""],
+    ["you may notice", ""],
+    ["a little lower than usual", "lower than usual"],
+    ["clarity is harder to grasp", "focus takes more effort"],
+    ["everything feels a bit heavier right now", "everything takes more effort right now"],
+    ["feels a bit heavier", "takes more effort"],
+    ["more overwhelming than expected", "more overwhelming than they should"],
+  ];
+
+  const fix = (text: string): string => {
+    let result = text;
+    for (const [from, to] of replacements) {
+      result = result.replace(new RegExp(from.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), to);
+    }
+    return result;
+  };
+
+  return {
+    physicalInsight: fix(insights.physicalInsight),
+    mentalInsight: fix(insights.mentalInsight),
+    emotionalInsight: fix(insights.emotionalInsight),
+    whyThisIsHappening: fix(insights.whyThisIsHappening),
+    solution: fix(insights.solution),
+    recommendation: fix(insights.recommendation),
+    tomorrowPreview: fix(insights.tomorrowPreview),
+  };
+}
+
 export type InsightGenerationStatus =
   | "accepted"
+  | "accepted_strength_bypassed"
+  | "accepted_vague_fixed"
   | "client_missing"
   | "empty_response_fallback"
   | "json_shape_fallback"
@@ -177,9 +278,303 @@ export type InsightGenerationStatus =
   | "strength_guard_fallback"
   | "api_error";
 
+type InsightGuardHints = {
+  confidence: InsightContext["confidence"];
+  priorityDriversCount: number;
+  hasIdentityEvidence: boolean;
+  hasEmotionalMemoryEvidence: boolean;
+  phase: InsightContext["phase"];
+  /** True when insight memory + cross-cycle data support repeat-period claims */
+  hasHistoricalEvidence: boolean;
+};
+
+function shouldBypassStrengthGuard(hints: InsightGuardHints): boolean {
+  return hints.confidence === "high" || hints.priorityDriversCount >= 2;
+}
+
+function removeUnearnedIdentityLanguage(insights: DailyInsights): DailyInsights {
+  const clean = (text: string): string =>
+    text
+      .replace(/\bfor you,\s*/gi, "")
+      .replace(/\byour cycles show(?:ed)? that\b/gi, "this pattern suggests that")
+      .replace(/\byour cycles show(?:ed)?\b/gi, "this pattern suggests")
+      .replace(/\byour cycles showed similar patterns?\b/gi, "similar patterns can appear")
+      .replace(/\byour past cycles show\b/gi, "recent logs suggest")
+      .replace(/\byour cycles tend to\b/gi, "this part of the cycle tends to")
+      .replace(/\s{2,}/g, " ")
+      .trim();
+
+  return {
+    physicalInsight: clean(insights.physicalInsight),
+    mentalInsight: clean(insights.mentalInsight),
+    emotionalInsight: clean(insights.emotionalInsight),
+    whyThisIsHappening: clean(insights.whyThisIsHappening),
+    solution: clean(insights.solution),
+    recommendation: clean(insights.recommendation),
+    tomorrowPreview: clean(insights.tomorrowPreview),
+  };
+}
+
+function removeUnearnedHistoricalClaims(insights: DailyInsights): DailyInsights {
+  const scrubSentence = (text: string): string => {
+    const parts = text.split(/(?<=[.!?])\s+/);
+    const kept = parts.filter((p) => {
+      const s = p.toLowerCase();
+      if (/\bthe last \d+ times\b/.test(s)) return false;
+      if (/\bprevious times\b/.test(s)) return false;
+      if (/\bsimilar pattern\b/.test(s)) return false;
+      if (/\byou logged before\b/.test(s)) return false;
+      if (/\blike this before\b/.test(s)) return false;
+      if (/\bwhen your flow was heavier\b/.test(s)) return false;
+      if (/\bheavier like this\b/.test(s)) return false;
+      if (/\blast time (?:your|this|the)\b/.test(s)) return false;
+      return true;
+    });
+    const out = kept.join(" ").replace(/\s{2,}/g, " ").trim();
+    return out || text;
+  };
+
+  return {
+    physicalInsight: scrubSentence(insights.physicalInsight),
+    mentalInsight: scrubSentence(insights.mentalInsight),
+    emotionalInsight: scrubSentence(insights.emotionalInsight),
+    whyThisIsHappening: scrubSentence(insights.whyThisIsHappening),
+    solution: scrubSentence(insights.solution),
+    recommendation: scrubSentence(insights.recommendation),
+    tomorrowPreview: scrubSentence(insights.tomorrowPreview),
+  };
+}
+
+function removeUnearnedMemoryLanguage(insights: DailyInsights): DailyInsights {
+  const scrub = (text: string): string => {
+    const out = text
+      .replace(
+        /remember the last time this happened,?[^.?!]*[.?!]?/gi,
+        "",
+      )
+      .replace(
+        /you(?:'ve| have) felt this before[^.?!]*[.?!]?/gi,
+        "",
+      )
+      .replace(
+        /it(?:'s| is) reminiscent of times?[^.?!]*[.?!]?/gi,
+        "",
+      )
+      .replace(
+        /this reminds you of before[^.?!]*[.?!]?/gi,
+        "",
+      )
+      .replace(
+        /when this pattern showed up before[^.?!]*[.?!]?/gi,
+        "",
+      )
+      .replace(
+        /you(?:'ve| have) felt this before when[^.?!]*[.?!]?/gi,
+        "",
+      )
+      .replace(
+        /you(?:'ve| have) been here before[^.?!]*[.?!]?/gi,
+        "",
+      )
+      .replace(
+        /the last time this (?:happened|showed up)[^.?!]*[.?!]?/gi,
+        "",
+      )
+      .replace(
+        /you(?:'ve| have) experienced this before[^.?!]*[.?!]?/gi,
+        "",
+      )
+      .replace(/\s{2,}/g, " ")
+      .trim();
+    return out || text;
+  };
+
+  return {
+    physicalInsight: scrub(insights.physicalInsight),
+    mentalInsight: scrub(insights.mentalInsight),
+    emotionalInsight: scrub(insights.emotionalInsight),
+    whyThisIsHappening: scrub(insights.whyThisIsHappening),
+    solution: scrub(insights.solution),
+    recommendation: scrub(insights.recommendation),
+    tomorrowPreview: scrub(insights.tomorrowPreview),
+  };
+}
+
+function fixCapitalization(insights: DailyInsights): DailyInsights {
+  const fix = (text: string): string =>
+    text.replace(/(^|\.\s+|\?\s+|!\s+|\n\s*)([a-z])/g, (_, prefix, letter) => prefix + letter.toUpperCase());
+
+  return {
+    physicalInsight: fix(insights.physicalInsight),
+    mentalInsight: fix(insights.mentalInsight),
+    emotionalInsight: fix(insights.emotionalInsight),
+    whyThisIsHappening: fix(insights.whyThisIsHappening),
+    solution: fix(insights.solution),
+    recommendation: fix(insights.recommendation),
+    tomorrowPreview: fix(insights.tomorrowPreview),
+  };
+}
+
+function sharpenHighConfidenceTone(insights: DailyInsights): DailyInsights {
+  const sharpen = (text: string): string =>
+    text
+      .replace(/\b(?:you(?:'re| are)\s+)?likely to notice that\s+/gi, "")
+      .replace(/\byou might find that\s+/gi, "")
+      .replace(/\byou may find that\s+/gi, "")
+      .replace(/\byou might notice that\s+/gi, "")
+      .replace(/\byou may notice that\s+/gi, "")
+      .replace(/\byou might\b/gi, "you")
+      .replace(/\byou may\b/gi, "you")
+      .replace(/\s{2,}/g, " ")
+      .trim();
+
+  return {
+    physicalInsight: sharpen(insights.physicalInsight),
+    mentalInsight: sharpen(insights.mentalInsight),
+    emotionalInsight: sharpen(insights.emotionalInsight),
+    whyThisIsHappening: sharpen(insights.whyThisIsHappening),
+    solution: sharpen(insights.solution),
+    recommendation: sharpen(insights.recommendation),
+    tomorrowPreview: sharpen(insights.tomorrowPreview),
+  };
+}
+
+function stripMenstrualHedging(text: string): string {
+  return text
+    .replace(/\byou may start to feel\b/gi, "you feel")
+    .replace(/\byou might feel\b/gi, "you feel")
+    .replace(/\byou may feel\b/gi, "you feel")
+    .replace(/\bmight feel scattered\b/gi, "feels scattered")
+    .replace(/\byou might\b/gi, "you")
+    .replace(/\byou may\b/gi, "you")
+    .replace(/\bthis can lead to\b/gi, "this is")
+    .replace(/\bcan lead to\b/gi, "brings")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+/** Peak ovulation: strip AI-poetic / app-cheesy / broken-grammar phrasing. */
+function polishOvulationPeakCopy(insights: DailyInsights): DailyInsights {
+  let mental = insights.mentalInsight;
+  if (
+    /with clarity and focus at their peak,\s*how easily/i.test(mental) ||
+    (/at their peak/i.test(mental) && /how easily/i.test(mental) && !/—/.test(mental))
+  ) {
+    mental =
+      "Clarity and focus are at their peak — ideas flow more easily and conversations feel smoother.";
+  }
+  mental = mental
+    .replace(/\bmental capacity feels expansive[^.!?]*[.!?]?/gi, "")
+    .replace(/\bexpansive and open\b/gi, "easier to think through and express")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
+  let emotional = insights.emotionalInsight
+    .replace(
+      /wonderful time to embrace the positivity[^.!?]*[.!?]?/gi,
+      "Things feel lighter and more enjoyable — it's easier to connect with people right now.",
+    )
+    .replace(/\bembrace the positivity\b/gi, "enjoy connecting")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
+  let solution = insights.solution
+    .replace(
+      /dive into social activities or projects[^.!?]*[.!?]?/gi,
+      "Lean into this momentum — it's a good time for things that need energy or presence.",
+    )
+    .replace(/\bdive into\b/gi, "lean into")
+    .trim();
+
+  let tomorrow = insights.tomorrowPreview;
+  if (/tomorrow,?\s+you notice/i.test(tomorrow)) {
+    tomorrow =
+      "You're moving into the next phase — energy will stay good, but things will start to feel a bit more grounded over the next few days.";
+  }
+
+  return {
+    ...insights,
+    mentalInsight: mental,
+    emotionalInsight: emotional,
+    solution,
+    tomorrowPreview: tomorrow,
+  };
+}
+
+function enforceMenstrualDiscipline(insights: DailyInsights): DailyInsights {
+  const simplify = (text: string): string =>
+    stripMenstrualHedging(
+      text
+        .replace(/\bintertwined\b/gi, "connected")
+        .replace(/\bamplifying each other\b/gi, "feeling heavier")
+        .replace(/\badjusting to (?:this|the) shift\b/gi, "recovering")
+        .replace(/\bfocus on iron-rich foods,?\s*/gi, "")
+        .replace(/\bprioritize early sleep,?\s*/gi, "")
+        .replace(/\breduce your obligations,?\s*/gi, "keep things lighter")
+        .replace(/\bstress and mood are connected right now[^.?!]*[.?!]?/gi, "")
+        .replace(/\bstress is pulling your mood[^.?!]*[.?!]?/gi, "")
+        .replace(/\s{2,}/g, " ")
+        .trim(),
+    );
+
+  let mental = simplify(insights.mentalInsight)
+    .replace(
+      /focus drops when sleep dips like this[^.?!]*[.?!]?/i,
+      "Focus is lower today — your body is prioritizing recovery over clarity.",
+    )
+    .replace(/\bwith sleep at about[^.?!]*focus[^.?!]*[.?!]?/i, "")
+    .replace(/\bfocus might feel scattered[^.?!]*[.?!]?/gi, "")
+    .trim();
+
+  if (
+    /might|may|scattered|sleep at about/i.test(mental) ||
+    mental.length < 20
+  ) {
+    mental =
+      "Focus is lower today — your body is prioritizing recovery over clarity.";
+  }
+
+  let emotional = simplify(insights.emotionalInsight)
+    .replace(
+      /everything feels a bit more overwhelming[^.?!]*[.?!]?/i,
+      "Everything takes more effort right now.",
+    )
+    .replace(
+      /small things feel harder than they should[^.?!]*[.?!]?/i,
+      "Small things feel harder than they should.",
+    )
+    .replace(/\bstress is pulling your mood[^.?!]*[.?!]?/gi, "")
+    .trim();
+
+  if (/stress.*mood|mood.*stress|pulling/i.test(emotional)) {
+    emotional =
+      "Everything takes more effort right now — even small things feel harder than they should.";
+  }
+
+  let why = simplify(insights.whyThisIsHappening)
+    .replace(/\s*,?\s*As FSH begins[^.?!]*[.?!]?/gi, "")
+    .replace(/\s*preparing (?:the )?next follicle[^.?!]*[.?!]?/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
+  return {
+    physicalInsight: simplify(insights.physicalInsight).replace(
+      /\bthis can lead to a sense of weakness\b/gi,
+      "it's normal to feel physically low",
+    ),
+    mentalInsight: mental,
+    emotionalInsight: emotional,
+    whyThisIsHappening: why,
+    solution: simplify(insights.solution),
+    recommendation: simplify(insights.recommendation),
+    tomorrowPreview: simplify(insights.tomorrowPreview),
+  };
+}
+
 function safeParseInsightsDetailed(
   raw: string | null | undefined,
   fallback: DailyInsights,
+  guardHints: InsightGuardHints,
 ): { insights: DailyInsights; status: InsightGenerationStatus } {
   if (!raw?.trim()) {
     return { insights: fallback, status: "empty_response_fallback" };
@@ -209,15 +604,44 @@ function safeParseInsightsDetailed(
       recommendation: parsed.recommendation!,
       tomorrowPreview: parsed.tomorrowPreview!,
     };
+    const outTrimmed = enforceMaxSentencesOnInsights(out, 2);
     const draftLen = JSON.stringify(fallback).length;
-    if (JSON.stringify(out).length > Math.max(800, draftLen * 2.5))
+    if (JSON.stringify(outTrimmed).length > Math.max(800, draftLen * 2.5))
       return { insights: fallback, status: "length_guard_fallback" };
-    const enforced = enforceTwoLinesOnInsights(out);
+    let enforced = enforceTwoLinesOnInsights(outTrimmed);
+    if (!guardHints.hasIdentityEvidence) {
+      enforced = removeUnearnedIdentityLanguage(enforced);
+    }
+    if (!guardHints.hasEmotionalMemoryEvidence) {
+      enforced = removeUnearnedMemoryLanguage(enforced);
+    }
+    if (!guardHints.hasHistoricalEvidence) {
+      enforced = removeUnearnedHistoricalClaims(enforced);
+    }
+    if (guardHints.phase === "menstrual") {
+      enforced = enforceMenstrualDiscipline(enforced);
+    }
+    if (guardHints.phase === "ovulation") {
+      enforced = polishOvulationPeakCopy(enforced);
+    }
+    if (guardHints.confidence === "high") {
+      enforced = sharpenHighConfidenceTone(enforced);
+    }
+    enforced = fixCapitalization(enforced);
+    enforced = enforceMaxSentencesOnInsights(enforced, 2);
+
     if (anyFieldExceedsTwoSentences(enforced)) {
       return { insights: fallback, status: "sentence_guard_fallback" };
     }
     if (hasStrengthRegression(fallback, enforced)) {
+      if (shouldBypassStrengthGuard(guardHints)) {
+        return { insights: enforced, status: "accepted_strength_bypassed" };
+      }
       return { insights: fallback, status: "strength_guard_fallback" };
+    }
+    if (containsVagueLanguage(enforced)) {
+      const fixed = fixVagueLanguage(enforced);
+      return { insights: fixed, status: "accepted_vague_fixed" };
     }
     return { insights: enforced, status: "accepted" };
   } catch {
@@ -249,6 +673,7 @@ export function buildVyanaContextForInsights(params: {
   userId: string;
   anticipationFrequencyState?: AnticipationFrequencyState;
   emotionalMemoryInput?: EmotionalMemoryInput | null;
+  primaryInsightCause?: PrimaryInsightCause;
 }): VyanaContext {
   return buildVyanaContext(params);
 }
@@ -316,11 +741,19 @@ Do NOT use:
 - "can contribute"
 - "has been building"
 - "heavier than usual"
+- "your body is feeling the strain"
+- "feels like a bigger challenge"
+- "take a moment to slow down"
+- "protect your recovery time"
+- "feeling the effects"
+- "more than usual"
 
-Replace with:
+Replace with cause → effect language:
 - "this is why..."
 - "this is what's happening..."
-- "this tends to happen for you..."
+- "for you, this part of your cycle..."
+- "focus drops when sleep dips like this"
+- "pushing through will cost more than it gives back"
 
 ---
 
@@ -340,20 +773,30 @@ Make it feel real, not labeled.
 
 ---
 
-5. IDENTITY RULE (VERY IMPORTANT)
+5. IDENTITY RULE (STRICT)
 
-When pattern/history exists:
+Use identity language ONLY when an explicit IDENTITY instruction is provided below.
 
-NEVER say:
+If NO IDENTITY instruction appears in this prompt:
+- DO NOT use:
+  - "for you"
+  - "your cycles show"
+  - "your cycles tend to"
+  - "your past cycles"
+  - "you tend to notice"
+  - "this is your pattern"
+  - any phrasing that implies you know her history
+
+Using identity language without an explicit IDENTITY instruction = incorrect output.
+
+When IDENTITY instruction IS provided:
+- Use "for you" / "your cycles tend to" naturally
+- Make it personal — she should feel known, not categorized
+
+NEVER say regardless:
 - "this phase"
 - "this tends to happen"
-
-ALWAYS say:
-- "for you..."
-- "your cycles show..."
-- "you tend to notice..."
-
-Make it personal.
+- "around this time in your cycle"
 
 ---
 
@@ -384,28 +827,48 @@ Short, observational, not educational.
 
 ---
 
-8. ANTICIPATION RULE
+8. ANTICIPATION RULE (tomorrowPreview)
 
 Do NOT say:
 - "might feel heavier"
+- "tomorrow might feel a bit heavier"
+- "if tonight doesn't help you reset"
 
-INSTEAD:
-- give timing + clarity
+tomorrowPreview MUST include:
+1. TIMING — how close she is to next phase/period (use exact day count from data)
+2. CLARITY — what will likely shift and when it eases
 
-Example:
-- "you're very close to your period — this is usually the heaviest stretch, and things ease once it starts"
+Example for late luteal near period:
+- "You're 2 days from your period — this is usually the hardest stretch. Things tend to ease once it starts."
+
+Example for follicular:
+- "Energy typically picks up from here — tomorrow should feel lighter than today."
+
+Be specific about WHEN, not vague about WHAT.
 
 ---
 
-9. EMOTIONAL MEMORY RULE
+9. EMOTIONAL MEMORY RULE (STRICT)
 
-If present:
-Use it as genuine recall:
+Use memory language ONLY when an explicit EMOTIONAL MEMORY instruction is provided below.
 
+If NO EMOTIONAL MEMORY instruction appears in this prompt:
+- DO NOT mention:
+  - "before"
+  - "last time"
+  - "you've felt this"
+  - "this reminds you"
+  - "similar patterns"
+  - "you've been here before"
+  - "you've experienced this"
+  - any phrasing that implies past recall
+
+Including memory language without an explicit EMOTIONAL MEMORY instruction = incorrect output.
+
+When EMOTIONAL MEMORY instruction IS provided:
+- Express as genuine recall, not data
 - "the last time this happened, you felt..."
-- "you've felt this before when this pattern showed up"
-
-Do NOT sound like data.
+- Show that Vyana remembers how she felt, not just what happened
 
 ---
 
@@ -414,10 +877,14 @@ Do NOT sound like data.
 Avoid generic advice like:
 - "reduce stress"
 - "practice self-care"
+- "take a moment to slow down"
+- "protect your recovery time"
+- "slowing down and protecting recovery"
 
-Give specific, realistic guidance:
-- "keep your schedule lighter than usual"
+Give specific, actionable guidance:
+- "keep your schedule lighter today — pushing through will cost more than it gives back"
 - "protect your sleep tonight — it will change how tomorrow feels"
+- "reduce your load over the next couple of days — your capacity is lower right now"
 
 ---
 
@@ -467,6 +934,10 @@ export async function generateInsightsWithGpt(
     | "pattern-based"
     | "symptom-based" = "cycle-based",
   vyanaCtx?: VyanaContext,
+  insightMemoryGuard: {
+    insightMemoryCount: number;
+    hasCrossCycleNarrative: boolean;
+  } = { insightMemoryCount: 0, hasCrossCycleNarrative: false },
 ): Promise<{ insights: DailyInsights; status: InsightGenerationStatus }> {
   if (!client) return { insights: draft, status: "client_missing" };
 
@@ -496,9 +967,16 @@ export async function generateInsightsWithGpt(
       ? `\nIDENTITY (${vyanaCtx.identity.historyCycles} cycles): "${vyanaCtx.identity.patternCore}" — express as "for you" or "your cycles tend to".`
       : "";
 
+  const hasHistoricalEvidenceForPrompt =
+    insightMemoryGuard.insightMemoryCount >= 2 &&
+    insightMemoryGuard.hasCrossCycleNarrative;
+
+  const historicalClaimsBlockInstruction = !hasHistoricalEvidenceForPrompt
+    ? `\nHISTORICAL CLAIMS (STRICT): Do NOT reference past periods, "last time", "previous times", "the last N times", "similar pattern", or "you logged before" — there is insufficient repeat-cycle evidence in the data. Describe today only.`
+    : "";
+
   const emotionalMemoryInstruction =
-    vyanaCtx?.emotionalMemory.hasMemory &&
-    vyanaCtx.emotionalMemory.recallNarrative
+    vyanaCtx?.emotionalMemory.hasMemory && vyanaCtx.emotionalMemory.recallNarrative
       ? `\nEMOTIONAL MEMORY: "${vyanaCtx.emotionalMemory.recallNarrative}" — express as genuine recall in emotionalInsight or whyThisIsHappening. Show that Vyana remembers how she felt, not just what happened.`
       : "";
 
@@ -521,16 +999,54 @@ export async function generateInsightsWithGpt(
         ? "Focus only on what she is logging. No cycle-phase or hormone language."
         : "Use cycle-phase context where appropriate. Hormone context in whyThisIsHappening only.";
 
+  const phaseVoiceInstruction =
+    ctx.phase === "menstrual"
+      ? `\nPHASE VOICE — MENSTRUAL (STRICT):
+- Prioritize validation over optimization.
+- Focus on physical load and permission to slow down.
+- Keep tone grounding, low-pressure, and compassionate.
+- Do NOT use instructive/performance language like "you should", "optimize", or "prioritize productivity".
+- Do NOT use analytical relationships (e.g., "sleep causes focus drop", "stress amplifies mood").
+- Do NOT provide multi-step advice lists (foods, checklists, habit stacks).
+- Keep each field direct, short, and experiential.
+- Avoid system language like "intertwined", "amplifying each other", or "adjusting to shift".
+- Avoid hedging: "might", "may", "can feel" — use direct experiential verbs ("is", "feels", "takes").
+- Good phrasing: "it's normal to feel physically low", "your body is doing a lot right now", "it's okay to take it easier today".`
+      : ctx.phase === "follicular"
+        ? `\nPHASE VOICE — FOLLICULAR:
+- Use a light, forward-looking tone.
+- Emphasize gradual recovery and momentum.
+- Avoid over-warning or over-coaching.
+- If PRIMARY CAUSE in data is sleep disruption: do NOT promise rising energy or tell her to "take on harder things" — her logs trump phase averages.`
+        : ctx.phase === "ovulation"
+          ? `\nPHASE VOICE — OVULATORY (STRICT):
+- This is often a peak energy / high-capacity window — sound confident and enabling, not neutral.
+- Do NOT downplay the state with words like "stable", "balanced", or "no strong signals" when logs show positive mood, calm stress, and good sleep.
+- Highlight: high energy, clarity, social ease, momentum — without inventing past-cycle memory.
+- Do NOT frame this as recovery, strain, or limitation unless data shows strain.
+- Avoid AI-poetic or app-cheesy phrasing: "expansive", "mental capacity feels expansive", "embrace the positivity", "wonderful time to".
+- Avoid broken or abstract openers like "With clarity and focus at their peak, how easily..." — use full sentences.
+- solution: enabling ("lean into momentum") — not bossy ("dive into social activities").
+- tomorrowPreview: no "Tomorrow, you notice..." — use clear transition into next phase.
+- solution / recommendation: encourage using the window (focus, connection, momentum) — not generic "anchor habits".`
+          : `\nPHASE VOICE — LUTEAL:
+- Use protective and explanatory tone.
+- Emphasize sensitivity amplification and lower capacity.
+- Explain cause -> effect clearly without sounding generic.`;
+
   // Build primary driver instruction — explicit first-sentence directive
   const primaryDriver =
     vyanaCtx?.prioritySignals.find((s) => s.layer === "core")?.text ??
     ctx.priorityDrivers[0] ??
-    null;
+    (ctx.phase === "ovulation" && ctx.priorityDrivers.length === 0
+      ? "ovulation_peak_energy"
+      : null);
 
   const primaryDriverMap: Record<string, string> = {
     bleeding_heavy: "Your flow is heavier today",
     high_strain: "Your body is under more strain than usual right now",
     sleep_below_baseline: `Sleep has been lower than your usual`,
+    sleep_variability_high: `Your sleep has been inconsistent and lower than your usual`,
     sleep_trend_declining: `Sleep has been dropping`,
     stress_above_baseline: "Stress has been higher than your usual",
     sleep_stress_amplification:
@@ -538,18 +1054,25 @@ export async function generateInsightsWithGpt(
     mood_stress_coupling:
       "Stress and low mood are feeding into each other right now",
     mood_trend_declining: "Your mood has been lower than usual",
+    ovulation_peak_energy: "Your energy is high right now",
   };
 
   const primaryOpener = primaryDriver
     ? (primaryDriverMap[primaryDriver] ?? null)
     : null;
 
-  const primaryDriverInstruction = primaryOpener
+  let primaryDriverInstruction = primaryOpener
     ? `\nCRITICAL — physicalInsight MUST start with: "${primaryOpener}..." (then continue describing the experience)`
     : "";
 
+  if (vyanaCtx?.primaryInsightCause === "sleep_disruption") {
+    primaryDriverInstruction = `\nCRITICAL — SLEEP-DISRUPTION PRIMARY: physicalInsight MUST open with the sharp sleep drop (use recentSleepAvg and baselineSleepAvg from HER DATA verbatim). Do NOT open with generic strain, iron, or "past cycles". whyThisIsHappening MUST attribute how she feels to sleep, not hormones. recommendation MUST keep load lighter until sleep recovers — NOT "take on harder things" or peak-phase messaging.`;
+  }
+
   const userPrompt = `
 TONE: ${toneInstruction}
+${phaseVoiceInstruction}
+${historicalClaimsBlockInstruction}
 ${primaryDriverInstruction}
 ${priorityBlock}
 ${stableInstruction}
@@ -563,11 +1086,24 @@ HER DATA (sleep values must be used EXACTLY as written below — never rephrase)
 ${contextBlock}
 
 TASK: Write her insights from scratch. GPT is primary author.
-physicalInsight MUST open with the primary driver sentence above.
-Use the sleep value from context exactly — do not round differently.
+${primaryOpener && vyanaCtx?.primaryInsightCause !== "sleep_disruption" ? `physicalInsight MUST start with the primary driver opener above (first sentence).\n` : ""}Use the sleep value from context exactly — do not round differently.
 Translate all other signals into natural language — never copy verbatim.
 Use identity language when present. Express emotional memory as recall, not data.
 Surprise insight leads with the unexpected connection. Delight is one warm sentence.
+
+CRITICAL REMINDERS:
+- Each JSON field: at most 2 sentences total (periods . ! ? count as sentence ends).
+- whyThisIsHappening: keep concise and experiential (avoid textbook biology dumps)
+${ctx.phase === "menstrual"
+    ? `- mentalInsight: simple and non-analytical — prefer "Focus is lower today — your body is prioritizing recovery over clarity." Do NOT chain sleep → focus or stress → mood.
+- emotionalInsight: direct experience only — no system explanations ("stress pulling mood").`
+    : ctx.phase === "ovulation"
+      ? `- mentalInsight: grounded sentences only — e.g. "Clarity and focus are at their peak — ideas flow more easily and conversations feel smoother." Avoid abstract fragments.
+- emotionalInsight: natural and human — e.g. "Things feel lighter and more enjoyable — it's easier to connect with people right now." No wellness-app cheerleading.
+- solution: e.g. "Lean into this momentum — it's a good time for things that need energy or presence." Not "dive into" lists.`
+      : `- mentalInsight: cause → effect ("focus drops when sleep dips like this") — NOT "feels like a challenge"`}
+- solution: match phase — ovulation: momentum / presence; luteal: lighter load — NOT generic "anchor habits" unless appropriate
+- tomorrowPreview: MUST include timing (days until period/next phase from data) and what shifts
 
 DRAFT (quality floor — use ONLY if you cannot write something more specific):
 Physical: ${draft.physicalInsight}
@@ -591,7 +1127,21 @@ Return strict JSON only.
         { role: "user", content: userPrompt },
       ],
     });
-    return safeParseInsightsDetailed(response.choices[0]?.message?.content, draft);
+    return safeParseInsightsDetailed(response.choices[0]?.message?.content, draft, {
+      confidence: ctx.confidence,
+      priorityDriversCount: ctx.priorityDrivers.length,
+      hasIdentityEvidence: Boolean(
+        vyanaCtx?.identity.hasPersonalHistory &&
+          (vyanaCtx.identity.historyCycles ?? 0) >= 2,
+      ),
+      hasEmotionalMemoryEvidence: Boolean(
+        vyanaCtx?.emotionalMemory.hasMemory &&
+          (vyanaCtx.emotionalMemory.occurrenceCount ?? 0) >= 2 &&
+          vyanaCtx.emotionalMemory.recallNarrative,
+      ),
+      phase: ctx.phase,
+      hasHistoricalEvidence: hasHistoricalEvidenceForPrompt,
+    });
   } catch {
     return { insights: draft, status: "api_error" };
   }

@@ -499,6 +499,18 @@ export function buildInsightContext(
 }
 // ===================== UPDATED SERVICE =====================
 
+/** Peak-positive: no problem drivers, uplifted mood, calm system — typical ovulation / late follicular “good days”. */
+function isPeakPositiveWindow(ctx: InsightContext): boolean {
+  return (
+    ctx.mode === "personalized" &&
+    ctx.priorityDrivers.length === 0 &&
+    ctx.emotional_state === "uplifted" &&
+    ctx.mental_state === "balanced" &&
+    ctx.physical_state === "stable" &&
+    (ctx.phase === "ovulation" || ctx.phase === "follicular")
+  );
+}
+
 function buildPhysicalInsight(ctx: InsightContext): string {
   if (ctx.mode === "fallback") {
     let out = getDayInsight(
@@ -518,6 +530,13 @@ function buildPhysicalInsight(ctx: InsightContext): string {
 
   if (ctx.physical_state === "high_strain") {
     return `Your body is under more strain than usual today.\nSlowing down isn't optional right now — it's what helps.`;
+  }
+
+  if (isPeakPositiveWindow(ctx)) {
+    if (ctx.phase === "ovulation") {
+      return `Your energy is high right now — your body is in a strong, well-supported state.\nMovement and focus tend to feel easier in this window.`;
+    }
+    return `Your energy is building — your body is in a good place to take on more.\nPhysical tasks often feel lighter than they did earlier in the cycle.`;
   }
 
   if (ctx.priorityDrivers.includes("sleep_trend_declining")) {
@@ -561,6 +580,13 @@ function buildMentalInsight(ctx: InsightContext): string {
       : `Stress has been building for a few days.\nYour headspace is carrying more weight than it looks.`;
   }
 
+  if (isPeakPositiveWindow(ctx)) {
+    if (ctx.phase === "ovulation") {
+      return `Focus and clarity are strong — things feel easier to handle and decisions come more naturally.\nThis is a high-capacity window mentally.`;
+    }
+    return `Mental bandwidth is opening up — tasks feel more manageable than they did a week ago.\nClarity tends to improve as energy builds in this phase.`;
+  }
+
   return `Your recent signal suggests a relatively balanced mental state.\nNo strong strain signals detected.`;
 }
 
@@ -577,6 +603,13 @@ function buildEmotionalInsight(ctx: InsightContext): string {
     return ctx.recentLogsCount < 3
       ? `Stress today may be affecting your mood.\nEmotional dips may feel sharper.`
       : `How you're feeling emotionally has been heavier than usual.\nGiving yourself space to decompress will help more than pushing through.`;
+  }
+
+  if (isPeakPositiveWindow(ctx)) {
+    if (ctx.phase === "ovulation") {
+      return `You feel more open and engaged — social connection and motivation often come easier here.\nThis is a connected, upbeat kind of energy.`;
+    }
+    return `Things feel lighter emotionally — there's less heaviness dragging through the day.\nMotivation and mood tend to lift in this part of the cycle.`;
   }
 
   return `Your emotional state looks steady right now.\nNo strong shifts in either direction.`;
@@ -609,6 +642,9 @@ function buildRecommendation(ctx: InsightContext): string {
   if (!primary) {
     if (ctx.mode === "fallback") {
       return getDayInsight(ctx.cycleDay, ctx.variantIndex).actionTip;
+    }
+    if (isPeakPositiveWindow(ctx)) {
+      return `Lean into momentum today — social plans, focused work, or anything that needs your full presence tend to land easier in this window.`;
     }
     return `Keep your current rhythm and add one anchor habit today (sleep timing or movement) for consistency.`;
   }
@@ -680,6 +716,12 @@ function buildWhyThisIsHappening(ctx: InsightContext): string {
     }
     if (ctx.emotional_state === "loaded") {
       return `Stress and low mood feed into each other — how you're feeling right now has a reason, it's not just in your head.`;
+    }
+    if (isPeakPositiveWindow(ctx) && ctx.phase === "ovulation") {
+      return `Around ovulation, estrogen is typically elevated — that's often what drives this lift in energy, confidence, and clarity.`;
+    }
+    if (isPeakPositiveWindow(ctx) && ctx.phase === "follicular") {
+      return `In this part of your cycle, hormones are often moving toward a stronger energy window — that can show up as better mood and motivation.`;
     }
     if (ctx.trends.length > 0) {
       return `Recent trends (${ctx.trends.join(", ")}) indicate your body and mood are responding to day-to-day changes.`;
@@ -804,25 +846,25 @@ export function buildPatternReassurance(
 ): string | undefined {
   if (ctx.recentLogsCount < 3) return undefined;
   if (correlationPattern === "cycle_recurrence") {
-    return "This tends to happen around this time in your cycle — your body follows a pattern here.";
+    return "Your recent logs show the same pattern in this window — your body tends to repeat this here.";
   }
   if (correlationPattern === "pre_period_mood_convergence") {
-    return "This is a known window in your cycle. It passes within a day or two of your period starting.";
+    return "For you, this window tends to bring mood dips. It usually lifts within a day or two of your period starting.";
   }
   if (correlationPattern === "luteal_stress_sensitivity") {
-    return "Stress hits harder in this phase — same stressor, stronger effect. It's not you, it's timing.";
+    return "For you, stress hits harder in this part of your cycle — same stressor, stronger effect.";
   }
   if (correlationPattern === "ovulation_energy_blocked") {
-    return "This should be a high-energy window. Your sleep or stress is dampening it — not permanent.";
+    return "Your body should be in a high-energy window, but sleep or stress is dampening it — not permanent.";
   }
   if (correlationPattern === "follicular_momentum") {
-    return "Your body is in a recovery arc right now — this upward trend usually continues.";
+    return "Your body is in a recovery arc right now — for you, this upward trend usually continues.";
   }
   if (ctx.phase === "menstrual" && ctx.cycleDay <= 3) {
-    return "The first 1–3 days are the hardest. It gets noticeably better from day 3 onward.";
+    return "The first 1–3 days are usually the hardest for you. It gets noticeably better from day 3 onward.";
   }
   if (ctx.phase === "luteal" && ctx.cycleDay >= 22) {
-    return "This sensitivity is hormonal and temporary — it lifts within a day or two of your period.";
+    return "For you, this sensitivity is hormonal and temporary — it lifts within a day or two of your period.";
   }
   return undefined;
 }

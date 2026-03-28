@@ -116,9 +116,27 @@ function pattern3(ctx: InsightContext): PatternResult {
   };
 }
 
+function sleepDisruptionExplainsStrain(ctx: InsightContext): boolean {
+  const sleepBelow = ctx.baselineDeviation.includes(
+    "sleep_below_personal_baseline",
+  );
+  const sleepDown =
+    ctx.trends.includes("Sleep decreasing") ||
+    ctx.priorityDrivers.includes("sleep_trend_declining");
+  return sleepBelow && sleepDown;
+}
+
 // Pattern 4: Post-period recovery lag
-// cycleDay 6–8 (menstrual just ended) AND energy still low
+// cycleDay 6–8 (menstrual just ended) AND energy still low — but NOT when sleep crash is the clear driver
 function pattern4(ctx: InsightContext, logs: DailyLog[]): PatternResult {
+  if (sleepDisruptionExplainsStrain(ctx)) {
+    return {
+      detected: false,
+      confidence: 0,
+      headline: "",
+      action: "",
+    };
+  }
   const inWindow = ctx.cycleDay >= 6 && ctx.cycleDay <= 8;
   const energyLow = latestEnergyLow(logs) || ctx.physical_state === "high_strain";
   const detected = inWindow && energyLow;
