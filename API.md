@@ -1,0 +1,928 @@
+# Vyana Backend — API Reference
+
+Base URL: `http://localhost:3000` (or deployed host)
+
+All protected endpoints require the header:
+
+```
+Authorization: Bearer <access_token>
+```
+
+Missing token returns `401 { "error": "Missing auth token" }`.
+Invalid/expired token returns `401 { "error": "Invalid or expired token" }`.
+
+---
+
+## Health Check
+
+### `GET /health`
+
+**Auth:** None
+
+**Response** `200`
+
+```json
+{
+  "ok": true,
+  "service": "vyana-backend"
+}
+```
+
+---
+
+## Auth
+
+### `POST /api/auth/register`
+
+**Auth:** None
+
+**Request Body**
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `email` | string | Yes | Must be a valid email |
+| `password` | string | Yes | Minimum 8 characters |
+| `name` | string | Yes | |
+| `age` | number | Yes | |
+| `height` | number | Yes | |
+| `weight` | number | Yes | |
+| `lastPeriodStart` | string (ISO date) | Yes | |
+| `cycleLength` | number | No | Default `28`. Must be 21–45 |
+| `contraceptiveMethod` | string | No | |
+| `cycleRegularity` | string | No | |
+
+**Response** `201`
+
+```json
+{
+  "user": {
+    "id": "string",
+    "email": "string",
+    "googleId": null,
+    "name": "string",
+    "age": 28,
+    "height": 165,
+    "weight": 60,
+    "cycleLength": 28,
+    "lastPeriodStart": "2026-03-01T00:00:00.000Z",
+    "contraceptiveMethod": null,
+    "cycleRegularity": null,
+    "cycleMode": "natural",
+    "fcmToken": null,
+    "createdAt": "2026-03-28T00:00:00.000Z",
+    "updatedAt": "2026-03-28T00:00:00.000Z"
+  },
+  "tokens": {
+    "accessToken": "string",
+    "refreshToken": "string"
+  }
+}
+```
+
+**Errors**
+
+| Status | Message |
+|--------|---------|
+| `400` | `email is required` |
+| `400` | `password is required` |
+| `400` | `password must be at least 8 characters` |
+| `400` | `Missing required fields` |
+| `400` | `Invalid email` |
+| `400` | `Cycle length must be between 21 and 45 days` |
+| `409` | `An account with this email already exists` |
+
+---
+
+### `POST /api/auth/login`
+
+**Auth:** None
+
+**Request Body**
+
+| Field | Type | Required |
+|-------|------|----------|
+| `email` | string | Yes |
+| `password` | string | Yes |
+
+**Response** `200`
+
+```json
+{
+  "user": { /* PublicUser (same shape as register) */ },
+  "tokens": {
+    "accessToken": "string",
+    "refreshToken": "string"
+  }
+}
+```
+
+**Errors**
+
+| Status | Message |
+|--------|---------|
+| `400` | `email is required` / `password is required` |
+| `401` | `Invalid email or password` |
+
+---
+
+### `POST /api/auth/google`
+
+**Auth:** None
+
+**Request Body**
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `idToken` | string | Yes | Google OAuth ID token |
+| `age` | number | Yes | |
+| `height` | number | Yes | |
+| `weight` | number | Yes | |
+| `lastPeriodStart` | string (ISO date) | Yes | |
+| `name` | string | No | Falls back to Google profile name |
+| `cycleLength` | number | No | Default `28`. Must be 21–45 |
+| `contraceptiveMethod` | string | No | |
+| `cycleRegularity` | string | No | |
+
+**Response** `200` (existing user) or `201` (new user)
+
+```json
+{
+  "user": { /* PublicUser */ },
+  "tokens": {
+    "accessToken": "string",
+    "refreshToken": "string"
+  }
+}
+```
+
+**Errors**
+
+| Status | Message |
+|--------|---------|
+| `400` | `idToken is required` |
+| `400` | `Missing required profile fields` |
+| `400` | `Cycle length must be between 21 and 45 days` |
+| `400` | `Google email must be verified` |
+| `400` | `Invalid email from Google token` |
+| `401` | `Invalid Google token` |
+| `409` | `An account with this email already exists. Sign in with email and password.` |
+| `503` | `Google sign-in is not configured on the server` |
+
+---
+
+### `POST /api/auth/refresh`
+
+**Auth:** None
+
+**Request Body**
+
+| Field | Type | Required |
+|-------|------|----------|
+| `refreshToken` | string | Yes |
+
+**Response** `200`
+
+```json
+{
+  "accessToken": "string"
+}
+```
+
+**Errors**
+
+| Status | Message |
+|--------|---------|
+| `400` | `refreshToken is required` |
+| `401` | `Invalid refresh token` / `Invalid refresh token type` / `Refresh token expired or revoked` |
+
+---
+
+## User
+
+### `GET /api/user/me`
+
+**Auth:** Required
+
+**Response** `200`
+
+```json
+{
+  "id": "string",
+  "email": "string",
+  "googleId": "string | null",
+  "name": "string",
+  "age": 28,
+  "height": 165,
+  "weight": 60,
+  "cycleLength": 28,
+  "lastPeriodStart": "2026-03-01T00:00:00.000Z",
+  "contraceptiveMethod": null,
+  "cycleRegularity": null,
+  "cycleMode": "natural",
+  "fcmToken": null,
+  "createdAt": "2026-03-28T00:00:00.000Z",
+  "updatedAt": "2026-03-28T00:00:00.000Z"
+}
+```
+
+**Errors**
+
+| Status | Message |
+|--------|---------|
+| `404` | `User not found` |
+
+---
+
+## Cycle
+
+### `GET /api/cycle/current`
+
+**Auth:** Required
+
+**Response** `200`
+
+```json
+{
+  "currentDay": 14,
+  "phase": "ovulation",
+  "phaseDay": 1,
+  "daysUntilNextPhase": 3,
+  "daysUntilNextPeriod": 15,
+  "cycleLength": 28,
+  "cycleMode": "natural",
+  "isCyclePredictionReliable": true,
+  "nextPeriodDate": "2026-04-12T00:00:00.000Z",
+  "insight": "You're in your ovulation window — energy and confidence may peak.",
+  "suggestedLogFields": ["mood", "energy", "social", "confidence"]
+}
+```
+
+**Errors**
+
+| Status | Message |
+|--------|---------|
+| `404` | `User not found` |
+
+---
+
+### `POST /api/cycle/period-started`
+
+**Auth:** Required
+
+**Request Body**
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `date` | string | Yes | `YYYY-MM-DD` or ISO format |
+
+**Response** `201`
+
+```json
+{
+  "success": true,
+  "startDate": "2026-03-28T00:00:00.000Z",
+  "cycleMode": "natural",
+  "healthPatternCheck": null
+}
+```
+
+When health alerts exist:
+
+```json
+{
+  "success": true,
+  "startDate": "2026-03-28T00:00:00.000Z",
+  "cycleMode": "natural",
+  "healthPatternCheck": {
+    "hasAlerts": true,
+    "alertCount": 2,
+    "message": "We noticed some patterns worth flagging."
+  }
+}
+```
+
+**Errors**
+
+| Status | Message |
+|--------|---------|
+| `400` | `date is required (YYYY-MM-DD or ISO)` |
+| `400` | `Invalid date` |
+| `404` | `User not found` |
+
+---
+
+## Logs
+
+### `POST /api/logs`
+
+**Auth:** Required
+
+**Request Body**
+
+| Field | Type | Required |
+|-------|------|----------|
+| `mood` | string | No |
+| `energy` | string | No |
+| `stress` | string | No |
+| `sleep` | number | No |
+| `diet` | string | No |
+| `exercise` | string | No |
+| `activity` | string | No |
+| `symptoms` | string[] | No |
+| `focus` | string | No |
+| `motivation` | string | No |
+| `pain` | string | No |
+| `social` | string | No |
+| `cravings` | string | No |
+| `fatigue` | string | No |
+| `padsChanged` | number | No |
+
+**Response** `201`
+
+```json
+{
+  "success": true,
+  "log": {
+    "id": "string",
+    "userId": "string",
+    "date": "2026-03-28T00:00:00.000Z",
+    "mood": "good",
+    "energy": "high",
+    "stress": "low",
+    "sleep": 7.5,
+    "diet": null,
+    "exercise": null,
+    "activity": null,
+    "symptoms": [],
+    "focus": null,
+    "motivation": null,
+    "pain": null,
+    "social": null,
+    "cravings": null,
+    "fatigue": null,
+    "padsChanged": null,
+    "createdAt": "2026-03-28T12:00:00.000Z"
+  }
+}
+```
+
+---
+
+### `GET /api/logs`
+
+**Auth:** Required
+
+**Query Parameters**
+
+| Param | Type | Required | Notes |
+|-------|------|----------|-------|
+| `date` | string | No | `YYYY-MM-DD` — filters to that day. Without it, returns last 30 logs. |
+
+**Response** `200`
+
+```json
+[
+  {
+    "id": "string",
+    "userId": "string",
+    "date": "2026-03-28T00:00:00.000Z",
+    "mood": "good",
+    "energy": "high",
+    "stress": "low",
+    "sleep": 7.5,
+    "symptoms": [],
+    "padsChanged": null
+  }
+]
+```
+
+---
+
+### `GET /api/logs/quick-log-config`
+
+**Auth:** Required
+
+**Response** `200`
+
+```json
+{
+  "phase": "ovulation",
+  "phaseLabel": "Ovulation",
+  "dayPhaseLabel": "Day 14 · Ovulation",
+  "title": "Peak energy window",
+  "subtitle": "You might feel confident and social today",
+  "fields": [
+    { "key": "mood", "label": "Mood", "type": "emoji_mood", "options": ["😔", "😐", "🙂", "😄"] },
+    { "key": "energy", "label": "Energy", "type": "chips", "options": ["Low", "Medium", "High"] },
+    { "key": "social", "label": "Social energy", "type": "chips", "options": ["Withdrawn", "Neutral", "Engaged"] },
+    { "key": "motivation", "label": "Confidence", "type": "chips", "options": ["Low", "Medium", "High"] }
+  ],
+  "submitLabel": "Log your day",
+  "hasLoggedToday": false,
+  "todayLogId": null
+}
+```
+
+**Errors**
+
+| Status | Message |
+|--------|---------|
+| `404` | `User not found` |
+
+---
+
+## Insights
+
+### `GET /api/insights`
+
+**Auth:** Required
+
+Returns cached response if available for the current UTC day.
+
+**Response** `200`
+
+```json
+{
+  "cycleDay": 14,
+  "home": {
+    "phase": "ovulation",
+    "currentDay": 14,
+    "isNewUser": false,
+    "primaryDriver": "stress_above_baseline",
+    "logsToNextMilestone": 3,
+    "confidence": "high",
+    "isPeriodDelayed": false,
+    "daysOverdue": 0,
+    "isIrregular": false
+  },
+  "isNewUser": false,
+  "progress": {
+    "logsCount": 15,
+    "nextMilestone": 21,
+    "logsToNextMilestone": 6
+  },
+  "mode": "personalized",
+  "confidence": "high",
+  "cycleContext": {
+    "cycleMode": "natural",
+    "cyclePredictionConfidence": "global",
+    "nextPeriodEstimate": "2026-04-12",
+    "nextPeriodRange": { "earliest": "2026-04-10", "latest": "2026-04-14" },
+    "isIrregular": false,
+    "isPeriodDelayed": false,
+    "daysOverdue": 0
+  },
+  "hormoneContext": {
+    "estrogen": "high",
+    "progesterone": "low",
+    "lh": "surging",
+    "fsh": "low",
+    "confidence": "moderate",
+    "narrativeContext": "Estrogen is peaking around ovulation..."
+  },
+  "contraceptionContext": {
+    "type": "none",
+    "contextMessage": null,
+    "insightTone": "natural",
+    "showPhaseInsights": true
+  },
+  "numericSummary": {
+    "recentSleepAvg": 7.2,
+    "baselineSleepAvg": 7.0,
+    "sleepDelta": 0.2,
+    "recentStressLabel": "moderate",
+    "recentMoodLabel": "positive"
+  },
+  "crossCycleNarrative": {
+    "matchingCycles": 2,
+    "totalCyclesAnalyzed": 3,
+    "narrativeStatement": "Your past cycles show a similar pattern around this day.",
+    "trend": "consistent"
+  },
+  "memoryContext": {
+    "driver": "stress_above_baseline",
+    "count": 3,
+    "narrative": "This is the third time stress has been elevated this cycle.",
+    "severity": "moderate"
+  },
+  "aiEnhanced": true,
+  "aiDebug": "accepted",
+  "correlationPattern": "ovulation_energy_blocked",
+  "basedOn": {
+    "phase": "ovulation",
+    "recentLogsCount": 7,
+    "confidenceScore": 0.92,
+    "baselineDeviation": ["stress_above_personal_baseline"],
+    "baselineScope": "global",
+    "priorityDrivers": ["stress_above_baseline", "stress_trend_spiking"],
+    "interactionFlags": ["mood_stress_coupling"],
+    "trends": ["Stress increasing", "Mood decreasing"],
+    "reasoning": [
+      "Phase is ovulation",
+      "Stress has been rising over the last 3 days.",
+      "Mood has been declining alongside stress."
+    ]
+  },
+  "insights": {
+    "physicalInsight": "Your body feels energised today...",
+    "mentalInsight": "Focus may feel sharper than usual...",
+    "emotionalInsight": "Mood has been affected by rising stress...",
+    "whyThisIsHappening": "Stress has been building over the last few days...",
+    "solution": "Take short breaks to manage stress load...",
+    "recommendation": "Use this energy window — but pace yourself...",
+    "tomorrowPreview": "If stress eases, tomorrow should feel lighter..."
+  },
+  "view": {
+    "primaryInsight": "Stress is elevated — but your energy is still strong.",
+    "supportingInsights": [
+      "Mood has been dipping with stress",
+      "Sleep is holding steady"
+    ],
+    "action": "Take breaks between demanding tasks",
+    "explanation": "Rising stress is the main signal today.",
+    "recommendation": "Use this energy window — but pace yourself.",
+    "tomorrowPreview": "If stress eases, tomorrow should feel lighter.",
+    "confidenceLabel": "Based on 15 days of data"
+  },
+  "pmsWarning": null,
+  "lastAnticipationCycleDay": null,
+  "lastAnticipationTypeKey": null
+}
+```
+
+**Errors**
+
+| Status | Message |
+|--------|---------|
+| `404` | `User not found` |
+
+---
+
+### `GET /api/insights/forecast`
+
+**Auth:** Required
+
+**Response** `200` — Two shapes depending on data availability:
+
+**Warmup (insufficient data)**
+
+```json
+{
+  "available": false,
+  "isNewUser": true,
+  "forecastLocked": true,
+  "reason": "We need at least 5 days of logs to generate a forecast.",
+  "warmupMessage": "Keep logging — your forecast unlocks soon.",
+  "progressPercent": 40,
+  "progress": {
+    "logsCount": 2,
+    "nextMilestone": 5,
+    "logsToNextMilestone": 3,
+    "logSpanDays": 2,
+    "logSpanNeeded": 5
+  },
+  "contraceptionContext": {
+    "type": "none",
+    "contextMessage": null
+  }
+}
+```
+
+**Full forecast**
+
+```json
+{
+  "available": true,
+  "isNewUser": false,
+  "progress": {
+    "logsCount": 15,
+    "nextMilestone": 21,
+    "logsToNextMilestone": 6
+  },
+  "today": {
+    "phase": "ovulation",
+    "currentDay": 14,
+    "confidenceScore": 0.92,
+    "priorityDrivers": ["stress_above_baseline"]
+  },
+  "forecast": {
+    "tomorrow": {
+      "date": "2026-03-29",
+      "phase": "ovulation",
+      "outlook": "Energy may remain high, but watch stress levels."
+    },
+    "nextPhase": {
+      "phase": "luteal",
+      "startsIn": 3,
+      "preview": "A phase shift may be approaching in about 3 days..."
+    },
+    "confidence": {
+      "level": "high",
+      "score": 0.92,
+      "label": "Based on 15 days of data",
+      "message": "Your forecast is reliable — patterns are well established."
+    }
+  },
+  "pmsSymptomForecast": null,
+  "numericSummary": {
+    "recentSleepAvg": 7.2,
+    "baselineSleepAvg": 7.0,
+    "sleepDelta": 0.2,
+    "recentStressLabel": "moderate",
+    "recentMoodLabel": "positive"
+  },
+  "crossCycleNarrative": null,
+  "cyclesCompleted": 3,
+  "contraceptionContext": {
+    "type": "none",
+    "contextMessage": null
+  }
+}
+```
+
+**Errors**
+
+| Status | Message |
+|--------|---------|
+| `404` | `User not found` |
+
+---
+
+## Chat
+
+### `POST /api/chat`
+
+**Auth:** Required
+
+**Request Body**
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `message` | string | Yes | The user's question |
+| `history` | array | No | Previous messages: `[{ "role": "user" \| "assistant", "content": "string" }]` |
+
+**Response** `200`
+
+```json
+{
+  "reply": "Based on your recent logs, your sleep has been steady around 7h..."
+}
+```
+
+**Errors**
+
+| Status | Message |
+|--------|---------|
+| `400` | `message is required` |
+| `404` | `User not found` |
+
+---
+
+### `GET /api/chat/history`
+
+**Auth:** Required
+
+**Response** `200`
+
+```json
+[
+  {
+    "id": "string",
+    "userId": "string",
+    "role": "user",
+    "content": "How am I sleeping?",
+    "createdAt": "2026-03-28T10:00:00.000Z"
+  },
+  {
+    "id": "string",
+    "userId": "string",
+    "role": "assistant",
+    "content": "Your sleep has averaged 7.2h over the last week...",
+    "createdAt": "2026-03-28T10:00:01.000Z"
+  }
+]
+```
+
+Returns up to 100 messages, sorted by `createdAt` ascending.
+
+---
+
+## Home
+
+### `GET /api/home`
+
+**Auth:** Required
+
+**Response** `200`
+
+```json
+{
+  "title": "Ovulation day",
+  "subtitle": "High chance of pregnancy today",
+  "cardHeadline": "You might feel confident and energised",
+  "dayPhaseLabel": "Day 14 · Ovulation",
+  "reassurance": "This is your peak energy window.",
+  "ctaText": "Make the most of today →",
+  "ctaLogPhase": "ovulation",
+  "phase": "ovulation",
+  "cycleDay": 14,
+  "cycleLength": 28,
+  "isPeriodDelayed": false,
+  "daysOverdue": 0,
+  "cyclePredictionConfidence": "global",
+  "isIrregular": false,
+  "quickLogFields": [
+    { "key": "mood", "label": "Mood", "type": "emoji_mood", "options": ["😔", "😐", "🙂", "😄"] },
+    { "key": "energy", "label": "Energy", "type": "chips", "options": ["Low", "Medium", "High"] },
+    { "key": "social", "label": "Social energy", "type": "chips", "options": ["Withdrawn", "Neutral", "Engaged"] },
+    { "key": "motivation", "label": "Confidence", "type": "chips", "options": ["Low", "Medium", "High"] }
+  ],
+  "contraceptionNote": null
+}
+```
+
+Content adapts to phase, cycle day, delayed period, irregular cycles, and hormonal contraception.
+
+**Errors**
+
+| Status | Message |
+|--------|---------|
+| `404` | `User not found` |
+
+---
+
+## Calendar
+
+### `GET /api/calendar`
+
+**Auth:** Required
+
+**Query Parameters**
+
+| Param | Type | Required | Notes |
+|-------|------|----------|-------|
+| `month` | string | Yes | Format: `YYYY-MM` |
+
+**Response** `200`
+
+```json
+{
+  "month": "2026-03",
+  "cycleLength": 28,
+  "cycleMode": "natural",
+  "cyclePredictionConfidence": "global",
+  "isIrregular": false,
+  "isPeriodDelayed": false,
+  "daysOverdue": 0,
+  "showPhaseInsights": true,
+  "currentPhase": "ovulation",
+  "nextPeriodEstimate": "2026-04-12",
+  "calendar": [
+    {
+      "date": "2026-03-01",
+      "cycleDay": 1,
+      "phase": "menstrual",
+      "phaseDay": 1,
+      "isToday": false,
+      "isFuture": false,
+      "isPast": true,
+      "hasLog": true,
+      "isPeriodDay": true,
+      "isOvulationDay": false,
+      "isPredicted": false,
+      "isPeriodDelayed": false,
+      "logSummary": {
+        "mood": "low",
+        "energy": "low",
+        "sleep": 5.5,
+        "stress": "moderate"
+      },
+      "phaseColor": "#E8514A"
+    }
+  ],
+  "todayInsightCard": {
+    "date": "2026-03-28",
+    "dayLabel": "Today",
+    "dayPhaseLabel": "Day 14 · Ovulation",
+    "cardHeadline": "You might feel confident and energised",
+    "reassurance": "This is your peak energy window.",
+    "ctaText": "Make the most of today →",
+    "ctaPhase": "ovulation",
+    "phase": "ovulation",
+    "isToday": true,
+    "isPeriodDelayed": false,
+    "daysOverdue": 0
+  },
+  "phaseTimeline": [
+    { "phase": "menstrual", "label": "Period", "color": "#E8514A", "startPercent": 0, "endPercent": 17.86 },
+    { "phase": "follicular", "label": "Follicular", "color": "#F5A623", "startPercent": 17.86, "endPercent": 46.43 },
+    { "phase": "ovulation", "label": "Ovulation", "color": "#F5A623", "startPercent": 46.43, "endPercent": 57.14 },
+    { "phase": "luteal", "label": "Luteal", "color": "#9B59B6", "startPercent": 57.14, "endPercent": 100 }
+  ]
+}
+```
+
+**Errors**
+
+| Status | Message |
+|--------|---------|
+| `400` | `month must be in YYYY-MM format` |
+| `404` | `User not found` |
+
+---
+
+### `GET /api/calendar/day-insight`
+
+**Auth:** Required
+
+**Query Parameters**
+
+| Param | Type | Required | Notes |
+|-------|------|----------|-------|
+| `date` | string | Yes | Format: `YYYY-MM-DD` |
+
+**Response** `200`
+
+```json
+{
+  "date": "2026-03-28",
+  "dayLabel": "Today",
+  "dayPhaseLabel": "Day 14 · Ovulation",
+  "cardHeadline": "You might feel confident and energised",
+  "reassurance": "This is your peak energy window.",
+  "ctaText": "Make the most of today →",
+  "ctaPhase": "ovulation",
+  "phase": "ovulation",
+  "isToday": true,
+  "isPeriodDelayed": false,
+  "daysOverdue": 0
+}
+```
+
+**Errors**
+
+| Status | Message |
+|--------|---------|
+| `400` | `date must be YYYY-MM-DD` |
+| `404` | `User not found` |
+
+---
+
+## Health Patterns
+
+### `GET /api/health/patterns`
+
+**Auth:** Required
+
+**Response** `200`
+
+```json
+{
+  "hasAlerts": true,
+  "alerts": [
+    {
+      "type": "short_cycles",
+      "message": "Your last 3 cycles have been under 21 days.",
+      "severity": "moderate",
+      "detectedAt": "2026-03-28T00:00:00.000Z"
+    }
+  ],
+  "watching": [
+    {
+      "type": "sleep_trend",
+      "message": "Sleep has been trending downward over 2 weeks.",
+      "since": "2026-03-14T00:00:00.000Z"
+    }
+  ],
+  "lastChecked": "2026-03-28T12:00:00.000Z",
+  "message": "We noticed some patterns worth flagging."
+}
+```
+
+When no alerts:
+
+```json
+{
+  "hasAlerts": false,
+  "alerts": [],
+  "watching": [],
+  "lastChecked": "2026-03-28T12:00:00.000Z"
+}
+```
+
+**Errors**
+
+| Status | Message |
+|--------|---------|
+| `404` | `User not found` |
+
+---
+
+## Global Error Responses
+
+| Status | When | Body |
+|--------|------|------|
+| `401` | Missing auth header | `{ "error": "Missing auth token" }` |
+| `401` | Invalid/expired token | `{ "error": "Invalid or expired token" }` |
+| `404` | Unknown route | `{ "error": "Route not found" }` |
+| `500` | Unhandled server error | `{ "error": "<message>" }` |

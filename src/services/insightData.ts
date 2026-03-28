@@ -1,7 +1,7 @@
 import type { DailyLog, User } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import type { Phase } from "./cycleEngine";
-import { detectCycleIrregularity, utcDayDiff } from "./cycleEngine";
+import { detectCycleIrregularity, utcDayDiff, toUTCDateOnly } from "./cycleEngine";
 
 export async function getPreviousCycleDriverHistory(
   userId: string,
@@ -212,8 +212,9 @@ async function buildCrossCycleNarrative(
   const cycleWindowData: Array<{ sleepAvg: number | null; stressScore: number | null; moodScore: number | null }> = [];
 
   for (const cycle of cycleHistory) {
-    const windowStart = new Date(cycle.startDate.getTime() + (currentCycleDay - 3) * 86400000);
-    const windowEnd = new Date(cycle.startDate.getTime() + (currentCycleDay + 2) * 86400000);
+    const base = toUTCDateOnly(cycle.startDate);
+    const windowStart = new Date(base + (currentCycleDay - 3) * 86400000);
+    const windowEnd = new Date(base + (currentCycleDay + 2) * 86400000);
 
     const logsInWindow = await prisma.dailyLog.findMany({
       where: {
