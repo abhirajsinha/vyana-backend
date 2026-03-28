@@ -204,6 +204,14 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
   });
   if (cached?.payload && isInsightsPayloadCached(cached.payload)) {
     const full = cached.payload as Record<string, unknown>;
+    // transitionWarmup is time-sensitive (14-day window) — compute fresh, don't cache it
+    const cachedUser = await prisma.user.findUnique({
+      where: { id: req.userId! },
+      select: { contraceptionChangedAt: true },
+    });
+    const cachedTransitionWarmup = cachedUser
+      ? buildTransitionWarmup(cachedUser.contraceptionChangedAt ?? null)
+      : null;
     res.json({
       cycleDay: full.cycleDay,
       isNewUser: full.isNewUser,
@@ -215,6 +223,7 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
       insights: full.insights,
       view: full.view,
       aiEnhanced: full.aiEnhanced,
+      transitionWarmup: cachedTransitionWarmup,
     });
     return;
   }
@@ -1097,7 +1106,14 @@ export async function getInsightsForecast(
     where: { userId_date: { userId: req.userId!, date: dayStart } },
   });
   if (cached?.forecast) {
-    res.json(cached.forecast);
+    const cachedUser = await prisma.user.findUnique({
+      where: { id: req.userId! },
+      select: { contraceptionChangedAt: true },
+    });
+    const cachedTransitionWarmup = cachedUser
+      ? buildTransitionWarmup(cachedUser.contraceptionChangedAt ?? null)
+      : null;
+    res.json({ ...(cached.forecast as object), transitionWarmup: cachedTransitionWarmup });
     return;
   }
 
