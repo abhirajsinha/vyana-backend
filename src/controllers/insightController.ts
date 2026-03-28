@@ -604,13 +604,12 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     numericBaseline.recentStressAvg < 1.6 &&
     (cycleInfo.phase === "ovulation" || cycleInfo.phase === "follicular");
 
-  const canUseAI =
+    const canUseAI =
     !effectiveStable &&
     (hasSignalRichness ||
       hasHighPrioritySignal ||
       hasCycleContext ||
-      hasPositivePeakSignal) &&
-    context.confidence !== "low";
+      hasPositivePeakSignal);
 
   if (canUseAI) {
     try {

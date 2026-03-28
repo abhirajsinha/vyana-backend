@@ -50,7 +50,7 @@ export function shouldShowExplanation(ctx: InsightContext): boolean {
 export function shouldShowSupporting(ctx: InsightContext): boolean {
   // For personalized mode we show supporting insights even when confidence is low,
   // because the signal strength is high enough to justify context.
-  return ctx.confidence !== "low" || ctx.mode === "personalized";
+  return true;
 }
 
 export function shouldSuppressPrimary(

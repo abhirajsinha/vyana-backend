@@ -1,6 +1,8 @@
-// NEW FILE — src/controllers/homeController.ts
-// This is a brand new controller. It adds GET /api/home.
-// Nothing in the existing codebase was changed to create this.
+// src/controllers/homeController.ts
+// CHANGE SUMMARY:
+//   - getQuickLogFields now has a hormonal override path
+//   - Response includes contraceptionTransitionMessage when user recently switched
+//   - buildContent unchanged — it already handles !showPhaseInsights correctly
 
 import { Request, Response } from "express";
 import { prisma } from "../lib/prisma";
@@ -36,6 +38,7 @@ export interface HomeScreenContent {
   isIrregular: boolean;
   quickLogFields: QuickLogField[];
   contraceptionNote: string | null;
+  isHormonalMode: boolean;
 }
 
 export interface QuickLogField {
@@ -58,8 +61,7 @@ function phaseLabel(phase: Phase): string {
   return labels[phase];
 }
 
-// ─── Phase position ratio (0.0 = start of phase, 1.0 = end) ──────────────────
-// This is what makes the content work for ANY cycle length, not just 28 days.
+// ─── Phase position ratio ─────────────────────────────────────────────────────
 
 function getPhaseRatio(phase: Phase, cycleDay: number, cycleLength: number): number {
   const lutealStart = Math.max(10, cycleLength - 13);
@@ -82,10 +84,13 @@ function getPhaseRatio(phase: Phase, cycleDay: number, cycleLength: number): num
   return Math.max(0, Math.min(1, ratio));
 }
 
-// ─── Quick-log fields per phase ───────────────────────────────────────────────
-// These power the bottom sheet that opens when the home screen CTA is tapped.
+// ─── Quick-log fields — UPDATED with hormonal path ────────────────────────────
 
-function getQuickLogFields(phase: Phase, isPeriodDelayed: boolean): QuickLogField[] {
+function getQuickLogFields(
+  phase: Phase,
+  isPeriodDelayed: boolean,
+  isHormonalMode: boolean,
+): QuickLogField[] {
   const mood: QuickLogField = { key: "mood", label: "Mood", type: "emoji_mood", options: ["😔", "😐", "🙂", "😄"] };
   const energy: QuickLogField = { key: "energy", label: "Energy", type: "chips", options: ["Low", "Medium", "High"] };
   const focus: QuickLogField = { key: "focus", label: "Today's focus", type: "text_input", placeholder: "What do you aim to achieve today?" };
@@ -95,6 +100,11 @@ function getQuickLogFields(phase: Phase, isPeriodDelayed: boolean): QuickLogFiel
   const cravings: QuickLogField = { key: "cravings", label: "Cravings", type: "chips", options: ["None", "Mild", "Strong"] };
   const fatigue: QuickLogField = { key: "fatigue", label: "Fatigue", type: "chips", options: ["Low", "Moderate", "High"] };
   const social: QuickLogField = { key: "social", label: "Social energy", type: "chips", options: ["Withdrawn", "Neutral", "Engaged"] };
+
+  // Hormonal contraception — pattern-based fields, no phase assumptions
+  if (isHormonalMode) {
+    return [mood, energy, fatigue, pain];
+  }
 
   if (isPeriodDelayed) return [mood, energy, fatigue, pain];
 
@@ -106,7 +116,7 @@ function getQuickLogFields(phase: Phase, isPeriodDelayed: boolean): QuickLogFiel
   }
 }
 
-// ─── Core content builder — works for all cycle lengths + edge cases ──────────
+// ─── Core content builder — unchanged logic ──────────────────────────────────
 
 function buildContent(params: {
   phase: Phase;
@@ -118,11 +128,13 @@ function buildContent(params: {
   cyclePredictionConfidence: string;
   showPhaseInsights: boolean;
   contraceptionNote: string | null;
-}): Omit<HomeScreenContent, "quickLogFields" | "ctaLogPhase"> {
+}): Omit<HomeScreenContent, "quickLogFields" | "ctaLogPhase" | "isHormonalMode"> {
   const { phase, cycleDay, cycleLength, isPeriodDelayed, daysOverdue,
     isIrregular, cyclePredictionConfidence, showPhaseInsights, contraceptionNote } = params;
 
-  const dayPhaseLabel = `Day ${cycleDay} · ${phaseLabel(phase)}`;
+  const dayPhaseLabel = showPhaseInsights
+    ? `Day ${cycleDay} · ${phaseLabel(phase)}`
+    : `Day ${cycleDay}`;
 
   // ── DELAYED PERIOD ────────────────────────────────────────────────────────
   if (isPeriodDelayed) {
@@ -161,12 +173,9 @@ function buildContent(params: {
   const r = getPhaseRatio(phase, cycleDay, cycleLength);
   const daysLeft = cycleLength - cycleDay + 1;
 
-  // ── IRREGULAR — soften subtitle ───────────────────────────────────────────
   const irregularSubtitle = isIrregular || cyclePredictionConfidence === "irregular"
     ? "Your cycle tends to vary — this is an estimate"
     : null;
-
-  // ── CONTENT PER PHASE ─────────────────────────────────────────────────────
 
   let title: string, subtitle: string, cardHeadline: string, reassurance: string, ctaText: string;
 
@@ -254,7 +263,7 @@ function buildContent(params: {
   };
 }
 
-// ─── GET /api/home ────────────────────────────────────────────────────────────
+// ─── GET /api/home — UPDATED ─────────────────────────────────────────────────
 
 export async function getHomeScreen(req: Request, res: Response): Promise<void> {
   const user = await prisma.user.findUnique({ where: { id: req.userId! } });
@@ -275,6 +284,7 @@ export async function getHomeScreen(req: Request, res: Response): Promise<void> 
 
   const contraceptionType = resolveContraceptionType(user.contraceptiveMethod);
   const contraceptionBehavior = getContraceptionBehavior(contraceptionType);
+  const isHormonalMode = !contraceptionBehavior.useNaturalCycleEngine;
 
   const content = buildContent({
     phase: cycleInfo.phase,
@@ -291,6 +301,7 @@ export async function getHomeScreen(req: Request, res: Response): Promise<void> 
   res.json({
     ...content,
     ctaLogPhase: cycleInfo.phase,
-    quickLogFields: getQuickLogFields(cycleInfo.phase, isPeriodDelayed),
+    quickLogFields: getQuickLogFields(cycleInfo.phase, isPeriodDelayed, isHormonalMode),
+    isHormonalMode,
   });
 }

@@ -1,11 +1,18 @@
 // src/controllers/logController.ts
-// CHANGE SUMMARY: Only ONE thing added — getQuickLogConfig function at the bottom.
-// saveLog and getLogs are 100% identical to your current version.
+// CHANGE SUMMARY:
+//   - getQuickLogConfig now checks contraception behavior
+//   - When showPhaseInsights is false, returns pattern-based log fields
+//     instead of phase-specific ones
+//   - saveLog and getLogs are 100% identical to current version
 
 import { Request, Response } from "express";
 import { prisma } from "../lib/prisma";
 import { calculateCycleInfo, getCycleMode, type Phase } from "../services/cycleEngine";
 import { getCyclePredictionContext } from "../services/insightData";
+import {
+  getContraceptionBehavior,
+  resolveContraceptionType,
+} from "../services/contraceptionengine";
 
 // ─── saveLog — IDENTICAL TO YOUR CURRENT VERSION ─────────────────────────────
 
@@ -84,9 +91,7 @@ export async function getLogs(req: Request, res: Response): Promise<void> {
   res.json(logs);
 }
 
-// ─── getQuickLogConfig — NEW ADDITION ────────────────────────────────────────
-// Called when the home screen CTA is tapped — returns phase-dependent
-// bottom sheet config. Nothing below this line existed before.
+// ─── Quick log field definitions ─────────────────────────────────────────────
 
 interface QuickLogFieldDef {
   key: string;
@@ -97,7 +102,7 @@ interface QuickLogFieldDef {
 }
 
 interface QuickLogConfig {
-  phase: Phase;
+  phase: Phase | null;
   phaseLabel: string;
   title: string;
   subtitle: string;
@@ -106,81 +111,115 @@ interface QuickLogConfig {
   submitLabel: string;
   hasLoggedToday: boolean;
   todayLogId: string | null;
+  isPatternBased: boolean;
 }
 
-function buildQuickLogConfig(phase: Phase, cycleDay: number): Omit<QuickLogConfig, "dayPhaseLabel" | "hasLoggedToday" | "todayLogId"> {
-  const phaseLabels: Record<Phase, string> = {
-    menstrual: "Period", follicular: "Follicular phase",
-    ovulation: "Ovulation", luteal: "Luteal phase",
-  };
+// ─── Shared field definitions ────────────────────────────────────────────────
 
-  const mood: QuickLogFieldDef = { key: "mood", label: "Mood", type: "emoji_mood", options: ["😔", "😐", "🙂", "😄"] };
-  const energy: QuickLogFieldDef = { key: "energy", label: "Energy", type: "chips", options: ["Low", "Medium", "High"] };
+const FIELD_MOOD: QuickLogFieldDef = { key: "mood", label: "Mood", type: "emoji_mood", options: ["😔", "😐", "🙂", "😄"] };
+const FIELD_ENERGY: QuickLogFieldDef = { key: "energy", label: "Energy", type: "chips", options: ["Low", "Medium", "High"] };
+const FIELD_STRESS: QuickLogFieldDef = { key: "stress", label: "Stress", type: "chips", options: ["Low", "Moderate", "High"] };
+const FIELD_FOCUS: QuickLogFieldDef = { key: "focus", label: "Today's focus", type: "text_input", placeholder: "What do you aim to achieve today?" };
+const FIELD_CONFIDENCE: QuickLogFieldDef = { key: "motivation", label: "Confidence", type: "chips", options: ["Low", "Medium", "High"] };
+const FIELD_FLOW: QuickLogFieldDef = { key: "padsChanged", label: "Flow today", type: "chips", options: ["Light", "Moderate", "Heavy"] };
+const FIELD_PAIN: QuickLogFieldDef = { key: "pain", label: "Cramps", type: "chips", options: ["None", "Mild", "Moderate", "Severe"] };
+const FIELD_CRAVINGS: QuickLogFieldDef = { key: "cravings", label: "Cravings", type: "chips", options: ["None", "Mild", "Strong"] };
+const FIELD_FATIGUE: QuickLogFieldDef = { key: "fatigue", label: "Fatigue", type: "chips", options: ["Low", "Moderate", "High"] };
+const FIELD_SOCIAL: QuickLogFieldDef = { key: "social", label: "Social energy", type: "chips", options: ["Withdrawn", "Neutral", "Engaged"] };
+
+// ─── Pattern-based log config (for hormonal contraception) ───────────────────
+// No phase assumptions — just track how she's feeling.
+
+function buildPatternBasedLogConfig(): Omit<QuickLogConfig, "dayPhaseLabel" | "hasLoggedToday" | "todayLogId"> {
+  return {
+    phase: null,
+    phaseLabel: "Your day",
+    title: "Log today 📝",
+    subtitle: "Quick check-in to track your patterns",
+    fields: [FIELD_MOOD, FIELD_ENERGY, FIELD_STRESS, FIELD_FATIGUE],
+    submitLabel: "Save today's check-in →",
+    isPatternBased: true,
+  };
+}
+
+// ─── Phase-based log config (for natural cycle) ─────────────────────────────
+
+function buildPhaseBasedLogConfig(
+  phase: Phase,
+  _cycleDay: number,
+): Omit<QuickLogConfig, "dayPhaseLabel" | "hasLoggedToday" | "todayLogId"> {
+  const phaseLabels: Record<Phase, string> = {
+    menstrual: "Period",
+    follicular: "Follicular phase",
+    ovulation: "Ovulation",
+    luteal: "Luteal phase",
+  };
 
   switch (phase) {
     case "menstrual":
       return {
-        phase, phaseLabel: phaseLabels[phase],
+        phase,
+        phaseLabel: phaseLabels[phase],
         title: "Log today 🩸",
         subtitle: "Quick check-in to track your day",
-        fields: [
-          mood,
-          { key: "padsChanged", label: "Flow today", type: "chips", options: ["Light", "Moderate", "Heavy"] },
-          { key: "pain", label: "Cramps", type: "chips", options: ["None", "Mild", "Moderate", "Severe"] },
-          energy,
-        ],
+        fields: [FIELD_MOOD, FIELD_FLOW, FIELD_PAIN, FIELD_ENERGY],
         submitLabel: "Save & track flow →",
+        isPatternBased: false,
       };
 
     case "follicular":
       return {
-        phase, phaseLabel: phaseLabels[phase],
+        phase,
+        phaseLabel: phaseLabels[phase],
         title: "Log today 🚀",
         subtitle: "Quick check-in to track your day",
-        fields: [
-          mood, energy,
-          { key: "focus", label: "Today's focus", type: "text_input", placeholder: "What do you aim to achieve today?" },
-          { key: "motivation", label: "Confidence", type: "chips", options: ["Low", "Medium", "High"] },
-        ],
+        fields: [FIELD_MOOD, FIELD_ENERGY, FIELD_FOCUS, FIELD_CONFIDENCE],
         submitLabel: "Save & build momentum →",
+        isPatternBased: false,
       };
 
     case "ovulation":
       return {
-        phase, phaseLabel: phaseLabels[phase],
+        phase,
+        phaseLabel: phaseLabels[phase],
         title: "Log today ✨",
         subtitle: "Quick check-in to track your day",
-        fields: [
-          mood, energy,
-          { key: "social", label: "Social energy", type: "chips", options: ["Withdrawn", "Neutral", "Engaged"] },
-          { key: "motivation", label: "Confidence", type: "chips", options: ["Low", "Medium", "High"] },
-        ],
+        fields: [FIELD_MOOD, FIELD_ENERGY, FIELD_SOCIAL, FIELD_CONFIDENCE],
         submitLabel: "Save today's peak →",
+        isPatternBased: false,
       };
 
     case "luteal":
       return {
-        phase, phaseLabel: phaseLabels[phase],
+        phase,
+        phaseLabel: phaseLabels[phase],
         title: "Log today 🌙",
         subtitle: "Quick check-in to track your day",
-        fields: [
-          mood, energy,
-          { key: "cravings", label: "Cravings", type: "chips", options: ["None", "Mild", "Strong"] },
-          { key: "fatigue", label: "Fatigue", type: "chips", options: ["Low", "Moderate", "High"] },
-        ],
-        submitLabel: "Save & build momentum →",
+        fields: [FIELD_MOOD, FIELD_ENERGY, FIELD_CRAVINGS, FIELD_FATIGUE],
+        submitLabel: "Save & take care →",
+        isPatternBased: false,
       };
   }
 }
 
+// ─── getQuickLogConfig — UPDATED ─────────────────────────────────────────────
+
 export async function getQuickLogConfig(req: Request, res: Response): Promise<void> {
   const user = await prisma.user.findUnique({ where: { id: req.userId! } });
-  if (!user) { res.status(404).json({ error: "User not found" }); return; }
+  if (!user) {
+    res.status(404).json({ error: "User not found" });
+    return;
+  }
 
   const cycleMode = getCycleMode(user);
   const cyclePrediction = await getCyclePredictionContext(req.userId!, user.cycleLength);
   const effectiveCycleLength = cyclePrediction.avgLength || user.cycleLength;
   const cycleInfo = calculateCycleInfo(user.lastPeriodStart, effectiveCycleLength, cycleMode);
+
+  // Check contraception behavior
+  const contraceptionType = resolveContraceptionType(user.contraceptiveMethod);
+  const contraceptionBehavior = getContraceptionBehavior(contraceptionType);
+  const showPhaseInsights = contraceptionBehavior.useNaturalCycleEngine;
 
   // Check if already logged today
   const todayStart = new Date();
@@ -191,16 +230,25 @@ export async function getQuickLogConfig(req: Request, res: Response): Promise<vo
     where: { userId: req.userId!, date: { gte: todayStart, lte: todayEnd } },
   });
 
+  // Build config based on whether phase insights apply
+  const config = showPhaseInsights
+    ? buildPhaseBasedLogConfig(cycleInfo.phase, cycleInfo.currentDay)
+    : buildPatternBasedLogConfig();
+
   const phaseLabels: Record<Phase, string> = {
-    menstrual: "Period", follicular: "Follicular phase",
-    ovulation: "Ovulation", luteal: "Luteal phase",
+    menstrual: "Period",
+    follicular: "Follicular phase",
+    ovulation: "Ovulation",
+    luteal: "Luteal phase",
   };
 
-  const config = buildQuickLogConfig(cycleInfo.phase, cycleInfo.currentDay);
+  const dayPhaseLabel = showPhaseInsights
+    ? `Day ${cycleInfo.currentDay} · ${phaseLabels[cycleInfo.phase]}`
+    : `Day ${cycleInfo.currentDay}`;
 
   res.json({
     ...config,
-    dayPhaseLabel: `Day ${cycleInfo.currentDay} · ${phaseLabels[cycleInfo.phase]}`,
+    dayPhaseLabel,
     hasLoggedToday: !!todayLog,
     todayLogId: todayLog?.id ?? null,
   });

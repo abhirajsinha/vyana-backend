@@ -702,7 +702,7 @@ function buildBroaderGuidance(ctx: InsightContext): string {
   if (ctx.recentLogsCount < 3) {
     return `Log mood, sleep, and stress for the next 3 days — the insights will get sharper fast.`;
   }
-  const tone = getPhaseTone(ctx.cycleDay, ctx.phase === "menstrual" ? 28 : 28);
+  const tone = ctx.phaseTone;
   if (ctx.phase === "menstrual") {
     return `Iron-rich food, early sleep, and fewer obligations this week — your body is doing its hardest work right now.`;
   }

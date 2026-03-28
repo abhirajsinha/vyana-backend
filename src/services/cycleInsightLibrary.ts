@@ -307,9 +307,9 @@ const library: DayInsight[] = [
       "Moderate-to-demanding work suits today — your energy can handle it.",
     ],
     tomorrowPreview: [
-      "Day 9 continues the upward energy and focus trend.",
-      "Tomorrow keeps building — you're heading toward your stronger window.",
-      "Day 9 brings improving focus as the pre-ovulatory window approaches.",
+      "Day 9 sharpens focus and drive — estrogen keeps climbing toward ovulation.",
+      "Tomorrow is another clear step up in stamina and mental clarity.",
+      "Day 9 continues the strong follicular build — energy and concentration both climb.",
     ],
     energyLevel: "rising",
     focusLevel: "good",

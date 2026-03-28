@@ -30,6 +30,9 @@ export async function chat(req: Request, res: Response): Promise<void> {
   const cycleMode = getCycleMode(user);
   const cycleInfo = calculateCycleInfo(user.lastPeriodStart, user.cycleLength, cycleMode);
 
+  // Count total logs (recent + baseline) to know actual data availability
+  const totalLogCount = recentLogs.length + baselineLogs.length;
+
   const context = buildInsightContext(
     cycleInfo.phase,
     cycleInfo.currentDay,
@@ -88,6 +91,7 @@ export async function chat(req: Request, res: Response): Promise<void> {
     numericBaseline,
     crossCycleNarrative,
     vyanaCtx,
+    totalLogCount,
   });
 
   await prisma.chatMessage.createMany({

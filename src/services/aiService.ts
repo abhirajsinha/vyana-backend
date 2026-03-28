@@ -1334,6 +1334,8 @@ export async function askVyanaWithGpt(params: {
   numericBaseline?: NumericBaseline | null;
   crossCycleNarrative?: CrossCycleNarrative | null;
   vyanaCtx?: VyanaContext;
+  /** Total logs (e.g. recent + baseline); defaults to recentLogs.length if omitted */
+  totalLogCount?: number;
 }): Promise<string> {
   const {
     userName,
@@ -1344,6 +1346,7 @@ export async function askVyanaWithGpt(params: {
     numericBaseline,
     crossCycleNarrative,
     vyanaCtx,
+    totalLogCount = recentLogs.length,
   } = params;
 
   if (!client)
@@ -1359,6 +1362,13 @@ export async function askVyanaWithGpt(params: {
     "Never diagnose. Suggest medical support for severe or persistent symptoms.",
     CERTAINTY_RULES_FOR_GPT,
   ].join(" ");
+
+  const noDataGuard =
+    totalLogCount === 0
+      ? `\n\nCRITICAL — ZERO DATA: This user has NOT logged a single day. You have NO sleep, mood, stress, energy, or symptom data whatsoever. If they ask about ANY metric (sleep, mood, stress, energy, patterns, how they've been feeling, what's been happening), you MUST tell them you don't have that data yet and warmly encourage them to start logging. Do NOT invent, assume, guess, or infer any values. Do NOT say their sleep has been "consistent", "restful", "stable", or anything implying you have information you don't have. You literally know NOTHING about how they feel — only their cycle day and phase. Be honest, warm, and direct about this.`
+      : totalLogCount < 3
+        ? `\n\nLIMITED DATA: This user has only ${totalLogCount} log(s). Be honest about what you can and cannot say. Do not make pattern, trend, or baseline claims. Only reference what the logged data actually shows. If they ask about something you don't have data for, say so.`
+        : "";
 
   const contextBlock = vyanaCtx
     ? serializeVyanaContext(vyanaCtx)
@@ -1393,7 +1403,7 @@ export async function askVyanaWithGpt(params: {
       );
 
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-    { role: "system", content: systemPrompt },
+    { role: "system", content: systemPrompt + noDataGuard },
     ...history
       .slice(-6)
       .map(
@@ -1472,6 +1482,12 @@ function buildFallbackContextBlock(
   if (ctx.trends?.length > 0) lines.push(`Trends: ${ctx.trends.join(", ")}`);
   if (narrative?.narrativeStatement)
     lines.push(`Past cycles: ${narrative.narrativeStatement}`);
+
+  if (lines.length <= 2) {
+    lines.push(
+      "⚠ NO LOGGED DATA — this user has not logged any days yet. Do not make claims about their sleep, mood, stress, or energy.",
+    );
+  }
 
   return lines.join("\n");
 }
