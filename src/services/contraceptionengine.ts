@@ -1,5 +1,3 @@
-import type { CycleMode } from "./cycleEngine";
-
 // ─── Contraception types ──────────────────────────────────────────────────────
 
 export type ContraceptionType =
@@ -145,6 +143,12 @@ const CONTRACEPTION_MAP: Record<string, ContraceptionType> = {
 
 export function resolveContraceptionType(method: string | null): ContraceptionType {
   return CONTRACEPTION_MAP[method?.toLowerCase() ?? "none"] ?? "none";
+}
+
+/** True when the natural cycle engine should not run (matches `getCycleMode` → `"hormonal"`). */
+export function isSuppressingNaturalCycle(method: string | null): boolean {
+  const t = resolveContraceptionType(method);
+  return !getContraceptionBehavior(t).useNaturalCycleEngine;
 }
 
 // ─── Forecast eligibility check ──────────────────────────────────────────────

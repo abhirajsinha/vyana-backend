@@ -45,8 +45,9 @@ export function isCycleLengthDays(value: unknown): value is CycleLengthDays {
 }
 
 /**
- * Values that map to `cycleMode === "hormonal"` in `getCycleMode`.
- * Other strings may be stored in DB but are treated as non-hormonal for phase logic.
+ * Legacy list for typing / validation helpers. `getCycleMode` uses
+ * `isSuppressingNaturalCycle` in `contraceptionengine.ts` so it stays aligned
+ * with `resolveContraceptionType` + `getContraceptionBehavior`.
  */
 export const HORMONAL_CONTRACEPTIVE_METHODS = [
   "pill",

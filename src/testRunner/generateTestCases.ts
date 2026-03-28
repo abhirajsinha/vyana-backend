@@ -6,7 +6,10 @@
 import * as fs from "fs";
 import * as path from "path";
 import type { Phase } from "../services/cycleEngine";
-import { calculatePhaseFromCycleLength } from "../services/cycleEngine";
+import {
+  calculateCycleInfoForDate,
+  calculatePhaseFromCycleLength,
+} from "../services/cycleEngine";
 
 export type TestExpect = {
   cycleDay: number;
@@ -311,23 +314,29 @@ function buildBleedingEdges(): GeneratedTestCase[] {
 function buildDelayedEdges(): GeneratedTestCase[] {
   const out: GeneratedTestCase[] = [];
   const offsets = [35, 40, 32, 45, 50, 38];
+  const cycleLength = 28;
   offsets.forEach((rawDaysAgo, idx) => {
     const d = localMidnight();
     d.setDate(d.getDate() - (rawDaysAgo - 1));
-    const diffDays = rawDaysAgo - 1;
-    const cycleDay = ((diffDays % 28) + 28) % 28 + 1;
+    const today = localMidnight();
+    const { currentDay: cycleDay } = calculateCycleInfoForDate(
+      d,
+      today,
+      cycleLength,
+      "natural",
+    );
     out.push({
       id: `T_EDGE_DELAY_${String(idx + 1).padStart(2, "0")}`,
       description: `Late period raw offset ${rawDaysAgo}d vs cycle 28`,
       user: baseUser({
         lastPeriodStart: d,
-        cycleLength: 28,
+        cycleLength,
       }),
       logs: buildGoodAllLogs(),
       expect: {
         cycleDay,
-        cycleLength: 28,
-        phase: expectedPhase(cycleDay, 28, "natural"),
+        cycleLength,
+        phase: expectedPhase(cycleDay, cycleLength, "natural"),
         minLogs: 5,
         shouldBeStable: false,
         shouldDetectSleepDisruption: false,

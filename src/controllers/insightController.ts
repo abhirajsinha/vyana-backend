@@ -74,7 +74,7 @@ import {
   isStableInsightState,
   type PrimaryInsightCause,
 } from "../services/insightCause";
-import { buildMonitorEntry, recordInsightGeneration } from "../services/insigtMonitor";
+import { buildMonitorEntry, recordInsightGeneration } from "../services/insightMonitor";
 
 function isInsightsPayloadCached(payload: unknown): boolean {
   return (
@@ -106,6 +106,10 @@ function getAnticipationState(
   };
 }
 
+function utcCalendarDayKey(d: Date): string {
+  return `${d.getUTCFullYear()}-${d.getUTCMonth() + 1}-${d.getUTCDate()}`;
+}
+
 /**
  * Fetch past occurrences where the same driver fired AND the user logged mood.
  * Called in getInsights() before building VyanaContext.
@@ -133,33 +137,54 @@ async function fetchEmotionalMemoryInput(
 
   if (pastHistory.length < 2) return null;
 
-  const now = new Date();
-  const occurrences = await Promise.all(
-    pastHistory.map(async (h) => {
-      const dayStart = new Date(h.createdAt);
-      dayStart.setUTCHours(0, 0, 0, 0);
-      const dayEnd = new Date(h.createdAt);
-      dayEnd.setUTCHours(23, 59, 59, 999);
+  let globalMin: Date | null = null;
+  let globalMax: Date | null = null;
+  for (const h of pastHistory) {
+    const dayStart = new Date(h.createdAt);
+    dayStart.setUTCHours(0, 0, 0, 0);
+    const dayEnd = new Date(h.createdAt);
+    dayEnd.setUTCHours(23, 59, 59, 999);
+    if (!globalMin || dayStart < globalMin) globalMin = dayStart;
+    if (!globalMax || dayEnd > globalMax) globalMax = dayEnd;
+  }
+  if (!globalMin || !globalMax) return null;
 
-      const log = await prisma.dailyLog.findFirst({
-        where: { userId, date: { gte: dayStart, lte: dayEnd } },
-        select: { mood: true, energy: true, stress: true },
+  const allLogs = await prisma.dailyLog.findMany({
+    where: { userId, date: { gte: globalMin, lte: globalMax } },
+    orderBy: { date: "asc" },
+    select: { mood: true, energy: true, stress: true, date: true },
+  });
+
+  const logByUtcDay = new Map<
+    string,
+    { mood: string | null; energy: string | null; stress: string | null }
+  >();
+  for (const log of allLogs) {
+    const key = utcCalendarDayKey(new Date(log.date));
+    if (!logByUtcDay.has(key)) {
+      logByUtcDay.set(key, {
+        mood: log.mood,
+        energy: log.energy,
+        stress: log.stress,
       });
+    }
+  }
 
-      const daysAgo = Math.floor(
-        (now.getTime() - h.createdAt.getTime()) / 86400000,
-      );
-
-      return {
-        cycleDay: h.cycleDay ?? currentCycleDay,
-        phase: (h.phase ?? "luteal") as Phase,
-        mood: log?.mood ?? null,
-        energy: log?.energy ?? null,
-        stress: log?.stress ?? null,
-        daysAgo,
-      };
-    }),
-  );
+  const now = new Date();
+  const occurrences = pastHistory.map((h) => {
+    const log = logByUtcDay.get(utcCalendarDayKey(h.createdAt));
+    const daysAgo = Math.floor(
+      (now.getTime() - h.createdAt.getTime()) / 86400000,
+    );
+    return {
+      cycleDay: h.cycleDay ?? currentCycleDay,
+      phase: (h.phase ?? "luteal") as Phase,
+      mood: log?.mood ?? null,
+      energy: log?.energy ?? null,
+      stress: log?.stress ?? null,
+      daysAgo,
+    };
+  });
 
   return { pastOccurrences: occurrences.filter((o) => o.mood !== null) };
 }

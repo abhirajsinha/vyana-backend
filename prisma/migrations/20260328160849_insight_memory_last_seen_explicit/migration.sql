@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "InsightMemory" ALTER COLUMN "lastSeen" SET DEFAULT CURRENT_TIMESTAMP;

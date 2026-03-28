@@ -1,5 +1,5 @@
 import type { User } from "@prisma/client";
-import { HORMONAL_CONTRACEPTIVE_METHODS } from "../types/cycleUser";
+import { isSuppressingNaturalCycle } from "./contraceptionengine";
 
 export type Phase = "menstrual" | "follicular" | "ovulation" | "luteal";
 export type CycleMode = "natural" | "hormonal" | "irregular";
@@ -132,8 +132,7 @@ function getPhaseStartDay(
 }
 
 export function getCycleMode(user: Pick<User, "contraceptiveMethod" | "cycleRegularity">): CycleMode {
-  const hormonal = new Set<string>(HORMONAL_CONTRACEPTIVE_METHODS);
-  if (user.contraceptiveMethod && hormonal.has(user.contraceptiveMethod)) {
+  if (user.contraceptiveMethod && isSuppressingNaturalCycle(user.contraceptiveMethod)) {
     return "hormonal";
   }
   if (user.cycleRegularity === "irregular") {

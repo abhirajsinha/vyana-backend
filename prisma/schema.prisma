@@ -109,7 +109,7 @@ model InsightMemory {
   userId     String
   driver     String
   firstSeen  DateTime @default(now())
-  lastSeen   DateTime @updatedAt
+  lastSeen   DateTime @default(now())
   count      Int      @default(1)
 
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)

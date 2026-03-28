@@ -211,6 +211,13 @@ import {
     it("returns hormonal for injection", () => {
       expect(getCycleMode({ contraceptiveMethod: "injection", cycleRegularity: "regular" })).toBe("hormonal");
     });
+
+    it("returns hormonal for combined_pill, mini_pill, patch, ring (same as contraception engine)", () => {
+      expect(getCycleMode({ contraceptiveMethod: "combined_pill", cycleRegularity: "regular" })).toBe("hormonal");
+      expect(getCycleMode({ contraceptiveMethod: "mini_pill", cycleRegularity: "regular" })).toBe("hormonal");
+      expect(getCycleMode({ contraceptiveMethod: "patch", cycleRegularity: "regular" })).toBe("hormonal");
+      expect(getCycleMode({ contraceptiveMethod: "ring", cycleRegularity: "regular" })).toBe("hormonal");
+    });
   
     it("returns natural for no contraception", () => {
       expect(getCycleMode({ contraceptiveMethod: null, cycleRegularity: "regular" })).toBe("natural");
