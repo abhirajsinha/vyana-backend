@@ -1035,7 +1035,11 @@ export function serializeVyanaContext(vc: VyanaContext): string {
 
   if (vc.userName) lines.push(`User: ${vc.userName}`);
   lines.push(`Cycle: ${vc.cycle.cycleSummary} — ${vc.cycle.phasePositionHuman}`);
-  if (vc.primaryInsightCause === "sleep_disruption") {
+  if (vc.primaryInsightCause === "stable") {
+    lines.push(
+      `STABLE STATE (mandatory): Recent logs are flat — no sleep crash, no stress spike, no mood slide. Acknowledge steadiness. Do NOT invent trends, problems, or cycle explanations for noise. Keep tone calm and minimal.`,
+    );
+  } else if (vc.primaryInsightCause === "sleep_disruption") {
     lines.push(
       `PRIMARY CAUSE (mandatory): sleep / recovery — NOT hormones, NOT iron recovery, NOT "past cycles show". Explain how she feels as sleep-driven. Phase is context only.`,
     );

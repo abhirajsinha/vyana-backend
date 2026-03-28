@@ -1,0 +1,2746 @@
+[
+  {
+    "testId": "T_SYS_D01_GOOD_ALL",
+    "description": "Systematic cycle day 1, profile good_all",
+    "expect": {
+      "cycleDay": 1,
+      "cycleLength": 28,
+      "phase": "menstrual",
+      "minLogs": 5,
+      "shouldBeStable": false,
+      "shouldDetectSleepDisruption": false,
+      "shouldGateGPT": false,
+      "shouldDetectBleeding": true
+    },
+    "phase": "menstrual",
+    "cycleDay": 1,
+    "primaryDriver": "bleeding_heavy",
+    "aiEnhanced": true,
+    "aiDebug": "accepted",
+    "correlationPattern": null,
+    "durationMs": 12476,
+    "error": null,
+    "output": {
+      "cycleDay": 1,
+      "home": {
+        "phase": "menstrual",
+        "currentDay": 1,
+        "isNewUser": false,
+        "primaryDriver": "bleeding_heavy",
+        "logsToNextMilestone": 2,
+        "confidence": "high",
+        "isPeriodDelayed": false,
+        "daysOverdue": 0,
+        "isIrregular": false
+      },
+      "isNewUser": false,
+      "progress": {
+        "logsCount": 5,
+        "nextMilestone": 7,
+        "logsToNextMilestone": 2
+      },
+      "mode": "personalized",
+      "confidence": "high",
+      "cycleContext": {
+        "cycleMode": "natural",
+        "cyclePredictionConfidence": "unknown",
+        "nextPeriodEstimate": "2026-04-25",
+        "isIrregular": false,
+        "isPeriodDelayed": false,
+        "daysOverdue": 0
+      },
+      "hormoneContext": {
+        "estrogen": "low",
+        "progesterone": "low",
+        "lh": "low",
+        "fsh": "rising",
+        "confidence": "inferred",
+        "narrativeContext": "Both estrogen and progesterone are typically at their lowest point, which is what triggers bleeding. FSH is beginning its gradual rise to start preparing the next follicle."
+      },
+      "contraceptionContext": {
+        "type": "none",
+        "contextMessage": null,
+        "insightTone": "cycle-based",
+        "showPhaseInsights": true
+      },
+      "numericSummary": {
+        "recentSleepAvg": 7.3,
+        "baselineSleepAvg": null,
+        "sleepDelta": null,
+        "recentStressLabel": "calm",
+        "recentMoodLabel": "positive"
+      },
+      "crossCycleNarrative": null,
+      "memoryContext": {
+        "driver": "bleeding_heavy",
+        "count": 0,
+        "narrative": null,
+        "severity": "new"
+      },
+      "aiEnhanced": true,
+      "aiDebug": "accepted",
+      "correlationPattern": null,
+      "basedOn": {
+        "phase": "menstrual",
+        "recentLogsCount": 5,
+        "confidenceScore": 0.9,
+        "baselineDeviation": [],
+        "baselineScope": "none",
+        "priorityDrivers": [
+          "bleeding_heavy",
+          "high_strain"
+        ],
+        "interactionFlags": [],
+        "trends": [
+          "Sleep stable",
+          "Stress stable",
+          "Mood increasing",
+          "Sleep variability low",
+          "Mood variability low"
+        ],
+        "reasoning": [
+          "Phase is menstrual",
+          "Physical state mapped to high_strain",
+          "Mental state mapped to balanced",
+          "Emotional state mapped to uplifted",
+          "Bleeding load mapped to heavy",
+          "No strong cross-signal interaction detected",
+          "No strong personal baseline deviation detected",
+          "Insight priority drivers: bleeding_heavy, high_strain",
+          "No strong phase deviation detected",
+          "Trends: Sleep stable, Stress stable, Mood increasing, Sleep variability low, Mood variability low"
+        ]
+      },
+      "insights": {
+        "physicalInsight": "Your flow is heavier today, which can feel physically demanding. It's normal to feel a bit more fatigued as your body works through this.",
+        "mentalInsight": "Focus is lower today — your body is prioritizing recovery over clarity. It's okay to take it easier and not push yourself too hard.",
+        "emotionalInsight": "Your mood feels under some pressure right now, which is a comforting space to be in. Small things may take a bit more effort, but that's okay.",
+        "whyThisIsHappening": "Both estrogen and progesterone are at their lowest point, which triggers your bleeding. This hormonal shift is a natural part of your cycle.",
+        "solution": "Allow yourself to slow down today — it's okay to rest and listen to your body.",
+        "recommendation": "Keep your schedule lighter this week — your body is doing a lot right now, and it needs that space to recover.",
+        "tomorrowPreview": "You're on Day 2 of your period — if today is hard, it's usually the peak. Things tend to ease from here."
+      },
+      "view": {
+        "primaryInsight": "Your flow is heavier today, which can feel physically demanding. It's normal to feel a bit more fatigued as your body works through this.",
+        "supportingInsights": [
+          "Focus is lower today — your body is prioritizing recovery over clarity. It's okay to take it easier and not push yourself too hard.",
+          "Your mood feels under some pressure right now, which is a comforting space to be in. Small things may take a bit more effort, but that's okay."
+        ],
+        "action": "Allow yourself to slow down today — it's okay to rest and listen to your body.",
+        "explanation": "Both estrogen and progesterone are at their lowest point, which triggers your bleeding. This hormonal shift is a natural part of your cycle.",
+        "recommendation": "Keep your schedule lighter this week — your body is doing a lot right now, and it needs that space to recover.",
+        "tomorrowPreview": "You're on Day 2 of your period — if today is hard, it's usually the peak. Things tend to ease from here.",
+        "confidenceLabel": "High confidence insights"
+      },
+      "pmsWarning": null,
+      "lastAnticipationCycleDay": 1,
+      "lastAnticipationTypeKey": "menstrual_peak"
+    }
+  },
+  {
+    "testId": "T_SYS_D01_SLEEP_DEPRIVED",
+    "description": "Systematic cycle day 1, profile sleep_deprived",
+    "expect": {
+      "cycleDay": 1,
+      "cycleLength": 28,
+      "phase": "menstrual",
+      "minLogs": 14,
+      "shouldBeStable": false,
+      "shouldDetectSleepDisruption": true,
+      "shouldGateGPT": false,
+      "shouldDetectBleeding": true
+    },
+    "phase": "menstrual",
+    "cycleDay": 1,
+    "primaryDriver": "sleep_below_baseline",
+    "aiEnhanced": true,
+    "aiDebug": "accepted",
+    "correlationPattern": "sleep_disruption_primary",
+    "durationMs": 10879,
+    "error": null,
+    "output": {
+      "cycleDay": 1,
+      "home": {
+        "phase": "menstrual",
+        "currentDay": 1,
+        "isNewUser": false,
+        "primaryDriver": "sleep_below_baseline",
+        "logsToNextMilestone": 7,
+        "confidence": "high",
+        "isPeriodDelayed": false,
+        "daysOverdue": 0,
+        "isIrregular": false
+      },
+      "isNewUser": false,
+      "progress": {
+        "logsCount": 7,
+        "nextMilestone": 14,
+        "logsToNextMilestone": 7
+      },
+      "mode": "personalized",
+      "confidence": "high",
+      "cycleContext": {
+        "cycleMode": "natural",
+        "cyclePredictionConfidence": "unknown",
+        "nextPeriodEstimate": "2026-04-25",
+        "isIrregular": false,
+        "isPeriodDelayed": false,
+        "daysOverdue": 0
+      },
+      "hormoneContext": {
+        "estrogen": "low",
+        "progesterone": "low",
+        "lh": "low",
+        "fsh": "rising",
+        "confidence": "inferred",
+        "narrativeContext": "Both estrogen and progesterone are typically at their lowest point, which is what triggers bleeding. FSH is beginning its gradual rise to start preparing the next follicle."
+      },
+      "contraceptionContext": {
+        "type": "none",
+        "contextMessage": null,
+        "insightTone": "cycle-based",
+        "showPhaseInsights": true
+      },
+      "numericSummary": {
+        "recentSleepAvg": 5.5,
+        "baselineSleepAvg": 7,
+        "sleepDelta": -1.5,
+        "recentStressLabel": "calm",
+        "recentMoodLabel": "neutral"
+      },
+      "crossCycleNarrative": null,
+      "memoryContext": {
+        "driver": "sleep_below_baseline",
+        "count": 0,
+        "narrative": null,
+        "severity": "new"
+      },
+      "aiEnhanced": true,
+      "aiDebug": "accepted",
+      "correlationPattern": "sleep_disruption_primary",
+      "basedOn": {
+        "phase": "menstrual",
+        "recentLogsCount": 7,
+        "confidenceScore": 1,
+        "baselineDeviation": [
+          "sleep_below_personal_baseline"
+        ],
+        "baselineScope": "global",
+        "priorityDrivers": [
+          "sleep_below_baseline",
+          "bleeding_heavy",
+          "sleep_trend_declining",
+          "mood_trend_declining",
+          "high_strain"
+        ],
+        "interactionFlags": [],
+        "trends": [
+          "Sleep decreasing",
+          "Stress increasing",
+          "Mood decreasing",
+          "Sleep variability moderate",
+          "Mood variability moderate"
+        ],
+        "reasoning": [
+          "Phase is menstrual",
+          "Physical state mapped to high_strain",
+          "Mental state mapped to fatigued",
+          "Emotional state mapped to loaded",
+          "Bleeding load mapped to heavy",
+          "No strong cross-signal interaction detected",
+          "Personal baseline deviations: sleep_below_personal_baseline",
+          "Insight priority drivers: sleep_below_baseline, bleeding_heavy, sleep_trend_declining, mood_trend_declining, high_strain",
+          "No strong phase deviation detected",
+          "Trends: Sleep decreasing, Stress increasing, Mood decreasing, Sleep variability moderate, Mood variability moderate"
+        ]
+      },
+      "insights": {
+        "physicalInsight": "Your sleep has dropped sharply over the last few days — about 5.5 hours, which is lower than your usual. When sleep is off, everything feels harder — that's biology, not you.",
+        "mentalInsight": "Focus is lower today — your body is prioritizing recovery over clarity.",
+        "emotionalInsight": "Small things feel harder than they should.",
+        "whyThisIsHappening": "This isn't about your cycle — your sleep has taken a hit, and that's what's driving how you feel right now.",
+        "solution": "Take it easier today — your body needs the space to recover.",
+        "recommendation": "Keep your load lighter until your sleep recovers — your energy will come back quickly once it does.",
+        "tomorrowPreview": "You're on Day 1 of your period — the heaviest days are usually the first two, and things typically ease noticeably from Day 3."
+      },
+      "view": {
+        "primaryInsight": "Your sleep has dropped sharply over the last few days — about 5.5 hours, which is lower than your usual. When sleep is off, everything feels harder — that's biology, not you.",
+        "supportingInsights": [
+          "Focus is lower today — your body is prioritizing recovery over clarity.",
+          "Small things feel harder than they should."
+        ],
+        "action": "Take it easier today — your body needs the space to recover.",
+        "explanation": "This isn't about your cycle — your sleep has taken a hit, and that's what's driving how you feel right now.",
+        "recommendation": "Keep your load lighter until your sleep recovers — your energy will come back quickly once it does.",
+        "tomorrowPreview": "You're on Day 1 of your period — the heaviest days are usually the first two, and things typically ease noticeably from Day 3.",
+        "confidenceLabel": "High confidence insights"
+      },
+      "pmsWarning": null,
+      "lastAnticipationCycleDay": 1,
+      "lastAnticipationTypeKey": "menstrual_peak"
+    }
+  },
+  {
+    "testId": "T_SYS_D01_HIGH_STRESS",
+    "description": "Systematic cycle day 1, profile high_stress",
+    "expect": {
+      "cycleDay": 1,
+      "cycleLength": 28,
+      "phase": "menstrual",
+      "minLogs": 5,
+      "shouldBeStable": false,
+      "shouldDetectSleepDisruption": false,
+      "shouldGateGPT": false,
+      "shouldDetectBleeding": true
+    },
+    "phase": "menstrual",
+    "cycleDay": 1,
+    "primaryDriver": "stress_trend_spiking",
+    "aiEnhanced": true,
+    "aiDebug": "accepted",
+    "correlationPattern": null,
+    "durationMs": 9061,
+    "error": null,
+    "output": {
+      "cycleDay": 1,
+      "home": {
+        "phase": "menstrual",
+        "currentDay": 1,
+        "isNewUser": false,
+        "primaryDriver": "stress_trend_spiking",
+        "logsToNextMilestone": 2,
+        "confidence": "high",
+        "isPeriodDelayed": false,
+        "daysOverdue": 0,
+        "isIrregular": false
+      },
+      "isNewUser": false,
+      "progress": {
+        "logsCount": 5,
+        "nextMilestone": 7,
+        "logsToNextMilestone": 2
+      },
+      "mode": "personalized",
+      "confidence": "high",
+      "cycleContext": {
+        "cycleMode": "natural",
+        "cyclePredictionConfidence": "unknown",
+        "nextPeriodEstimate": "2026-04-25",
+        "isIrregular": false,
+        "isPeriodDelayed": false,
+        "daysOverdue": 0
+      },
+      "hormoneContext": {
+        "estrogen": "low",
+        "progesterone": "low",
+        "lh": "low",
+        "fsh": "rising",
+        "confidence": "inferred",
+        "narrativeContext": "Both estrogen and progesterone are typically at their lowest point, which is what triggers bleeding. FSH is beginning its gradual rise to start preparing the next follicle."
+      },
+      "contraceptionContext": {
+        "type": "none",
+        "contextMessage": null,
+        "insightTone": "cycle-based",
+        "showPhaseInsights": true
+      },
+      "numericSummary": {
+        "recentSleepAvg": 7,
+        "baselineSleepAvg": null,
+        "sleepDelta": null,
+        "recentStressLabel": "elevated",
+        "recentMoodLabel": "low"
+      },
+      "crossCycleNarrative": null,
+      "memoryContext": {
+        "driver": "stress_trend_spiking",
+        "count": 0,
+        "narrative": null,
+        "severity": "new"
+      },
+      "aiEnhanced": true,
+      "aiDebug": "accepted",
+      "correlationPattern": null,
+      "basedOn": {
+        "phase": "menstrual",
+        "recentLogsCount": 5,
+        "confidenceScore": 0.95,
+        "baselineDeviation": [],
+        "baselineScope": "none",
+        "priorityDrivers": [
+          "stress_trend_spiking",
+          "bleeding_heavy",
+          "mood_stress_coupling",
+          "mood_trend_declining",
+          "stress_mood_strain",
+          "high_strain"
+        ],
+        "interactionFlags": [
+          "mood_stress_coupling"
+        ],
+        "trends": [
+          "Sleep stable",
+          "Stress increasing",
+          "Mood decreasing",
+          "Sleep variability low",
+          "Mood variability low"
+        ],
+        "reasoning": [
+          "Phase is menstrual",
+          "Physical state mapped to high_strain",
+          "Mental state mapped to stressed",
+          "Emotional state mapped to loaded",
+          "Bleeding load mapped to heavy",
+          "Cross-signal interactions: mood_stress_coupling",
+          "No strong personal baseline deviation detected",
+          "Insight priority drivers: stress_trend_spiking, bleeding_heavy, mood_stress_coupling, mood_trend_declining, stress_mood_strain, high_strain",
+          "No strong phase deviation detected",
+          "Trends: Sleep stable, Stress increasing, Mood decreasing, Sleep variability low, Mood variability low"
+        ]
+      },
+      "insights": {
+        "physicalInsight": "Your body is doing a lot right now, and it's normal to feel physically low. The heaviness of your bleeding can increase that sense of weakness.",
+        "mentalInsight": "Focus is lower today — your body is prioritizing recovery over clarity. Decisions feel harder than they should with stress weighing on you.",
+        "emotionalInsight": "Everything takes more effort emotionally — It's okay to acknowledge that today feels tougher.",
+        "whyThisIsHappening": "Stress has been climbing recently, and that's what's driving how you feel right now. Your body is responding to that pressure as it works through this phase.",
+        "solution": "Take a moment for a short reset between tasks today — it will help prevent this from compounding.",
+        "recommendation": "Keep your obligations lighter this week — your body is doing its hardest work right now, and it's okay to take it easier.",
+        "tomorrowPreview": "You're at Day 1 of your cycle — the heaviest days are usually the first two. Things typically ease noticeably from Day 3."
+      },
+      "view": {
+        "primaryInsight": "Focus is lower today — your body is prioritizing recovery over clarity. Decisions feel harder than they should with stress weighing on you.",
+        "supportingInsights": [
+          "Your body is doing a lot right now, and it's normal to feel physically low. The heaviness of your bleeding can increase that sense of weakness.",
+          "Everything takes more effort emotionally — It's okay to acknowledge that today feels tougher."
+        ],
+        "action": "Take a moment for a short reset between tasks today — it will help prevent this from compounding.",
+        "explanation": "Stress has been climbing recently, and that's what's driving how you feel right now. Your body is responding to that pressure as it works through this phase.",
+        "recommendation": "Keep your obligations lighter this week — your body is doing its hardest work right now, and it's okay to take it easier.",
+        "tomorrowPreview": "You're at Day 1 of your cycle — the heaviest days are usually the first two. Things typically ease noticeably from Day 3.",
+        "confidenceLabel": "High confidence insights"
+      },
+      "pmsWarning": null,
+      "lastAnticipationCycleDay": 1,
+      "lastAnticipationTypeKey": "menstrual_peak"
+    }
+  },
+  {
+    "testId": "T_SYS_D01_STABLE_NEUTRAL",
+    "description": "Systematic cycle day 1, profile stable_neutral",
+    "expect": {
+      "cycleDay": 1,
+      "cycleLength": 28,
+      "phase": "menstrual",
+      "minLogs": 7,
+      "shouldBeStable": true,
+      "shouldDetectSleepDisruption": false,
+      "shouldGateGPT": false,
+      "shouldDetectBleeding": true
+    },
+    "phase": "menstrual",
+    "cycleDay": 1,
+    "primaryDriver": "bleeding_heavy",
+    "aiEnhanced": true,
+    "aiDebug": "accepted",
+    "correlationPattern": null,
+    "durationMs": 9118,
+    "error": null,
+    "output": {
+      "cycleDay": 1,
+      "home": {
+        "phase": "menstrual",
+        "currentDay": 1,
+        "isNewUser": false,
+        "primaryDriver": "bleeding_heavy",
+        "logsToNextMilestone": 7,
+        "confidence": "high",
+        "isPeriodDelayed": false,
+        "daysOverdue": 0,
+        "isIrregular": false
+      },
+      "isNewUser": false,
+      "progress": {
+        "logsCount": 7,
+        "nextMilestone": 14,
+        "logsToNextMilestone": 7
+      },
+      "mode": "personalized",
+      "confidence": "high",
+      "cycleContext": {
+        "cycleMode": "natural",
+        "cyclePredictionConfidence": "unknown",
+        "nextPeriodEstimate": "2026-04-25",
+        "isIrregular": false,
+        "isPeriodDelayed": false,
+        "daysOverdue": 0
+      },
+      "hormoneContext": {
+        "estrogen": "low",
+        "progesterone": "low",
+        "lh": "low",
+        "fsh": "rising",
+        "confidence": "inferred",
+        "narrativeContext": "Both estrogen and progesterone are typically at their lowest point, which is what triggers bleeding. FSH is beginning its gradual rise to start preparing the next follicle."
+      },
+      "contraceptionContext": {
+        "type": "none",
+        "contextMessage": null,
+        "insightTone": "cycle-based",
+        "showPhaseInsights": true
+      },
+      "numericSummary": {
+        "recentSleepAvg": 7,
+        "baselineSleepAvg": null,
+        "sleepDelta": null,
+        "recentStressLabel": "moderate",
+        "recentMoodLabel": "neutral"
+      },
+      "crossCycleNarrative": null,
+      "memoryContext": {
+        "driver": "bleeding_heavy",
+        "count": 0,
+        "narrative": null,
+        "severity": "new"
+      },
+      "aiEnhanced": true,
+      "aiDebug": "accepted",
+      "correlationPattern": null,
+      "basedOn": {
+        "phase": "menstrual",
+        "recentLogsCount": 7,
+        "confidenceScore": 1,
+        "baselineDeviation": [],
+        "baselineScope": "none",
+        "priorityDrivers": [
+          "bleeding_heavy",
+          "high_strain"
+        ],
+        "interactionFlags": [],
+        "trends": [
+          "Sleep stable",
+          "Stress stable",
+          "Mood stable",
+          "Sleep variability low",
+          "Mood variability low"
+        ],
+        "reasoning": [
+          "Phase is menstrual",
+          "Physical state mapped to high_strain",
+          "Mental state mapped to balanced",
+          "Emotional state mapped to stable",
+          "Bleeding load mapped to heavy",
+          "No strong cross-signal interaction detected",
+          "No strong personal baseline deviation detected",
+          "Insight priority drivers: bleeding_heavy, high_strain",
+          "No strong phase deviation detected",
+          "Trends: Sleep stable, Stress stable, Mood stable, Sleep variability low, Mood variability low"
+        ]
+      },
+      "insights": {
+        "physicalInsight": "Your flow is heavier today, which can feel draining. It's normal to feel physically low as your body navigates this process.",
+        "mentalInsight": "Focus is lower today — your body is prioritizing recovery over clarity. It’s okay to take it easier and allow yourself some space.",
+        "emotionalInsight": "Everything feels a bit more effortful right now, as if small tasks are weighing on you. It's a neutral space, but it can feel like you're carrying a little extra.",
+        "whyThisIsHappening": "Both estrogen and progesterone are at their lowest, triggering your period and making your body work hard to release. This is a natural part of your cycle",
+        "solution": "Give yourself permission to slow down today — your body is doing a lot right now.",
+        "recommendation": "Over the next few days, it’s okay to lighten your load and listen to what your body needs.",
+        "tomorrowPreview": "You're on day 2 of your period — this is typically one of the most intense days. Relief usually comes faster than it feels, so trust that brighter moments are ahead."
+      },
+      "view": {
+        "primaryInsight": "Your flow is heavier today, which can feel draining. It's normal to feel physically low as your body navigates this process.",
+        "supportingInsights": [
+          "Focus is lower today — your body is prioritizing recovery over clarity. It’s okay to take it easier and allow yourself some space.",
+          "Everything feels a bit more effortful right now, as if small tasks are weighing on you. It's a neutral space, but it can feel like you're carrying a little extra."
+        ],
+        "action": "Give yourself permission to slow down today — your body is doing a lot right now.",
+        "explanation": "Both estrogen and progesterone are at their lowest, triggering your period and making your body work hard to release. This is a natural part of your cycle",
+        "recommendation": "Over the next few days, it’s okay to lighten your load and listen to what your body needs.",
+        "tomorrowPreview": "You're on day 2 of your period — this is typically one of the most intense days. Relief usually comes faster than it feels, so trust that brighter moments are ahead.",
+        "confidenceLabel": "High confidence insights"
+      },
+      "pmsWarning": null,
+      "lastAnticipationCycleDay": 1,
+      "lastAnticipationTypeKey": "menstrual_peak"
+    }
+  },
+  {
+    "testId": "T_SYS_D01_MIXED",
+    "description": "Systematic cycle day 1, profile mixed",
+    "expect": {
+      "cycleDay": 1,
+      "cycleLength": 28,
+      "phase": "menstrual",
+      "minLogs": 5,
+      "shouldBeStable": false,
+      "shouldDetectSleepDisruption": false,
+      "shouldGateGPT": false,
+      "shouldDetectBleeding": true
+    },
+    "phase": "menstrual",
+    "cycleDay": 1,
+    "primaryDriver": "sleep_variability_high",
+    "aiEnhanced": true,
+    "aiDebug": "accepted",
+    "correlationPattern": null,
+    "durationMs": 7799,
+    "error": null,
+    "output": {
+      "cycleDay": 1,
+      "home": {
+        "phase": "menstrual",
+        "currentDay": 1,
+        "isNewUser": false,
+        "primaryDriver": "sleep_variability_high",
+        "logsToNextMilestone": 2,
+        "confidence": "high",
+        "isPeriodDelayed": false,
+        "daysOverdue": 0,
+        "isIrregular": false
+      },
+      "isNewUser": false,
+      "progress": {
+        "logsCount": 5,
+        "nextMilestone": 7,
+        "logsToNextMilestone": 2
+      },
+      "mode": "personalized",
+      "confidence": "high",
+      "cycleContext": {
+        "cycleMode": "natural",
+        "cyclePredictionConfidence": "unknown",
+        "nextPeriodEstimate": "2026-04-25",
+        "isIrregular": false,
+        "isPeriodDelayed": false,
+        "daysOverdue": 0
+      },
+      "hormoneContext": {
+        "estrogen": "low",
+        "progesterone": "low",
+        "lh": "low",
+        "fsh": "rising",
+        "confidence": "inferred",
+        "narrativeContext": "Both estrogen and progesterone are typically at their lowest point, which is what triggers bleeding. FSH is beginning its gradual rise to start preparing the next follicle."
+      },
+      "contraceptionContext": {
+        "type": "none",
+        "contextMessage": null,
+        "insightTone": "cycle-based",
+        "showPhaseInsights": true
+      },
+      "numericSummary": {
+        "recentSleepAvg": 5.7,
+        "baselineSleepAvg": null,
+        "sleepDelta": null,
+        "recentStressLabel": "moderate",
+        "recentMoodLabel": "neutral"
+      },
+      "crossCycleNarrative": null,
+      "memoryContext": {
+        "driver": "sleep_variability_high",
+        "count": 0,
+        "narrative": null,
+        "severity": "new"
+      },
+      "aiEnhanced": true,
+      "aiDebug": "accepted",
+      "correlationPattern": null,
+      "basedOn": {
+        "phase": "menstrual",
+        "recentLogsCount": 5,
+        "confidenceScore": 0.9,
+        "baselineDeviation": [],
+        "baselineScope": "none",
+        "priorityDrivers": [
+          "sleep_variability_high",
+          "bleeding_heavy",
+          "sleep_trend_declining",
+          "high_strain"
+        ],
+        "interactionFlags": [],
+        "trends": [
+          "Sleep decreasing",
+          "Stress stable",
+          "Mood stable",
+          "Sleep variability high",
+          "Mood variability moderate"
+        ],
+        "reasoning": [
+          "Phase is menstrual",
+          "Physical state mapped to high_strain",
+          "Mental state mapped to fatigued",
+          "Emotional state mapped to stable",
+          "Bleeding load mapped to heavy",
+          "No strong cross-signal interaction detected",
+          "No strong personal baseline deviation detected",
+          "Insight priority drivers: sleep_variability_high, bleeding_heavy, sleep_trend_declining, high_strain",
+          "No strong phase deviation detected",
+          "Trends: Sleep decreasing, Stress stable, Mood stable, Sleep variability high, Mood variability moderate"
+        ]
+      },
+      "insights": {
+        "physicalInsight": "Your flow is heavier today, which can feel draining. It's normal to feel physically low as your body is doing a lot right now.",
+        "mentalInsight": "Focus is lower today — your body is prioritizing recovery over clarity. Everything takes more effort than usual.",
+        "emotionalInsight": "You feel steady, but Small things feel harder than they should. It's okay to acknowledge that everything feels a bit overwhelming.",
+        "whyThisIsHappening": "Both estrogen and progesterone are at their lowest point, triggering this bleeding. FSH is starting to rise, preparing for the next cycle.",
+        "solution": "Take it easier today — your body needs this time to recover.",
+        "recommendation": "Keep your schedule lighter over the next few days — your body is doing its hardest work right now.",
+        "tomorrowPreview": "You're on day 2 of your period — this is usually the most intense stretch. Things typically ease noticeably from day 3."
+      },
+      "view": {
+        "primaryInsight": "Your flow is heavier today, which can feel draining. It's normal to feel physically low as your body is doing a lot right now.",
+        "supportingInsights": [
+          "Focus is lower today — your body is prioritizing recovery over clarity. Everything takes more effort than usual.",
+          "You feel steady, but Small things feel harder than they should. It's okay to acknowledge that everything feels a bit overwhelming."
+        ],
+        "action": "Take it easier today — your body needs this time to recover.",
+        "explanation": "Both estrogen and progesterone are at their lowest point, triggering this bleeding. FSH is starting to rise, preparing for the next cycle.",
+        "recommendation": "Keep your schedule lighter over the next few days — your body is doing its hardest work right now.",
+        "tomorrowPreview": "You're on day 2 of your period — this is usually the most intense stretch. Things typically ease noticeably from day 3.",
+        "confidenceLabel": "High confidence insights"
+      },
+      "pmsWarning": null,
+      "lastAnticipationCycleDay": 1,
+      "lastAnticipationTypeKey": "menstrual_peak"
+    }
+  },
+  {
+    "testId": "T_SYS_D02_GOOD_ALL",
+    "description": "Systematic cycle day 2, profile good_all",
+    "expect": {
+      "cycleDay": 2,
+      "cycleLength": 28,
+      "phase": "menstrual",
+      "minLogs": 5,
+      "shouldBeStable": false,
+      "shouldDetectSleepDisruption": false,
+      "shouldGateGPT": false,
+      "shouldDetectBleeding": true
+    },
+    "phase": "menstrual",
+    "cycleDay": 2,
+    "primaryDriver": "bleeding_heavy",
+    "aiEnhanced": true,
+    "aiDebug": "accepted",
+    "correlationPattern": null,
+    "durationMs": 10178,
+    "error": null,
+    "output": {
+      "cycleDay": 2,
+      "home": {
+        "phase": "menstrual",
+        "currentDay": 2,
+        "isNewUser": false,
+        "primaryDriver": "bleeding_heavy",
+        "logsToNextMilestone": 2,
+        "confidence": "high",
+        "isPeriodDelayed": false,
+        "daysOverdue": 0,
+        "isIrregular": false
+      },
+      "isNewUser": false,
+      "progress": {
+        "logsCount": 5,
+        "nextMilestone": 7,
+        "logsToNextMilestone": 2
+      },
+      "mode": "personalized",
+      "confidence": "high",
+      "cycleContext": {
+        "cycleMode": "natural",
+        "cyclePredictionConfidence": "unknown",
+        "nextPeriodEstimate": "2026-04-24",
+        "isIrregular": false,
+        "isPeriodDelayed": false,
+        "daysOverdue": 0
+      },
+      "hormoneContext": {
+        "estrogen": "low",
+        "progesterone": "low",
+        "lh": "low",
+        "fsh": "rising",
+        "confidence": "inferred",
+        "narrativeContext": "Both estrogen and progesterone are typically at their lowest point, which is what triggers bleeding. FSH is beginning its gradual rise to start preparing the next follicle."
+      },
+      "contraceptionContext": {
+        "type": "none",
+        "contextMessage": null,
+        "insightTone": "cycle-based",
+        "showPhaseInsights": true
+      },
+      "numericSummary": {
+        "recentSleepAvg": 7.3,
+        "baselineSleepAvg": null,
+        "sleepDelta": null,
+        "recentStressLabel": "calm",
+        "recentMoodLabel": "positive"
+      },
+      "crossCycleNarrative": null,
+      "memoryContext": {
+        "driver": "bleeding_heavy",
+        "count": 0,
+        "narrative": null,
+        "severity": "new"
+      },
+      "aiEnhanced": true,
+      "aiDebug": "accepted",
+      "correlationPattern": null,
+      "basedOn": {
+        "phase": "menstrual",
+        "recentLogsCount": 5,
+        "confidenceScore": 0.9,
+        "baselineDeviation": [],
+        "baselineScope": "none",
+        "priorityDrivers": [
+          "bleeding_heavy",
+          "high_strain"
+        ],
+        "interactionFlags": [],
+        "trends": [
+          "Sleep stable",
+          "Stress stable",
+          "Mood increasing",
+          "Sleep variability low",
+          "Mood variability low"
+        ],
+        "reasoning": [
+          "Phase is menstrual",
+          "Physical state mapped to high_strain",
+          "Mental state mapped to balanced",
+          "Emotional state mapped to uplifted",
+          "Bleeding load mapped to heavy",
+          "No strong cross-signal interaction detected",
+          "No strong personal baseline deviation detected",
+          "Insight priority drivers: bleeding_heavy, high_strain",
+          "No strong phase deviation detected",
+          "Trends: Sleep stable, Stress stable, Mood increasing, Sleep variability low, Mood variability low"
+        ]
+      },
+      "insights": {
+        "physicalInsight": "Your flow is heavier today, which can feel physically demanding. It's normal to feel physically low as your body works hard during this time.",
+        "mentalInsight": "Focus is lower today — your body is prioritizing recovery over clarity. This is a natural part of your cycle.",
+        "emotionalInsight": "Your mood feels under some pressure right now, allowing you to navigate the day without too much turbulence. Small things may still feel like they take more effort than usual.",
+        "whyThisIsHappening": "Both estrogen and progesterone are at their lowest point, triggering bleeding and contributing to that sense of physical demand. FSH is starting to rise, preparing for the next phase.",
+        "solution": "It's okay to take it easier today — listen to your body and allow yourself to rest.",
+        "recommendation": "Over the next few days, keep your schedule lighter and give yourself permission to slow down as your body does its hardest work.",
+        "tomorrowPreview": "You're on day 3 of your period — day 1 and 2 are typically the most intense, and relief usually comes faster than it feels."
+      },
+      "view": {
+        "primaryInsight": "Your flow is heavier today, which can feel physically demanding. It's normal to feel physically low as your body works hard during this time.",
+        "supportingInsights": [
+          "Focus is lower today — your body is prioritizing recovery over clarity. This is a natural part of your cycle.",
+          "Your mood feels under some pressure right now, allowing you to navigate the day without too much turbulence. Small things may still feel like they take more effort than usual."
+        ],
+        "action": "It's okay to take it easier today — listen to your body and allow yourself to rest.",
+        "explanation": "Both estrogen and progesterone are at their lowest point, triggering bleeding and contributing to that sense of physical demand. FSH is starting to rise, preparing for the next phase.",
+        "recommendation": "Over the next few days, keep your schedule lighter and give yourself permission to slow down as your body does its hardest work.",
+        "tomorrowPreview": "You're on day 3 of your period — day 1 and 2 are typically the most intense, and relief usually comes faster than it feels.",
+        "confidenceLabel": "High confidence insights"
+      },
+      "pmsWarning": null,
+      "lastAnticipationCycleDay": 2,
+      "lastAnticipationTypeKey": "menstrual_peak"
+    }
+  },
+  {
+    "testId": "T_SYS_D02_SLEEP_DEPRIVED",
+    "description": "Systematic cycle day 2, profile sleep_deprived",
+    "expect": {
+      "cycleDay": 2,
+      "cycleLength": 28,
+      "phase": "menstrual",
+      "minLogs": 14,
+      "shouldBeStable": false,
+      "shouldDetectSleepDisruption": true,
+      "shouldGateGPT": false,
+      "shouldDetectBleeding": true
+    },
+    "phase": "menstrual",
+    "cycleDay": 2,
+    "primaryDriver": "sleep_below_baseline",
+    "aiEnhanced": true,
+    "aiDebug": "accepted",
+    "correlationPattern": "sleep_disruption_primary",
+    "durationMs": 9254,
+    "error": null,
+    "output": {
+      "cycleDay": 2,
+      "home": {
+        "phase": "menstrual",
+        "currentDay": 2,
+        "isNewUser": false,
+        "primaryDriver": "sleep_below_baseline",
+        "logsToNextMilestone": 7,
+        "confidence": "high",
+        "isPeriodDelayed": false,
+        "daysOverdue": 0,
+        "isIrregular": false
+      },
+      "isNewUser": false,
+      "progress": {
+        "logsCount": 7,
+        "nextMilestone": 14,
+        "logsToNextMilestone": 7
+      },
+      "mode": "personalized",
+      "confidence": "high",
+      "cycleContext": {
+        "cycleMode": "natural",
+        "cyclePredictionConfidence": "unknown",
+        "nextPeriodEstimate": "2026-04-24",
+        "isIrregular": false,
+        "isPeriodDelayed": false,
+        "daysOverdue": 0
+      },
+      "hormoneContext": {
+        "estrogen": "low",
+        "progesterone": "low",
+        "lh": "low",
+        "fsh": "rising",
+        "confidence": "inferred",
+        "narrativeContext": "Both estrogen and progesterone are typically at their lowest point, which is what triggers bleeding. FSH is beginning its gradual rise to start preparing the next follicle."
+      },
+      "contraceptionContext": {
+        "type": "none",
+        "contextMessage": null,
+        "insightTone": "cycle-based",
+        "showPhaseInsights": true
+      },
+      "numericSummary": {
+        "recentSleepAvg": 5.5,
+        "baselineSleepAvg": 7,
+        "sleepDelta": -1.5,
+        "recentStressLabel": "calm",
+        "recentMoodLabel": "neutral"
+      },
+      "crossCycleNarrative": null,
+      "memoryContext": {
+        "driver": "sleep_below_baseline",
+        "count": 0,
+        "narrative": null,
+        "severity": "new"
+      },
+      "aiEnhanced": true,
+      "aiDebug": "accepted",
+      "correlationPattern": "sleep_disruption_primary",
+      "basedOn": {
+        "phase": "menstrual",
+        "recentLogsCount": 7,
+        "confidenceScore": 1,
+        "baselineDeviation": [
+          "sleep_below_personal_baseline"
+        ],
+        "baselineScope": "global",
+        "priorityDrivers": [
+          "sleep_below_baseline",
+          "bleeding_heavy",
+          "sleep_trend_declining",
+          "mood_trend_declining",
+          "high_strain"
+        ],
+        "interactionFlags": [],
+        "trends": [
+          "Sleep decreasing",
+          "Stress increasing",
+          "Mood decreasing",
+          "Sleep variability moderate",
+          "Mood variability moderate"
+        ],
+        "reasoning": [
+          "Phase is menstrual",
+          "Physical state mapped to high_strain",
+          "Mental state mapped to fatigued",
+          "Emotional state mapped to loaded",
+          "Bleeding load mapped to heavy",
+          "No strong cross-signal interaction detected",
+          "Personal baseline deviations: sleep_below_personal_baseline",
+          "Insight priority drivers: sleep_below_baseline, bleeding_heavy, sleep_trend_declining, mood_trend_declining, high_strain",
+          "No strong phase deviation detected",
+          "Trends: Sleep decreasing, Stress increasing, Mood decreasing, Sleep variability moderate, Mood variability moderate"
+        ]
+      },
+      "insights": {
+        "physicalInsight": "Your sleep has dropped sharply over the last few days — roughly 5.5 hours, which is lower than your usual. This is why your body feels physically low right now.",
+        "mentalInsight": "Focus is lower today — your body is prioritizing recovery over clarity.",
+        "emotionalInsight": "Everything feels a bit more challenging — small things take more effort than they should.",
+        "whyThisIsHappening": "This isn't about your cycle — sleep affects everything, and that's not an exaggeration. Your recent sleep drop is what's driving how you feel right now.",
+        "solution": "Take it easier today — your body is doing a lot right now.",
+        "recommendation": "Keep your load lighter until your sleep recovers — your energy will come back quickly once it does.",
+        "tomorrowPreview": "If today is hard, it's usually the peak — things tend to ease from here."
+      },
+      "view": {
+        "primaryInsight": "Your sleep has dropped sharply over the last few days — roughly 5.5 hours, which is lower than your usual. This is why your body feels physically low right now.",
+        "supportingInsights": [
+          "Focus is lower today — your body is prioritizing recovery over clarity.",
+          "Everything feels a bit more challenging — small things take more effort than they should."
+        ],
+        "action": "Take it easier today — your body is doing a lot right now.",
+        "explanation": "This isn't about your cycle — sleep affects everything, and that's not an exaggeration. Your recent sleep drop is what's driving how you feel right now.",
+        "recommendation": "Keep your load lighter until your sleep recovers — your energy will come back quickly once it does.",
+        "tomorrowPreview": "If today is hard, it's usually the peak — things tend to ease from here.",
+        "confidenceLabel": "High confidence insights"
+      },
+      "pmsWarning": null,
+      "lastAnticipationCycleDay": 2,
+      "lastAnticipationTypeKey": "menstrual_peak"
+    }
+  },
+  {
+    "testId": "T_SYS_D02_HIGH_STRESS",
+    "description": "Systematic cycle day 2, profile high_stress",
+    "expect": {
+      "cycleDay": 2,
+      "cycleLength": 28,
+      "phase": "menstrual",
+      "minLogs": 5,
+      "shouldBeStable": false,
+      "shouldDetectSleepDisruption": false,
+      "shouldGateGPT": false,
+      "shouldDetectBleeding": true
+    },
+    "phase": "menstrual",
+    "cycleDay": 2,
+    "primaryDriver": "stress_trend_spiking",
+    "aiEnhanced": true,
+    "aiDebug": "accepted",
+    "correlationPattern": null,
+    "durationMs": 8262,
+    "error": null,
+    "output": {
+      "cycleDay": 2,
+      "home": {
+        "phase": "menstrual",
+        "currentDay": 2,
+        "isNewUser": false,
+        "primaryDriver": "stress_trend_spiking",
+        "logsToNextMilestone": 2,
+        "confidence": "high",
+        "isPeriodDelayed": false,
+        "daysOverdue": 0,
+        "isIrregular": false
+      },
+      "isNewUser": false,
+      "progress": {
+        "logsCount": 5,
+        "nextMilestone": 7,
+        "logsToNextMilestone": 2
+      },
+      "mode": "personalized",
+      "confidence": "high",
+      "cycleContext": {
+        "cycleMode": "natural",
+        "cyclePredictionConfidence": "unknown",
+        "nextPeriodEstimate": "2026-04-24",
+        "isIrregular": false,
+        "isPeriodDelayed": false,
+        "daysOverdue": 0
+      },
+      "hormoneContext": {
+        "estrogen": "low",
+        "progesterone": "low",
+        "lh": "low",
+        "fsh": "rising",
+        "confidence": "inferred",
+        "narrativeContext": "Both estrogen and progesterone are typically at their lowest point, which is what triggers bleeding. FSH is beginning its gradual rise to start preparing the next follicle."
+      },
+      "contraceptionContext": {
+        "type": "none",
+        "contextMessage": null,
+        "insightTone": "cycle-based",
+        "showPhaseInsights": true
+      },
+      "numericSummary": {
+        "recentSleepAvg": 7,
+        "baselineSleepAvg": null,
+        "sleepDelta": null,
+        "recentStressLabel": "elevated",
+        "recentMoodLabel": "low"
+      },
+      "crossCycleNarrative": null,
+      "memoryContext": {
+        "driver": "stress_trend_spiking",
+        "count": 0,
+        "narrative": null,
+        "severity": "new"
+      },
+      "aiEnhanced": true,
+      "aiDebug": "accepted",
+      "correlationPattern": null,
+      "basedOn": {
+        "phase": "menstrual",
+        "recentLogsCount": 5,
+        "confidenceScore": 0.95,
+        "baselineDeviation": [],
+        "baselineScope": "none",
+        "priorityDrivers": [
+          "stress_trend_spiking",
+          "bleeding_heavy",
+          "mood_stress_coupling",
+          "mood_trend_declining",
+          "stress_mood_strain",
+          "high_strain"
+        ],
+        "interactionFlags": [
+          "mood_stress_coupling"
+        ],
+        "trends": [
+          "Sleep stable",
+          "Stress increasing",
+          "Mood decreasing",
+          "Sleep variability low",
+          "Mood variability low"
+        ],
+        "reasoning": [
+          "Phase is menstrual",
+          "Physical state mapped to high_strain",
+          "Mental state mapped to stressed",
+          "Emotional state mapped to loaded",
+          "Bleeding load mapped to heavy",
+          "Cross-signal interactions: mood_stress_coupling",
+          "No strong personal baseline deviation detected",
+          "Insight priority drivers: stress_trend_spiking, bleeding_heavy, mood_stress_coupling, mood_trend_declining, stress_mood_strain, high_strain",
+          "No strong phase deviation detected",
+          "Trends: Sleep stable, Stress increasing, Mood decreasing, Sleep variability low, Mood variability low"
+        ]
+      },
+      "insights": {
+        "physicalInsight": "Your body is doing a lot right now, and the heaviness of your bleeding can make you feel physically low. It's okay to take it easier today.",
+        "mentalInsight": "Focus is lower today — your body is prioritizing recovery over clarity.",
+        "emotionalInsight": "Everything takes more effort right now. It's normal to feel this way when stress is high.",
+        "whyThisIsHappening": "Stress has been climbing recently, and that's what's driving how you feel right now.",
+        "solution": "Take a short reset between tasks today — this will help prevent things from compounding.",
+        "recommendation": "Keep your schedule lighter this week — your body is doing its hardest work right now.",
+        "tomorrowPreview": "You're 2 days into your period — the heaviest days are usually the first two. Things typically ease noticeably from day 3."
+      },
+      "view": {
+        "primaryInsight": "Focus is lower today — your body is prioritizing recovery over clarity.",
+        "supportingInsights": [
+          "Your body is doing a lot right now, and the heaviness of your bleeding can make you feel physically low. It's okay to take it easier today.",
+          "Everything takes more effort right now. It's normal to feel this way when stress is high."
+        ],
+        "action": "Take a short reset between tasks today — this will help prevent things from compounding.",
+        "explanation": "Stress has been climbing recently, and that's what's driving how you feel right now.",
+        "recommendation": "Keep your schedule lighter this week — your body is doing its hardest work right now.",
+        "tomorrowPreview": "You're 2 days into your period — the heaviest days are usually the first two. Things typically ease noticeably from day 3.",
+        "confidenceLabel": "High confidence insights"
+      },
+      "pmsWarning": null,
+      "lastAnticipationCycleDay": 2,
+      "lastAnticipationTypeKey": "menstrual_peak"
+    }
+  },
+  {
+    "testId": "T_SYS_D02_STABLE_NEUTRAL",
+    "description": "Systematic cycle day 2, profile stable_neutral",
+    "expect": {
+      "cycleDay": 2,
+      "cycleLength": 28,
+      "phase": "menstrual",
+      "minLogs": 7,
+      "shouldBeStable": true,
+      "shouldDetectSleepDisruption": false,
+      "shouldGateGPT": false,
+      "shouldDetectBleeding": true
+    },
+    "phase": "menstrual",
+    "cycleDay": 2,
+    "primaryDriver": "bleeding_heavy",
+    "aiEnhanced": true,
+    "aiDebug": "accepted",
+    "correlationPattern": null,
+    "durationMs": 8805,
+    "error": null,
+    "output": {
+      "cycleDay": 2,
+      "home": {
+        "phase": "menstrual",
+        "currentDay": 2,
+        "isNewUser": false,
+        "primaryDriver": "bleeding_heavy",
+        "logsToNextMilestone": 7,
+        "confidence": "high",
+        "isPeriodDelayed": false,
+        "daysOverdue": 0,
+        "isIrregular": false
+      },
+      "isNewUser": false,
+      "progress": {
+        "logsCount": 7,
+        "nextMilestone": 14,
+        "logsToNextMilestone": 7
+      },
+      "mode": "personalized",
+      "confidence": "high",
+      "cycleContext": {
+        "cycleMode": "natural",
+        "cyclePredictionConfidence": "unknown",
+        "nextPeriodEstimate": "2026-04-24",
+        "isIrregular": false,
+        "isPeriodDelayed": false,
+        "daysOverdue": 0
+      },
+      "hormoneContext": {
+        "estrogen": "low",
+        "progesterone": "low",
+        "lh": "low",
+        "fsh": "rising",
+        "confidence": "inferred",
+        "narrativeContext": "Both estrogen and progesterone are typically at their lowest point, which is what triggers bleeding. FSH is beginning its gradual rise to start preparing the next follicle."
+      },
+      "contraceptionContext": {
+        "type": "none",
+        "contextMessage": null,
+        "insightTone": "cycle-based",
+        "showPhaseInsights": true
+      },
+      "numericSummary": {
+        "recentSleepAvg": 7,
+        "baselineSleepAvg": null,
+        "sleepDelta": null,
+        "recentStressLabel": "moderate",
+        "recentMoodLabel": "neutral"
+      },
+      "crossCycleNarrative": null,
+      "memoryContext": {
+        "driver": "bleeding_heavy",
+        "count": 0,
+        "narrative": null,
+        "severity": "new"
+      },
+      "aiEnhanced": true,
+      "aiDebug": "accepted",
+      "correlationPattern": null,
+      "basedOn": {
+        "phase": "menstrual",
+        "recentLogsCount": 7,
+        "confidenceScore": 1,
+        "baselineDeviation": [],
+        "baselineScope": "none",
+        "priorityDrivers": [
+          "bleeding_heavy",
+          "high_strain"
+        ],
+        "interactionFlags": [],
+        "trends": [
+          "Sleep stable",
+          "Stress stable",
+          "Mood stable",
+          "Sleep variability low",
+          "Mood variability low"
+        ],
+        "reasoning": [
+          "Phase is menstrual",
+          "Physical state mapped to high_strain",
+          "Mental state mapped to balanced",
+          "Emotional state mapped to stable",
+          "Bleeding load mapped to heavy",
+          "No strong cross-signal interaction detected",
+          "No strong personal baseline deviation detected",
+          "Insight priority drivers: bleeding_heavy, high_strain",
+          "No strong phase deviation detected",
+          "Trends: Sleep stable, Stress stable, Mood stable, Sleep variability low, Mood variability low"
+        ]
+      },
+      "insights": {
+        "physicalInsight": "Your flow is heavier today, which can leave you feeling more fatigued. It's normal to feel physically low as your body navigates this phase.",
+        "mentalInsight": "Focus is lower today — your body is prioritizing recovery over clarity. This is a time to honor what your body needs.",
+        "emotionalInsight": "Everything feels a bit more effortful right now, and small things can seem overwhelming. It's okay to acknowledge that today feels like a lot.",
+        "whyThisIsHappening": "Both estrogen and progesterone are at their lowest point, triggering this bleeding and the physical sensations you're experiencing. Your body is doing a lot right now, working hard to reset.",
+        "solution": "Take it easier today — listen to your body and allow yourself the space to rest.",
+        "recommendation": "Keep your schedule lighter this week — your body is doing its hardest work right now.",
+        "tomorrowPreview": "You're on Day 3 of your period — if today is hard, it's usually the peak. Things tend to ease from here."
+      },
+      "view": {
+        "primaryInsight": "Your flow is heavier today, which can leave you feeling more fatigued. It's normal to feel physically low as your body navigates this phase.",
+        "supportingInsights": [
+          "Focus is lower today — your body is prioritizing recovery over clarity. This is a time to honor what your body needs.",
+          "Everything feels a bit more effortful right now, and small things can seem overwhelming. It's okay to acknowledge that today feels like a lot."
+        ],
+        "action": "Take it easier today — listen to your body and allow yourself the space to rest.",
+        "explanation": "Both estrogen and progesterone are at their lowest point, triggering this bleeding and the physical sensations you're experiencing. Your body is doing a lot right now, working hard to reset.",
+        "recommendation": "Keep your schedule lighter this week — your body is doing its hardest work right now.",
+        "tomorrowPreview": "You're on Day 3 of your period — if today is hard, it's usually the peak. Things tend to ease from here.",
+        "confidenceLabel": "High confidence insights"
+      },
+      "pmsWarning": null,
+      "lastAnticipationCycleDay": 2,
+      "lastAnticipationTypeKey": "menstrual_peak"
+    }
+  },
+  {
+    "testId": "T_SYS_D02_MIXED",
+    "description": "Systematic cycle day 2, profile mixed",
+    "expect": {
+      "cycleDay": 2,
+      "cycleLength": 28,
+      "phase": "menstrual",
+      "minLogs": 5,
+      "shouldBeStable": false,
+      "shouldDetectSleepDisruption": false,
+      "shouldGateGPT": false,
+      "shouldDetectBleeding": true
+    },
+    "phase": "menstrual",
+    "cycleDay": 2,
+    "primaryDriver": "sleep_variability_high",
+    "aiEnhanced": true,
+    "aiDebug": "accepted",
+    "correlationPattern": null,
+    "durationMs": 9042,
+    "error": null,
+    "output": {
+      "cycleDay": 2,
+      "home": {
+        "phase": "menstrual",
+        "currentDay": 2,
+        "isNewUser": false,
+        "primaryDriver": "sleep_variability_high",
+        "logsToNextMilestone": 2,
+        "confidence": "high",
+        "isPeriodDelayed": false,
+        "daysOverdue": 0,
+        "isIrregular": false
+      },
+      "isNewUser": false,
+      "progress": {
+        "logsCount": 5,
+        "nextMilestone": 7,
+        "logsToNextMilestone": 2
+      },
+      "mode": "personalized",
+      "confidence": "high",
+      "cycleContext": {
+        "cycleMode": "natural",
+        "cyclePredictionConfidence": "unknown",
+        "nextPeriodEstimate": "2026-04-24",
+        "isIrregular": false,
+        "isPeriodDelayed": false,
+        "daysOverdue": 0
+      },
+      "hormoneContext": {
+        "estrogen": "low",
+        "progesterone": "low",
+        "lh": "low",
+        "fsh": "rising",
+        "confidence": "inferred",
+        "narrativeContext": "Both estrogen and progesterone are typically at their lowest point, which is what triggers bleeding. FSH is beginning its gradual rise to start preparing the next follicle."
+      },
+      "contraceptionContext": {
+        "type": "none",
+        "contextMessage": null,
+        "insightTone": "cycle-based",
+        "showPhaseInsights": true
+      },
+      "numericSummary": {
+        "recentSleepAvg": 5.7,
+        "baselineSleepAvg": null,
+        "sleepDelta": null,
+        "recentStressLabel": "moderate",
+        "recentMoodLabel": "neutral"
+      },
+      "crossCycleNarrative": null,
+      "memoryContext": {
+        "driver": "sleep_variability_high",
+        "count": 0,
+        "narrative": null,
+        "severity": "new"
+      },
+      "aiEnhanced": true,
+      "aiDebug": "accepted",
+      "correlationPattern": null,
+      "basedOn": {
+        "phase": "menstrual",
+        "recentLogsCount": 5,
+        "confidenceScore": 0.9,
+        "baselineDeviation": [],
+        "baselineScope": "none",
+        "priorityDrivers": [
+          "sleep_variability_high",
+          "bleeding_heavy",
+          "sleep_trend_declining",
+          "high_strain"
+        ],
+        "interactionFlags": [],
+        "trends": [
+          "Sleep decreasing",
+          "Stress stable",
+          "Mood stable",
+          "Sleep variability high",
+          "Mood variability moderate"
+        ],
+        "reasoning": [
+          "Phase is menstrual",
+          "Physical state mapped to high_strain",
+          "Mental state mapped to fatigued",
+          "Emotional state mapped to stable",
+          "Bleeding load mapped to heavy",
+          "No strong cross-signal interaction detected",
+          "No strong personal baseline deviation detected",
+          "Insight priority drivers: sleep_variability_high, bleeding_heavy, sleep_trend_declining, high_strain",
+          "No strong phase deviation detected",
+          "Trends: Sleep decreasing, Stress stable, Mood stable, Sleep variability high, Mood variability moderate"
+        ]
+      },
+      "insights": {
+        "physicalInsight": "Your flow is heavier today, which can feel draining. It's normal to feel physically low as your body is doing a lot right now.",
+        "mentalInsight": "Focus is lower today — your body is prioritizing recovery over clarity. Small tasks feel more demanding.",
+        "emotionalInsight": "Your emotional state feels steady right now, but everything takes more effort than usual. It's okay to acknowledge that you feel a bit overwhelmed.",
+        "whyThisIsHappening": "Both estrogen and progesterone are at their lowest point, which triggers bleeding and can lower energy. This is a natural part of your cycle",
+        "solution": "Keep your schedule lighter today — it's okay to take it easier as your body works through this.",
+        "recommendation": "Allow yourself to rest and reduce your load over the next few days — your body is doing its hardest work right now.",
+        "tomorrowPreview": "You're on day 3 of your period — things typically ease noticeably from here. Tomorrow should feel a bit lighter as your body starts to recover."
+      },
+      "view": {
+        "primaryInsight": "Your flow is heavier today, which can feel draining. It's normal to feel physically low as your body is doing a lot right now.",
+        "supportingInsights": [
+          "Focus is lower today — your body is prioritizing recovery over clarity. Small tasks feel more demanding.",
+          "Your emotional state feels steady right now, but everything takes more effort than usual. It's okay to acknowledge that you feel a bit overwhelmed."
+        ],
+        "action": "Keep your schedule lighter today — it's okay to take it easier as your body works through this.",
+        "explanation": "Both estrogen and progesterone are at their lowest point, which triggers bleeding and can lower energy. This is a natural part of your cycle",
+        "recommendation": "Allow yourself to rest and reduce your load over the next few days — your body is doing its hardest work right now.",
+        "tomorrowPreview": "You're on day 3 of your period — things typically ease noticeably from here. Tomorrow should feel a bit lighter as your body starts to recover.",
+        "confidenceLabel": "High confidence insights"
+      },
+      "pmsWarning": null,
+      "lastAnticipationCycleDay": 2,
+      "lastAnticipationTypeKey": "menstrual_peak"
+    }
+  },
+  {
+    "testId": "T_SYS_D03_GOOD_ALL",
+    "description": "Systematic cycle day 3, profile good_all",
+    "expect": {
+      "cycleDay": 3,
+      "cycleLength": 28,
+      "phase": "menstrual",
+      "minLogs": 5,
+      "shouldBeStable": false,
+      "shouldDetectSleepDisruption": false,
+      "shouldGateGPT": false,
+      "shouldDetectBleeding": false
+    },
+    "phase": "menstrual",
+    "cycleDay": 3,
+    "primaryDriver": null,
+    "aiEnhanced": true,
+    "aiDebug": "accepted",
+    "correlationPattern": null,
+    "durationMs": 7889,
+    "error": null,
+    "output": {
+      "cycleDay": 3,
+      "home": {
+        "phase": "menstrual",
+        "currentDay": 3,
+        "isNewUser": false,
+        "primaryDriver": null,
+        "logsToNextMilestone": 2,
+        "confidence": "high",
+        "isPeriodDelayed": false,
+        "daysOverdue": 0,
+        "isIrregular": false
+      },
+      "isNewUser": false,
+      "progress": {
+        "logsCount": 5,
+        "nextMilestone": 7,
+        "logsToNextMilestone": 2
+      },
+      "mode": "personalized",
+      "confidence": "high",
+      "cycleContext": {
+        "cycleMode": "natural",
+        "cyclePredictionConfidence": "unknown",
+        "nextPeriodEstimate": "2026-04-23",
+        "isIrregular": false,
+        "isPeriodDelayed": false,
+        "daysOverdue": 0
+      },
+      "hormoneContext": {
+        "estrogen": "low",
+        "progesterone": "low",
+        "lh": "low",
+        "fsh": "rising",
+        "confidence": "inferred",
+        "narrativeContext": "Both estrogen and progesterone are typically at their lowest point, which is what triggers bleeding. FSH is beginning its gradual rise to start preparing the next follicle."
+      },
+      "contraceptionContext": {
+        "type": "none",
+        "contextMessage": null,
+        "insightTone": "cycle-based",
+        "showPhaseInsights": true
+      },
+      "numericSummary": {
+        "recentSleepAvg": 7.3,
+        "baselineSleepAvg": null,
+        "sleepDelta": null,
+        "recentStressLabel": "calm",
+        "recentMoodLabel": "positive"
+      },
+      "crossCycleNarrative": null,
+      "memoryContext": null,
+      "aiEnhanced": true,
+      "aiDebug": "accepted",
+      "correlationPattern": null,
+      "basedOn": {
+        "phase": "menstrual",
+        "recentLogsCount": 5,
+        "confidenceScore": 0.85,
+        "baselineDeviation": [],
+        "baselineScope": "none",
+        "priorityDrivers": [],
+        "interactionFlags": [],
+        "trends": [
+          "Sleep stable",
+          "Stress stable",
+          "Mood increasing",
+          "Sleep variability low",
+          "Mood variability low"
+        ],
+        "reasoning": [
+          "Phase is menstrual",
+          "Physical state mapped to stable",
+          "Mental state mapped to balanced",
+          "Emotional state mapped to uplifted",
+          "Bleeding load mapped to moderate",
+          "No strong cross-signal interaction detected",
+          "No strong personal baseline deviation detected",
+          "No high-priority drivers triggered",
+          "No strong phase deviation detected",
+          "Trends: Sleep stable, Stress stable, Mood increasing, Sleep variability low, Mood variability low"
+        ]
+      },
+      "insights": {
+        "physicalInsight": "Your body feels steady and well-supported right now. It’s normal to feel physically low, and your energy is aligning with the natural rhythm of your cycle.",
+        "mentalInsight": "Focus is lower today — your body is prioritizing recovery over clarity. Everything feels manageable, and there's no pressure to push through.",
+        "emotionalInsight": "Things feel emotionally steady right now. You're experiencing a calmness that allows you to simply be.",
+        "whyThisIsHappening": "Both estrogen and progesterone are at their lowest point, which is what triggers bleeding. This hormonal shift is creating space for your body to rest and recover.",
+        "solution": "It's okay to take it easier today — lean into the calm and allow yourself to rest.",
+        "recommendation": "Keep your schedule lighter this week — your body is doing a lot right now, and it’s okay to honor that.",
+        "tomorrowPreview": "You're on day 4 of your cycle — the heaviness of this phase lifts soon, and follicular energy tends to return faster than expected."
+      },
+      "view": {
+        "primaryInsight": "Your body feels steady and well-supported right now. It’s normal to feel physically low, and your energy is aligning with the natural rhythm of your cycle.",
+        "supportingInsights": [
+          "Focus is lower today — your body is prioritizing recovery over clarity. Everything feels manageable, and there's no pressure to push through.",
+          "Things feel emotionally steady right now. You're experiencing a calmness that allows you to simply be."
+        ],
+        "action": "It's okay to take it easier today — lean into the calm and allow yourself to rest.",
+        "explanation": "Both estrogen and progesterone are at their lowest point, which is what triggers bleeding. This hormonal shift is creating space for your body to rest and recover.",
+        "recommendation": "Keep your schedule lighter this week — your body is doing a lot right now, and it’s okay to honor that.",
+        "tomorrowPreview": "You're on day 4 of your cycle — the heaviness of this phase lifts soon, and follicular energy tends to return faster than expected.",
+        "confidenceLabel": "High confidence insights"
+      },
+      "pmsWarning": null,
+      "lastAnticipationCycleDay": 3,
+      "lastAnticipationTypeKey": "follicular_approaching"
+    }
+  },
+  {
+    "testId": "T_SYS_D03_SLEEP_DEPRIVED",
+    "description": "Systematic cycle day 3, profile sleep_deprived",
+    "expect": {
+      "cycleDay": 3,
+      "cycleLength": 28,
+      "phase": "menstrual",
+      "minLogs": 14,
+      "shouldBeStable": false,
+      "shouldDetectSleepDisruption": true,
+      "shouldGateGPT": false,
+      "shouldDetectBleeding": false
+    },
+    "phase": "menstrual",
+    "cycleDay": 3,
+    "primaryDriver": "sleep_below_baseline",
+    "aiEnhanced": true,
+    "aiDebug": "accepted",
+    "correlationPattern": "sleep_disruption_primary",
+    "durationMs": 9129,
+    "error": null,
+    "output": {
+      "cycleDay": 3,
+      "home": {
+        "phase": "menstrual",
+        "currentDay": 3,
+        "isNewUser": false,
+        "primaryDriver": "sleep_below_baseline",
+        "logsToNextMilestone": 7,
+        "confidence": "high",
+        "isPeriodDelayed": false,
+        "daysOverdue": 0,
+        "isIrregular": false
+      },
+      "isNewUser": false,
+      "progress": {
+        "logsCount": 7,
+        "nextMilestone": 14,
+        "logsToNextMilestone": 7
+      },
+      "mode": "personalized",
+      "confidence": "high",
+      "cycleContext": {
+        "cycleMode": "natural",
+        "cyclePredictionConfidence": "unknown",
+        "nextPeriodEstimate": "2026-04-23",
+        "isIrregular": false,
+        "isPeriodDelayed": false,
+        "daysOverdue": 0
+      },
+      "hormoneContext": {
+        "estrogen": "low",
+        "progesterone": "low",
+        "lh": "low",
+        "fsh": "rising",
+        "confidence": "inferred",
+        "narrativeContext": "Both estrogen and progesterone are typically at their lowest point, which is what triggers bleeding. FSH is beginning its gradual rise to start preparing the next follicle."
+      },
+      "contraceptionContext": {
+        "type": "none",
+        "contextMessage": null,
+        "insightTone": "cycle-based",
+        "showPhaseInsights": true
+      },
+      "numericSummary": {
+        "recentSleepAvg": 5.5,
+        "baselineSleepAvg": 7,
+        "sleepDelta": -1.5,
+        "recentStressLabel": "calm",
+        "recentMoodLabel": "neutral"
+      },
+      "crossCycleNarrative": null,
+      "memoryContext": {
+        "driver": "sleep_below_baseline",
+        "count": 0,
+        "narrative": null,
+        "severity": "new"
+      },
+      "aiEnhanced": true,
+      "aiDebug": "accepted",
+      "correlationPattern": "sleep_disruption_primary",
+      "basedOn": {
+        "phase": "menstrual",
+        "recentLogsCount": 7,
+        "confidenceScore": 1,
+        "baselineDeviation": [
+          "sleep_below_personal_baseline"
+        ],
+        "baselineScope": "global",
+        "priorityDrivers": [
+          "sleep_below_baseline",
+          "sleep_trend_declining",
+          "mood_trend_declining",
+          "high_strain"
+        ],
+        "interactionFlags": [],
+        "trends": [
+          "Sleep decreasing",
+          "Stress increasing",
+          "Mood decreasing",
+          "Sleep variability moderate",
+          "Mood variability moderate"
+        ],
+        "reasoning": [
+          "Phase is menstrual",
+          "Physical state mapped to high_strain",
+          "Mental state mapped to fatigued",
+          "Emotional state mapped to loaded",
+          "Bleeding load mapped to moderate",
+          "No strong cross-signal interaction detected",
+          "Personal baseline deviations: sleep_below_personal_baseline",
+          "Insight priority drivers: sleep_below_baseline, sleep_trend_declining, mood_trend_declining, high_strain",
+          "No strong phase deviation detected",
+          "Trends: Sleep decreasing, Stress increasing, Mood decreasing, Sleep variability moderate, Mood variability moderate"
+        ]
+      },
+      "insights": {
+        "physicalInsight": "Your sleep has dropped sharply over the last few days — about 5.5h, which is lower than your usual. This is why your body feels physically low right now.",
+        "mentalInsight": "Focus is lower today — your body is prioritizing recovery over clarity.",
+        "emotionalInsight": "Small things feel harder than they should.",
+        "whyThisIsHappening": "This isn't about your cycle — your sleep has taken a hit recently, and that's what's driving how you feel right now.",
+        "solution": "It's okay to take it easier today — your body needs that space to recover.",
+        "recommendation": "Keep your load lighter until your sleep recovers — your energy will come back quickly once it does.",
+        "tomorrowPreview": "You're on day 3 of your period — the heaviness of this phase lifts soon, and the energy lift is just around the corner."
+      },
+      "view": {
+        "primaryInsight": "Your sleep has dropped sharply over the last few days — about 5.5h, which is lower than your usual. This is why your body feels physically low right now.",
+        "supportingInsights": [
+          "Focus is lower today — your body is prioritizing recovery over clarity.",
+          "Small things feel harder than they should."
+        ],
+        "action": "It's okay to take it easier today — your body needs that space to recover.",
+        "explanation": "This isn't about your cycle — your sleep has taken a hit recently, and that's what's driving how you feel right now.",
+        "recommendation": "Keep your load lighter until your sleep recovers — your energy will come back quickly once it does.",
+        "tomorrowPreview": "You're on day 3 of your period — the heaviness of this phase lifts soon, and the energy lift is just around the corner.",
+        "confidenceLabel": "High confidence insights"
+      },
+      "pmsWarning": null,
+      "lastAnticipationCycleDay": 3,
+      "lastAnticipationTypeKey": "follicular_approaching"
+    }
+  },
+  {
+    "testId": "T_SYS_D03_HIGH_STRESS",
+    "description": "Systematic cycle day 3, profile high_stress",
+    "expect": {
+      "cycleDay": 3,
+      "cycleLength": 28,
+      "phase": "menstrual",
+      "minLogs": 5,
+      "shouldBeStable": false,
+      "shouldDetectSleepDisruption": false,
+      "shouldGateGPT": false,
+      "shouldDetectBleeding": false
+    },
+    "phase": "menstrual",
+    "cycleDay": 3,
+    "primaryDriver": "stress_trend_spiking",
+    "aiEnhanced": true,
+    "aiDebug": "accepted",
+    "correlationPattern": null,
+    "durationMs": 8081,
+    "error": null,
+    "output": {
+      "cycleDay": 3,
+      "home": {
+        "phase": "menstrual",
+        "currentDay": 3,
+        "isNewUser": false,
+        "primaryDriver": "stress_trend_spiking",
+        "logsToNextMilestone": 2,
+        "confidence": "high",
+        "isPeriodDelayed": false,
+        "daysOverdue": 0,
+        "isIrregular": false
+      },
+      "isNewUser": false,
+      "progress": {
+        "logsCount": 5,
+        "nextMilestone": 7,
+        "logsToNextMilestone": 2
+      },
+      "mode": "personalized",
+      "confidence": "high",
+      "cycleContext": {
+        "cycleMode": "natural",
+        "cyclePredictionConfidence": "unknown",
+        "nextPeriodEstimate": "2026-04-23",
+        "isIrregular": false,
+        "isPeriodDelayed": false,
+        "daysOverdue": 0
+      },
+      "hormoneContext": {
+        "estrogen": "low",
+        "progesterone": "low",
+        "lh": "low",
+        "fsh": "rising",
+        "confidence": "inferred",
+        "narrativeContext": "Both estrogen and progesterone are typically at their lowest point, which is what triggers bleeding. FSH is beginning its gradual rise to start preparing the next follicle."
+      },
+      "contraceptionContext": {
+        "type": "none",
+        "contextMessage": null,
+        "insightTone": "cycle-based",
+        "showPhaseInsights": true
+      },
+      "numericSummary": {
+        "recentSleepAvg": 7,
+        "baselineSleepAvg": null,
+        "sleepDelta": null,
+        "recentStressLabel": "elevated",
+        "recentMoodLabel": "low"
+      },
+      "crossCycleNarrative": null,
+      "memoryContext": {
+        "driver": "stress_trend_spiking",
+        "count": 0,
+        "narrative": null,
+        "severity": "new"
+      },
+      "aiEnhanced": true,
+      "aiDebug": "accepted",
+      "correlationPattern": null,
+      "basedOn": {
+        "phase": "menstrual",
+        "recentLogsCount": 5,
+        "confidenceScore": 0.9,
+        "baselineDeviation": [],
+        "baselineScope": "none",
+        "priorityDrivers": [
+          "stress_trend_spiking",
+          "mood_stress_coupling",
+          "mood_trend_declining",
+          "stress_mood_strain"
+        ],
+        "interactionFlags": [
+          "mood_stress_coupling"
+        ],
+        "trends": [
+          "Sleep stable",
+          "Stress increasing",
+          "Mood decreasing",
+          "Sleep variability low",
+          "Mood variability low"
+        ],
+        "reasoning": [
+          "Phase is menstrual",
+          "Physical state mapped to stable",
+          "Mental state mapped to stressed",
+          "Emotional state mapped to loaded",
+          "Bleeding load mapped to moderate",
+          "Cross-signal interactions: mood_stress_coupling",
+          "No strong personal baseline deviation detected",
+          "Insight priority drivers: stress_trend_spiking, mood_stress_coupling, mood_trend_declining, stress_mood_strain",
+          "No strong phase deviation detected",
+          "Trends: Sleep stable, Stress increasing, Mood decreasing, Sleep variability low, Mood variability low"
+        ]
+      },
+      "insights": {
+        "physicalInsight": "Your physical energy feels low today, and it's normal to feel that way during this phase. Your body is doing a lot right now, so it's okay to take it easier.",
+        "mentalInsight": "Focus is lower today — your body is prioritizing recovery over clarity.",
+        "emotionalInsight": "Everything takes more effort right now — even small things feel harder than they should.",
+        "whyThisIsHappening": "High",
+        "solution": "Take a short reset between tasks today; it will help prevent this from building up.",
+        "recommendation": "Keep your load lighter this week — your body is doing its hardest work right now.",
+        "tomorrowPreview": "You're on day 3 of your period — the heaviness of this phase lifts soon, and follicular energy tends to return faster than expected."
+      },
+      "view": {
+        "primaryInsight": "Focus is lower today — your body is prioritizing recovery over clarity.",
+        "supportingInsights": [
+          "Your physical energy feels low today, and it's normal to feel that way during this phase. Your body is doing a lot right now, so it's okay to take it easier.",
+          "Everything takes more effort right now — even small things feel harder than they should."
+        ],
+        "action": "Take a short reset between tasks today; it will help prevent this from building up.",
+        "explanation": "High",
+        "recommendation": "Keep your load lighter this week — your body is doing its hardest work right now.",
+        "tomorrowPreview": "You're on day 3 of your period — the heaviness of this phase lifts soon, and follicular energy tends to return faster than expected.",
+        "confidenceLabel": "High confidence insights"
+      },
+      "pmsWarning": null,
+      "lastAnticipationCycleDay": 3,
+      "lastAnticipationTypeKey": "follicular_approaching"
+    }
+  },
+  {
+    "testId": "T_SYS_D03_STABLE_NEUTRAL",
+    "description": "Systematic cycle day 3, profile stable_neutral",
+    "expect": {
+      "cycleDay": 3,
+      "cycleLength": 28,
+      "phase": "menstrual",
+      "minLogs": 7,
+      "shouldBeStable": true,
+      "shouldDetectSleepDisruption": false,
+      "shouldGateGPT": false,
+      "shouldDetectBleeding": false
+    },
+    "phase": "menstrual",
+    "cycleDay": 3,
+    "primaryDriver": null,
+    "aiEnhanced": false,
+    "aiDebug": "gated",
+    "correlationPattern": "stable_state",
+    "durationMs": 3337,
+    "error": null,
+    "output": {
+      "cycleDay": 3,
+      "home": {
+        "phase": "menstrual",
+        "currentDay": 3,
+        "isNewUser": false,
+        "primaryDriver": null,
+        "logsToNextMilestone": 7,
+        "confidence": "high",
+        "isPeriodDelayed": false,
+        "daysOverdue": 0,
+        "isIrregular": false
+      },
+      "isNewUser": false,
+      "progress": {
+        "logsCount": 7,
+        "nextMilestone": 14,
+        "logsToNextMilestone": 7
+      },
+      "mode": "personalized",
+      "confidence": "high",
+      "cycleContext": {
+        "cycleMode": "natural",
+        "cyclePredictionConfidence": "unknown",
+        "nextPeriodEstimate": "2026-04-23",
+        "isIrregular": false,
+        "isPeriodDelayed": false,
+        "daysOverdue": 0
+      },
+      "hormoneContext": {
+        "estrogen": "low",
+        "progesterone": "low",
+        "lh": "low",
+        "fsh": "rising",
+        "confidence": "inferred",
+        "narrativeContext": "Both estrogen and progesterone are typically at their lowest point, which is what triggers bleeding. FSH is beginning its gradual rise to start preparing the next follicle."
+      },
+      "contraceptionContext": {
+        "type": "none",
+        "contextMessage": null,
+        "insightTone": "cycle-based",
+        "showPhaseInsights": true
+      },
+      "numericSummary": {
+        "recentSleepAvg": 7,
+        "baselineSleepAvg": null,
+        "sleepDelta": null,
+        "recentStressLabel": "moderate",
+        "recentMoodLabel": "neutral"
+      },
+      "crossCycleNarrative": null,
+      "memoryContext": null,
+      "aiEnhanced": false,
+      "aiDebug": "gated",
+      "correlationPattern": "stable_state",
+      "basedOn": {
+        "phase": "menstrual",
+        "recentLogsCount": 7,
+        "confidenceScore": 1,
+        "baselineDeviation": [],
+        "baselineScope": "none",
+        "priorityDrivers": [],
+        "interactionFlags": [],
+        "trends": [],
+        "reasoning": [
+          "Phase is menstrual",
+          "Recent logs are steady — no meaningful shifts in sleep, stress, or mood."
+        ]
+      },
+      "insights": {
+        "physicalInsight": "Your body feels steady right now — nothing is pulling it in either direction.",
+        "mentalInsight": "Focus is stable — things feel manageable without extra effort or strain.",
+        "emotionalInsight": "Your mood is balanced — nothing feels too heavy or too elevated.",
+        "whyThisIsHappening": "There aren't any strong shifts right now — your system is in a stable, consistent state.",
+        "solution": "Keep doing what's working — consistency is what's supporting this balance.",
+        "recommendation": "Maintain your current rhythm — sleep, stress, and energy are all holding steady.",
+        "tomorrowPreview": "Things should feel similar tomorrow — no major shifts expected."
+      },
+      "view": {
+        "primaryInsight": "Your body feels steady right now — nothing is pulling it in either direction.",
+        "supportingInsights": [
+          "Focus is stable — things feel manageable without extra effort or strain.",
+          "Your mood is balanced — nothing feels too heavy or too elevated."
+        ],
+        "action": "Keep doing what's working — consistency is what's supporting this balance.",
+        "explanation": "There aren't any strong shifts right now — your system is in a stable, consistent state.",
+        "recommendation": "Maintain your current rhythm — sleep, stress, and energy are all holding steady.",
+        "tomorrowPreview": "Things should feel similar tomorrow — no major shifts expected.",
+        "confidenceLabel": "High confidence insights"
+      },
+      "pmsWarning": null,
+      "lastAnticipationCycleDay": 3,
+      "lastAnticipationTypeKey": "follicular_approaching"
+    }
+  },
+  {
+    "testId": "T_SYS_D03_MIXED",
+    "description": "Systematic cycle day 3, profile mixed",
+    "expect": {
+      "cycleDay": 3,
+      "cycleLength": 28,
+      "phase": "menstrual",
+      "minLogs": 5,
+      "shouldBeStable": false,
+      "shouldDetectSleepDisruption": false,
+      "shouldGateGPT": false,
+      "shouldDetectBleeding": false
+    },
+    "phase": "menstrual",
+    "cycleDay": 3,
+    "primaryDriver": "sleep_variability_high",
+    "aiEnhanced": true,
+    "aiDebug": "accepted",
+    "correlationPattern": null,
+    "durationMs": 8966,
+    "error": null,
+    "output": {
+      "cycleDay": 3,
+      "home": {
+        "phase": "menstrual",
+        "currentDay": 3,
+        "isNewUser": false,
+        "primaryDriver": "sleep_variability_high",
+        "logsToNextMilestone": 2,
+        "confidence": "high",
+        "isPeriodDelayed": false,
+        "daysOverdue": 0,
+        "isIrregular": false
+      },
+      "isNewUser": false,
+      "progress": {
+        "logsCount": 5,
+        "nextMilestone": 7,
+        "logsToNextMilestone": 2
+      },
+      "mode": "personalized",
+      "confidence": "high",
+      "cycleContext": {
+        "cycleMode": "natural",
+        "cyclePredictionConfidence": "unknown",
+        "nextPeriodEstimate": "2026-04-23",
+        "isIrregular": false,
+        "isPeriodDelayed": false,
+        "daysOverdue": 0
+      },
+      "hormoneContext": {
+        "estrogen": "low",
+        "progesterone": "low",
+        "lh": "low",
+        "fsh": "rising",
+        "confidence": "inferred",
+        "narrativeContext": "Both estrogen and progesterone are typically at their lowest point, which is what triggers bleeding. FSH is beginning its gradual rise to start preparing the next follicle."
+      },
+      "contraceptionContext": {
+        "type": "none",
+        "contextMessage": null,
+        "insightTone": "cycle-based",
+        "showPhaseInsights": true
+      },
+      "numericSummary": {
+        "recentSleepAvg": 5.7,
+        "baselineSleepAvg": null,
+        "sleepDelta": null,
+        "recentStressLabel": "moderate",
+        "recentMoodLabel": "neutral"
+      },
+      "crossCycleNarrative": null,
+      "memoryContext": {
+        "driver": "sleep_variability_high",
+        "count": 0,
+        "narrative": null,
+        "severity": "new"
+      },
+      "aiEnhanced": true,
+      "aiDebug": "accepted",
+      "correlationPattern": null,
+      "basedOn": {
+        "phase": "menstrual",
+        "recentLogsCount": 5,
+        "confidenceScore": 0.9,
+        "baselineDeviation": [],
+        "baselineScope": "none",
+        "priorityDrivers": [
+          "sleep_variability_high",
+          "sleep_trend_declining",
+          "high_strain"
+        ],
+        "interactionFlags": [],
+        "trends": [
+          "Sleep decreasing",
+          "Stress stable",
+          "Mood stable",
+          "Sleep variability high",
+          "Mood variability moderate"
+        ],
+        "reasoning": [
+          "Phase is menstrual",
+          "Physical state mapped to high_strain",
+          "Mental state mapped to fatigued",
+          "Emotional state mapped to stable",
+          "Bleeding load mapped to moderate",
+          "No strong cross-signal interaction detected",
+          "No strong personal baseline deviation detected",
+          "Insight priority drivers: sleep_variability_high, sleep_trend_declining, high_strain",
+          "No strong phase deviation detected",
+          "Trends: Sleep decreasing, Stress stable, Mood stable, Sleep variability high, Mood variability moderate"
+        ]
+      },
+      "insights": {
+        "physicalInsight": "Your sleep has been inconsistent and lower than your usual 5.5 hours, leaving your body feeling more strained today. It's normal to feel physically low right now — slowing down isn't optional; it's what helps.",
+        "mentalInsight": "Focus is lower today — your body is prioritizing recovery over clarity. Everything takes more effort, and it’s okay to acknowledge that.",
+        "emotionalInsight": "You find that Small things feel harder than they should. It's a neutral space, where you can just be.",
+        "whyThisIsHappening": "Both estrogen and progesterone are at their lowest point, which is what triggers bleeding. This hormonal shift is part of your body’s natural process of recovery.",
+        "solution": "Take it easy today; give yourself permission to rest and recharge.",
+        "recommendation": "Over the next few days, keep your schedule lighter — your body is doing a lot right now.",
+        "tomorrowPreview": "You're on Day 4 of your cycle, and the recovery phase is close — most people notice a real shift in energy within a day or two of their period ending."
+      },
+      "view": {
+        "primaryInsight": "Your sleep has been inconsistent and lower than your usual 5.5 hours, leaving your body feeling more strained today. It's normal to feel physically low right now — slowing down isn't optional; it's what helps.",
+        "supportingInsights": [
+          "Focus is lower today — your body is prioritizing recovery over clarity. Everything takes more effort, and it’s okay to acknowledge that.",
+          "You find that Small things feel harder than they should. It's a neutral space, where you can just be."
+        ],
+        "action": "Take it easy today; give yourself permission to rest and recharge.",
+        "explanation": "Both estrogen and progesterone are at their lowest point, which is what triggers bleeding. This hormonal shift is part of your body’s natural process of recovery.",
+        "recommendation": "Over the next few days, keep your schedule lighter — your body is doing a lot right now.",
+        "tomorrowPreview": "You're on Day 4 of your cycle, and the recovery phase is close — most people notice a real shift in energy within a day or two of their period ending.",
+        "confidenceLabel": "High confidence insights"
+      },
+      "pmsWarning": null,
+      "lastAnticipationCycleDay": 3,
+      "lastAnticipationTypeKey": "follicular_approaching"
+    }
+  },
+  {
+    "testId": "T_SYS_D04_GOOD_ALL",
+    "description": "Systematic cycle day 4, profile good_all",
+    "expect": {
+      "cycleDay": 4,
+      "cycleLength": 28,
+      "phase": "menstrual",
+      "minLogs": 5,
+      "shouldBeStable": false,
+      "shouldDetectSleepDisruption": false,
+      "shouldGateGPT": false,
+      "shouldDetectBleeding": false
+    },
+    "phase": "menstrual",
+    "cycleDay": 4,
+    "primaryDriver": null,
+    "aiEnhanced": true,
+    "aiDebug": "accepted",
+    "correlationPattern": null,
+    "durationMs": 6994,
+    "error": null,
+    "output": {
+      "cycleDay": 4,
+      "home": {
+        "phase": "menstrual",
+        "currentDay": 4,
+        "isNewUser": false,
+        "primaryDriver": null,
+        "logsToNextMilestone": 2,
+        "confidence": "high",
+        "isPeriodDelayed": false,
+        "daysOverdue": 0,
+        "isIrregular": false
+      },
+      "isNewUser": false,
+      "progress": {
+        "logsCount": 5,
+        "nextMilestone": 7,
+        "logsToNextMilestone": 2
+      },
+      "mode": "personalized",
+      "confidence": "high",
+      "cycleContext": {
+        "cycleMode": "natural",
+        "cyclePredictionConfidence": "unknown",
+        "nextPeriodEstimate": "2026-04-22",
+        "isIrregular": false,
+        "isPeriodDelayed": false,
+        "daysOverdue": 0
+      },
+      "hormoneContext": {
+        "estrogen": "low",
+        "progesterone": "low",
+        "lh": "low",
+        "fsh": "rising",
+        "confidence": "inferred",
+        "narrativeContext": "Both estrogen and progesterone are typically at their lowest point, which is what triggers bleeding. FSH is beginning its gradual rise to start preparing the next follicle."
+      },
+      "contraceptionContext": {
+        "type": "none",
+        "contextMessage": null,
+        "insightTone": "cycle-based",
+        "showPhaseInsights": true
+      },
+      "numericSummary": {
+        "recentSleepAvg": 7.3,
+        "baselineSleepAvg": null,
+        "sleepDelta": null,
+        "recentStressLabel": "calm",
+        "recentMoodLabel": "positive"
+      },
+      "crossCycleNarrative": null,
+      "memoryContext": null,
+      "aiEnhanced": true,
+      "aiDebug": "accepted",
+      "correlationPattern": null,
+      "basedOn": {
+        "phase": "menstrual",
+        "recentLogsCount": 5,
+        "confidenceScore": 0.85,
+        "baselineDeviation": [],
+        "baselineScope": "none",
+        "priorityDrivers": [],
+        "interactionFlags": [],
+        "trends": [
+          "Sleep stable",
+          "Stress stable",
+          "Mood increasing",
+          "Sleep variability low",
+          "Mood variability low"
+        ],
+        "reasoning": [
+          "Phase is menstrual",
+          "Physical state mapped to stable",
+          "Mental state mapped to balanced",
+          "Emotional state mapped to uplifted",
+          "Bleeding load mapped to moderate",
+          "No strong cross-signal interaction detected",
+          "No strong personal baseline deviation detected",
+          "No high-priority drivers triggered",
+          "No strong phase deviation detected",
+          "Trends: Sleep stable, Stress stable, Mood increasing, Sleep variability low, Mood variability low"
+        ]
+      },
+      "insights": {
+        "physicalInsight": "Your body feels steady and well-supported right now. It's normal to feel physically low, but your energy and recovery are looking good.",
+        "mentalInsight": "Focus is lower today — your body is prioritizing recovery over clarity. Everything feels manageable, without signs of mental strain.",
+        "emotionalInsight": "Things feel emotionally steady right now. Small things are easier to handle.",
+        "whyThisIsHappening": "Both estrogen and progesterone are at their lowest point, which is what triggers bleeding. FSH is starting to rise, preparing for the next phase.",
+        "solution": "Lean into what feels good today — it's okay to take it easier and focus on what brings you joy.",
+        "recommendation": "The recovery phase is close — most people notice a real shift in energy within a day or two of their period ending. Your body is doing a lot right now, so keep your load light.",
+        "tomorrowPreview": "You're on Day 5 of your cycle, just two days away from the end of your period. You'll likely start feeling a change soon."
+      },
+      "view": {
+        "primaryInsight": "Your body feels steady and well-supported right now. It's normal to feel physically low, but your energy and recovery are looking good.",
+        "supportingInsights": [
+          "Focus is lower today — your body is prioritizing recovery over clarity. Everything feels manageable, without signs of mental strain.",
+          "Things feel emotionally steady right now. Small things are easier to handle."
+        ],
+        "action": "Lean into what feels good today — it's okay to take it easier and focus on what brings you joy.",
+        "explanation": "Both estrogen and progesterone are at their lowest point, which is what triggers bleeding. FSH is starting to rise, preparing for the next phase.",
+        "recommendation": "The recovery phase is close — most people notice a real shift in energy within a day or two of their period ending. Your body is doing a lot right now, so keep your load light.",
+        "tomorrowPreview": "You're on Day 5 of your cycle, just two days away from the end of your period. You'll likely start feeling a change soon.",
+        "confidenceLabel": "High confidence insights"
+      },
+      "pmsWarning": null,
+      "lastAnticipationCycleDay": 4,
+      "lastAnticipationTypeKey": "follicular_approaching"
+    }
+  },
+  {
+    "testId": "T_SYS_D04_SLEEP_DEPRIVED",
+    "description": "Systematic cycle day 4, profile sleep_deprived",
+    "expect": {
+      "cycleDay": 4,
+      "cycleLength": 28,
+      "phase": "menstrual",
+      "minLogs": 14,
+      "shouldBeStable": false,
+      "shouldDetectSleepDisruption": true,
+      "shouldGateGPT": false,
+      "shouldDetectBleeding": false
+    },
+    "phase": "menstrual",
+    "cycleDay": 4,
+    "primaryDriver": "sleep_below_baseline",
+    "aiEnhanced": true,
+    "aiDebug": "accepted",
+    "correlationPattern": "sleep_disruption_primary",
+    "durationMs": 8986,
+    "error": null,
+    "output": {
+      "cycleDay": 4,
+      "home": {
+        "phase": "menstrual",
+        "currentDay": 4,
+        "isNewUser": false,
+        "primaryDriver": "sleep_below_baseline",
+        "logsToNextMilestone": 7,
+        "confidence": "high",
+        "isPeriodDelayed": false,
+        "daysOverdue": 0,
+        "isIrregular": false
+      },
+      "isNewUser": false,
+      "progress": {
+        "logsCount": 7,
+        "nextMilestone": 14,
+        "logsToNextMilestone": 7
+      },
+      "mode": "personalized",
+      "confidence": "high",
+      "cycleContext": {
+        "cycleMode": "natural",
+        "cyclePredictionConfidence": "unknown",
+        "nextPeriodEstimate": "2026-04-22",
+        "isIrregular": false,
+        "isPeriodDelayed": false,
+        "daysOverdue": 0
+      },
+      "hormoneContext": {
+        "estrogen": "low",
+        "progesterone": "low",
+        "lh": "low",
+        "fsh": "rising",
+        "confidence": "inferred",
+        "narrativeContext": "Both estrogen and progesterone are typically at their lowest point, which is what triggers bleeding. FSH is beginning its gradual rise to start preparing the next follicle."
+      },
+      "contraceptionContext": {
+        "type": "none",
+        "contextMessage": null,
+        "insightTone": "cycle-based",
+        "showPhaseInsights": true
+      },
+      "numericSummary": {
+        "recentSleepAvg": 5.5,
+        "baselineSleepAvg": 7,
+        "sleepDelta": -1.5,
+        "recentStressLabel": "calm",
+        "recentMoodLabel": "neutral"
+      },
+      "crossCycleNarrative": null,
+      "memoryContext": {
+        "driver": "sleep_below_baseline",
+        "count": 0,
+        "narrative": null,
+        "severity": "new"
+      },
+      "aiEnhanced": true,
+      "aiDebug": "accepted",
+      "correlationPattern": "sleep_disruption_primary",
+      "basedOn": {
+        "phase": "menstrual",
+        "recentLogsCount": 7,
+        "confidenceScore": 1,
+        "baselineDeviation": [
+          "sleep_below_personal_baseline"
+        ],
+        "baselineScope": "global",
+        "priorityDrivers": [
+          "sleep_below_baseline",
+          "sleep_trend_declining",
+          "mood_trend_declining",
+          "high_strain"
+        ],
+        "interactionFlags": [],
+        "trends": [
+          "Sleep decreasing",
+          "Stress increasing",
+          "Mood decreasing",
+          "Sleep variability moderate",
+          "Mood variability moderate"
+        ],
+        "reasoning": [
+          "Phase is menstrual",
+          "Physical state mapped to high_strain",
+          "Mental state mapped to fatigued",
+          "Emotional state mapped to loaded",
+          "Bleeding load mapped to moderate",
+          "No strong cross-signal interaction detected",
+          "Personal baseline deviations: sleep_below_personal_baseline",
+          "Insight priority drivers: sleep_below_baseline, sleep_trend_declining, mood_trend_declining, high_strain",
+          "No strong phase deviation detected",
+          "Trends: Sleep decreasing, Stress increasing, Mood decreasing, Sleep variability moderate, Mood variability moderate"
+        ]
+      },
+      "insights": {
+        "physicalInsight": "Your sleep has dropped sharply over the last few days — around 5.5h, which is lower than your usual. This is why you're feeling physically low right now.",
+        "mentalInsight": "Focus is lower today — your body is prioritizing recovery over clarity.",
+        "emotionalInsight": "Small things feel harder than they should.",
+        "whyThisIsHappening": "This isn't about your cycle — your sleep has taken a hit recently, and that's what's driving how you feel right now.",
+        "solution": "It's okay to take it easier today; your body needs this time to recover.",
+        "recommendation": "Keep your load lighter until your sleep recovers — your energy will come back quickly once it does.",
+        "tomorrowPreview": "You're 3 days from your period — the recovery phase is close, and most people notice a real shift in energy within a day or two of their period ending."
+      },
+      "view": {
+        "primaryInsight": "Your sleep has dropped sharply over the last few days — around 5.5h, which is lower than your usual. This is why you're feeling physically low right now.",
+        "supportingInsights": [
+          "Focus is lower today — your body is prioritizing recovery over clarity.",
+          "Small things feel harder than they should."
+        ],
+        "action": "It's okay to take it easier today; your body needs this time to recover.",
+        "explanation": "This isn't about your cycle — your sleep has taken a hit recently, and that's what's driving how you feel right now.",
+        "recommendation": "Keep your load lighter until your sleep recovers — your energy will come back quickly once it does.",
+        "tomorrowPreview": "You're 3 days from your period — the recovery phase is close, and most people notice a real shift in energy within a day or two of their period ending.",
+        "confidenceLabel": "High confidence insights"
+      },
+      "pmsWarning": null,
+      "lastAnticipationCycleDay": 4,
+      "lastAnticipationTypeKey": "follicular_approaching"
+    }
+  },
+  {
+    "testId": "T_SYS_D04_HIGH_STRESS",
+    "description": "Systematic cycle day 4, profile high_stress",
+    "expect": {
+      "cycleDay": 4,
+      "cycleLength": 28,
+      "phase": "menstrual",
+      "minLogs": 5,
+      "shouldBeStable": false,
+      "shouldDetectSleepDisruption": false,
+      "shouldGateGPT": false,
+      "shouldDetectBleeding": false
+    },
+    "phase": "menstrual",
+    "cycleDay": 4,
+    "primaryDriver": "stress_trend_spiking",
+    "aiEnhanced": true,
+    "aiDebug": "accepted",
+    "correlationPattern": null,
+    "durationMs": 9765,
+    "error": null,
+    "output": {
+      "cycleDay": 4,
+      "home": {
+        "phase": "menstrual",
+        "currentDay": 4,
+        "isNewUser": false,
+        "primaryDriver": "stress_trend_spiking",
+        "logsToNextMilestone": 2,
+        "confidence": "high",
+        "isPeriodDelayed": false,
+        "daysOverdue": 0,
+        "isIrregular": false
+      },
+      "isNewUser": false,
+      "progress": {
+        "logsCount": 5,
+        "nextMilestone": 7,
+        "logsToNextMilestone": 2
+      },
+      "mode": "personalized",
+      "confidence": "high",
+      "cycleContext": {
+        "cycleMode": "natural",
+        "cyclePredictionConfidence": "unknown",
+        "nextPeriodEstimate": "2026-04-22",
+        "isIrregular": false,
+        "isPeriodDelayed": false,
+        "daysOverdue": 0
+      },
+      "hormoneContext": {
+        "estrogen": "low",
+        "progesterone": "low",
+        "lh": "low",
+        "fsh": "rising",
+        "confidence": "inferred",
+        "narrativeContext": "Both estrogen and progesterone are typically at their lowest point, which is what triggers bleeding. FSH is beginning its gradual rise to start preparing the next follicle."
+      },
+      "contraceptionContext": {
+        "type": "none",
+        "contextMessage": null,
+        "insightTone": "cycle-based",
+        "showPhaseInsights": true
+      },
+      "numericSummary": {
+        "recentSleepAvg": 7,
+        "baselineSleepAvg": null,
+        "sleepDelta": null,
+        "recentStressLabel": "elevated",
+        "recentMoodLabel": "low"
+      },
+      "crossCycleNarrative": null,
+      "memoryContext": {
+        "driver": "stress_trend_spiking",
+        "count": 0,
+        "narrative": null,
+        "severity": "new"
+      },
+      "aiEnhanced": true,
+      "aiDebug": "accepted",
+      "correlationPattern": null,
+      "basedOn": {
+        "phase": "menstrual",
+        "recentLogsCount": 5,
+        "confidenceScore": 0.9,
+        "baselineDeviation": [],
+        "baselineScope": "none",
+        "priorityDrivers": [
+          "stress_trend_spiking",
+          "mood_stress_coupling",
+          "mood_trend_declining",
+          "stress_mood_strain"
+        ],
+        "interactionFlags": [
+          "mood_stress_coupling"
+        ],
+        "trends": [
+          "Sleep stable",
+          "Stress increasing",
+          "Mood decreasing",
+          "Sleep variability low",
+          "Mood variability low"
+        ],
+        "reasoning": [
+          "Phase is menstrual",
+          "Physical state mapped to stable",
+          "Mental state mapped to stressed",
+          "Emotional state mapped to loaded",
+          "Bleeding load mapped to moderate",
+          "Cross-signal interactions: mood_stress_coupling",
+          "No strong personal baseline deviation detected",
+          "Insight priority drivers: stress_trend_spiking, mood_stress_coupling, mood_trend_declining, stress_mood_strain",
+          "No strong phase deviation detected",
+          "Trends: Sleep stable, Stress increasing, Mood decreasing, Sleep variability low, Mood variability low"
+        ]
+      },
+      "insights": {
+        "physicalInsight": "Your physical energy feels low today, and it's normal to feel that way during your period. It's okay to take it easier and listen to what your body needs.",
+        "mentalInsight": "Focus is lower today — your body is prioritizing recovery over clarity.",
+        "emotionalInsight": "everything takes more effort right now, and that weight is coming from the stress you're carrying. It's okay to acknowledge that this is a tough moment.",
+        "whyThisIsHappening": "Stress has been climbing recently, and that's what's driving how you feel right now. Your body is doing a lot to manage this pressure.",
+        "solution": "Take a short reset between tasks today — it will help prevent this stress from building further.",
+        "recommendation": "Keep your schedule lighter this week; your body is doing its hardest work right now. Allow yourself the space to rest and recover.",
+        "tomorrowPreview": "You're on day 4 of your period — you're almost through this phase. The energy boost from the follicular phase is coming soon."
+      },
+      "view": {
+        "primaryInsight": "Focus is lower today — your body is prioritizing recovery over clarity.",
+        "supportingInsights": [
+          "Your physical energy feels low today, and it's normal to feel that way during your period. It's okay to take it easier and listen to what your body needs.",
+          "everything takes more effort right now, and that weight is coming from the stress you're carrying. It's okay to acknowledge that this is a tough moment."
+        ],
+        "action": "Take a short reset between tasks today — it will help prevent this stress from building further.",
+        "explanation": "Stress has been climbing recently, and that's what's driving how you feel right now. Your body is doing a lot to manage this pressure.",
+        "recommendation": "Keep your schedule lighter this week; your body is doing its hardest work right now. Allow yourself the space to rest and recover.",
+        "tomorrowPreview": "You're on day 4 of your period — you're almost through this phase. The energy boost from the follicular phase is coming soon.",
+        "confidenceLabel": "High confidence insights"
+      },
+      "pmsWarning": null,
+      "lastAnticipationCycleDay": 4,
+      "lastAnticipationTypeKey": "follicular_approaching"
+    }
+  },
+  {
+    "testId": "T_SYS_D04_STABLE_NEUTRAL",
+    "description": "Systematic cycle day 4, profile stable_neutral",
+    "expect": {
+      "cycleDay": 4,
+      "cycleLength": 28,
+      "phase": "menstrual",
+      "minLogs": 7,
+      "shouldBeStable": true,
+      "shouldDetectSleepDisruption": false,
+      "shouldGateGPT": false,
+      "shouldDetectBleeding": false
+    },
+    "phase": "menstrual",
+    "cycleDay": 4,
+    "primaryDriver": null,
+    "aiEnhanced": false,
+    "aiDebug": "gated",
+    "correlationPattern": "stable_state",
+    "durationMs": 3283,
+    "error": null,
+    "output": {
+      "cycleDay": 4,
+      "home": {
+        "phase": "menstrual",
+        "currentDay": 4,
+        "isNewUser": false,
+        "primaryDriver": null,
+        "logsToNextMilestone": 7,
+        "confidence": "high",
+        "isPeriodDelayed": false,
+        "daysOverdue": 0,
+        "isIrregular": false
+      },
+      "isNewUser": false,
+      "progress": {
+        "logsCount": 7,
+        "nextMilestone": 14,
+        "logsToNextMilestone": 7
+      },
+      "mode": "personalized",
+      "confidence": "high",
+      "cycleContext": {
+        "cycleMode": "natural",
+        "cyclePredictionConfidence": "unknown",
+        "nextPeriodEstimate": "2026-04-22",
+        "isIrregular": false,
+        "isPeriodDelayed": false,
+        "daysOverdue": 0
+      },
+      "hormoneContext": {
+        "estrogen": "low",
+        "progesterone": "low",
+        "lh": "low",
+        "fsh": "rising",
+        "confidence": "inferred",
+        "narrativeContext": "Both estrogen and progesterone are typically at their lowest point, which is what triggers bleeding. FSH is beginning its gradual rise to start preparing the next follicle."
+      },
+      "contraceptionContext": {
+        "type": "none",
+        "contextMessage": null,
+        "insightTone": "cycle-based",
+        "showPhaseInsights": true
+      },
+      "numericSummary": {
+        "recentSleepAvg": 7,
+        "baselineSleepAvg": null,
+        "sleepDelta": null,
+        "recentStressLabel": "moderate",
+        "recentMoodLabel": "neutral"
+      },
+      "crossCycleNarrative": null,
+      "memoryContext": null,
+      "aiEnhanced": false,
+      "aiDebug": "gated",
+      "correlationPattern": "stable_state",
+      "basedOn": {
+        "phase": "menstrual",
+        "recentLogsCount": 7,
+        "confidenceScore": 1,
+        "baselineDeviation": [],
+        "baselineScope": "none",
+        "priorityDrivers": [],
+        "interactionFlags": [],
+        "trends": [],
+        "reasoning": [
+          "Phase is menstrual",
+          "Recent logs are steady — no meaningful shifts in sleep, stress, or mood."
+        ]
+      },
+      "insights": {
+        "physicalInsight": "Your body feels steady right now — nothing is pulling it in either direction.",
+        "mentalInsight": "Focus is stable — things feel manageable without extra effort or strain.",
+        "emotionalInsight": "Your mood is balanced — nothing feels too heavy or too elevated.",
+        "whyThisIsHappening": "There aren't any strong shifts right now — your system is in a stable, consistent state.",
+        "solution": "Keep doing what's working — consistency is what's supporting this balance.",
+        "recommendation": "Maintain your current rhythm — sleep, stress, and energy are all holding steady.",
+        "tomorrowPreview": "Things should feel similar tomorrow — no major shifts expected."
+      },
+      "view": {
+        "primaryInsight": "Your body feels steady right now — nothing is pulling it in either direction.",
+        "supportingInsights": [
+          "Focus is stable — things feel manageable without extra effort or strain.",
+          "Your mood is balanced — nothing feels too heavy or too elevated."
+        ],
+        "action": "Keep doing what's working — consistency is what's supporting this balance.",
+        "explanation": "There aren't any strong shifts right now — your system is in a stable, consistent state.",
+        "recommendation": "Maintain your current rhythm — sleep, stress, and energy are all holding steady.",
+        "tomorrowPreview": "Things should feel similar tomorrow — no major shifts expected.",
+        "confidenceLabel": "High confidence insights"
+      },
+      "pmsWarning": null,
+      "lastAnticipationCycleDay": 4,
+      "lastAnticipationTypeKey": "follicular_approaching"
+    }
+  },
+  {
+    "testId": "T_SYS_D04_MIXED",
+    "description": "Systematic cycle day 4, profile mixed",
+    "expect": {
+      "cycleDay": 4,
+      "cycleLength": 28,
+      "phase": "menstrual",
+      "minLogs": 5,
+      "shouldBeStable": false,
+      "shouldDetectSleepDisruption": false,
+      "shouldGateGPT": false,
+      "shouldDetectBleeding": false
+    },
+    "phase": "menstrual",
+    "cycleDay": 4,
+    "primaryDriver": "sleep_variability_high",
+    "aiEnhanced": true,
+    "aiDebug": "accepted",
+    "correlationPattern": null,
+    "durationMs": 8059,
+    "error": null,
+    "output": {
+      "cycleDay": 4,
+      "home": {
+        "phase": "menstrual",
+        "currentDay": 4,
+        "isNewUser": false,
+        "primaryDriver": "sleep_variability_high",
+        "logsToNextMilestone": 2,
+        "confidence": "high",
+        "isPeriodDelayed": false,
+        "daysOverdue": 0,
+        "isIrregular": false
+      },
+      "isNewUser": false,
+      "progress": {
+        "logsCount": 5,
+        "nextMilestone": 7,
+        "logsToNextMilestone": 2
+      },
+      "mode": "personalized",
+      "confidence": "high",
+      "cycleContext": {
+        "cycleMode": "natural",
+        "cyclePredictionConfidence": "unknown",
+        "nextPeriodEstimate": "2026-04-22",
+        "isIrregular": false,
+        "isPeriodDelayed": false,
+        "daysOverdue": 0
+      },
+      "hormoneContext": {
+        "estrogen": "low",
+        "progesterone": "low",
+        "lh": "low",
+        "fsh": "rising",
+        "confidence": "inferred",
+        "narrativeContext": "Both estrogen and progesterone are typically at their lowest point, which is what triggers bleeding. FSH is beginning its gradual rise to start preparing the next follicle."
+      },
+      "contraceptionContext": {
+        "type": "none",
+        "contextMessage": null,
+        "insightTone": "cycle-based",
+        "showPhaseInsights": true
+      },
+      "numericSummary": {
+        "recentSleepAvg": 5.7,
+        "baselineSleepAvg": null,
+        "sleepDelta": null,
+        "recentStressLabel": "moderate",
+        "recentMoodLabel": "neutral"
+      },
+      "crossCycleNarrative": null,
+      "memoryContext": {
+        "driver": "sleep_variability_high",
+        "count": 0,
+        "narrative": null,
+        "severity": "new"
+      },
+      "aiEnhanced": true,
+      "aiDebug": "accepted",
+      "correlationPattern": null,
+      "basedOn": {
+        "phase": "menstrual",
+        "recentLogsCount": 5,
+        "confidenceScore": 0.9,
+        "baselineDeviation": [],
+        "baselineScope": "none",
+        "priorityDrivers": [
+          "sleep_variability_high",
+          "sleep_trend_declining",
+          "high_strain"
+        ],
+        "interactionFlags": [],
+        "trends": [
+          "Sleep decreasing",
+          "Stress stable",
+          "Mood stable",
+          "Sleep variability high",
+          "Mood variability moderate"
+        ],
+        "reasoning": [
+          "Phase is menstrual",
+          "Physical state mapped to high_strain",
+          "Mental state mapped to fatigued",
+          "Emotional state mapped to stable",
+          "Bleeding load mapped to moderate",
+          "No strong cross-signal interaction detected",
+          "No strong personal baseline deviation detected",
+          "Insight priority drivers: sleep_variability_high, sleep_trend_declining, high_strain",
+          "No strong phase deviation detected",
+          "Trends: Sleep decreasing, Stress stable, Mood stable, Sleep variability high, Mood variability moderate"
+        ]
+      },
+      "insights": {
+        "physicalInsight": "Your sleep has been inconsistent and lower than your usual 5.5 hours, which is making your body feel more strained today. It's normal to feel physically low right now, and slowing down isn't optional — it's what helps.",
+        "mentalInsight": "Focus is lower today — your body is prioritizing recovery over clarity. Everything feels like it takes more effort than it should.",
+        "emotionalInsight": "You feel steady, but Small things feel harder than they should. It's okay to acknowledge that everything feels a bit overwhelming right now.",
+        "whyThisIsHappening": "Both estrogen and progesterone are at their lowest point, which is what triggers bleeding and contributes to how your body feels during this phase.",
+        "solution": "Take it easy today — allow yourself the space to rest and recover.",
+        "recommendation": "Keep your schedule lighter over the next few days — your body is doing a lot right now, and it’s okay to give yourself permission to slow down.",
+        "tomorrowPreview": "You're on Day 5 of your cycle, just one day away from the end of your period. Tomorrow, you start feeling a shift as you move closer to the follicular phase."
+      },
+      "view": {
+        "primaryInsight": "Your sleep has been inconsistent and lower than your usual 5.5 hours, which is making your body feel more strained today. It's normal to feel physically low right now, and slowing down isn't optional — it's what helps.",
+        "supportingInsights": [
+          "Focus is lower today — your body is prioritizing recovery over clarity. Everything feels like it takes more effort than it should.",
+          "You feel steady, but Small things feel harder than they should. It's okay to acknowledge that everything feels a bit overwhelming right now."
+        ],
+        "action": "Take it easy today — allow yourself the space to rest and recover.",
+        "explanation": "Both estrogen and progesterone are at their lowest point, which is what triggers bleeding and contributes to how your body feels during this phase.",
+        "recommendation": "Keep your schedule lighter over the next few days — your body is doing a lot right now, and it’s okay to give yourself permission to slow down.",
+        "tomorrowPreview": "You're on Day 5 of your cycle, just one day away from the end of your period. Tomorrow, you start feeling a shift as you move closer to the follicular phase.",
+        "confidenceLabel": "High confidence insights"
+      },
+      "pmsWarning": null,
+      "lastAnticipationCycleDay": 4,
+      "lastAnticipationTypeKey": "follicular_approaching"
+    }
+  }
+]

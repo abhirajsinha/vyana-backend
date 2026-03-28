@@ -7,6 +7,7 @@
 // ADDED: delayed period insight override block
 // EVERYTHING ELSE: identical to your current pushed version — pmsWarning, all engines, all imports
 
+import "../types/express";
 import { Request, Response } from "express";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
@@ -19,6 +20,7 @@ import {
 import {
   buildInsightContext,
   generateRuleBasedInsights,
+  insightContextAsStableBaseline,
 } from "../services/insightService";
 import {
   buildVyanaContextForInsights,
@@ -67,10 +69,15 @@ import {
   getForecastConfidenceLabel,
   containsForbiddenLanguage,
   softenDailyInsights,
+  cleanupInsightText,
 } from "../utils/confidencelanguage";
 import {
   detectPrimaryInsightCause,
   applySleepDisruptionNarrative,
+  applyStressLedNarrative,
+  applyStableStateNarrative,
+  isStableInsightState,
+  type PrimaryInsightCause,
 } from "../services/insightCause";
 
 function isInsightsPayloadCached(payload: unknown): boolean {
@@ -285,7 +292,7 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
       ? "global"
       : "none";
 
-  const context = buildInsightContext(
+  let context = buildInsightContext(
     cycleInfo.phase,
     cycleInfo.currentDay,
     recentLogs,
@@ -297,11 +304,24 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     cyclePrediction.confidence,
   );
 
-  const primaryInsightCause = detectPrimaryInsightCause({
-    baselineDeviation: context.baselineDeviation,
-    trends: context.trends,
-    sleepDelta: numericBaseline.sleepDelta,
-  });
+  const stableCandidate = isStableInsightState(recentLogs, numericBaseline);
+  const effectiveStable =
+    stableCandidate &&
+    !isPeriodDelayed &&
+    context.mode === "personalized";
+
+  if (effectiveStable) {
+    context = insightContextAsStableBaseline(context);
+  }
+
+  const primaryInsightCause: PrimaryInsightCause = effectiveStable
+    ? "stable"
+    : detectPrimaryInsightCause({
+        baselineDeviation: context.baselineDeviation,
+        trends: context.trends,
+        sleepDelta: numericBaseline.sleepDelta,
+        priorityDrivers: context.priorityDrivers,
+      });
 
   const ruleBasedInsights = generateRuleBasedInsights(context);
   const tomorrowPreview = buildTomorrowPreview(
@@ -314,7 +334,8 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
   if (
     hormoneLanguage &&
     context.mode === "personalized" &&
-    primaryInsightCause !== "sleep_disruption"
+    primaryInsightCause !== "sleep_disruption" &&
+    primaryInsightCause !== "stable"
   ) {
     const hasSpecificReason =
       draftInsights.whyThisIsHappening.includes("sleep") ||
@@ -386,6 +407,7 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
   );
 
   if (
+    !effectiveStable &&
     correlation.patternKey &&
     correlation.confidence >= 0.7 &&
     context.mode === "personalized"
@@ -444,8 +466,30 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     }
   }
 
-  if (primaryInsightCause === "sleep_disruption" && context.mode === "personalized") {
+  // Bug B: skip sleep_disruption override when the drop is part of a recurring
+  // cross-cycle pattern — otherwise "this isn't about your cycle" fires incorrectly
+  const skipSleepDisruptionOverride =
+    primaryInsightCause === "sleep_disruption" &&
+    crossCycleNarrative !== null &&
+    crossCycleNarrative.matchingCycles >= 2;
+
+  if (
+    primaryInsightCause === "sleep_disruption" &&
+    context.mode === "personalized" &&
+    !skipSleepDisruptionOverride
+  ) {
     draftInsights = applySleepDisruptionNarrative(draftInsights, numericBaseline);
+  }
+
+  if (
+    primaryInsightCause === "stress_led" &&
+    context.mode === "personalized"
+  ) {
+    draftInsights = applyStressLedNarrative(draftInsights);
+  }
+
+  if (effectiveStable && context.mode === "personalized") {
+    draftInsights = applyStableStateNarrative(draftInsights);
   }
 
   draftInsights = {
@@ -537,7 +581,8 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     | "accepted"
     | "accepted_strength_bypassed"
     | "accepted_vague_fixed"
-    | "unchanged_output" = "gated";
+    | "unchanged_output"
+    | "stable_state" = "gated";
 
   const logSpanDays = computeLogSpanDays(recentLogs);
   // Signal-rich: has at least some logged data with numeric signals
@@ -570,6 +615,7 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     (cycleInfo.phase === "ovulation" || cycleInfo.phase === "follicular");
 
   const canUseAI =
+    !effectiveStable &&
     (hasSignalRichness ||
       hasHighPrioritySignal ||
       hasCycleContext ||
@@ -719,6 +765,8 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     primaryKeyOverride = null;
   }
 
+  insights = cleanupInsightText(insights);
+
   const view = buildInsightView(context, insights, { primaryKeyOverride });
 
   let pmsWarning = null;
@@ -848,8 +896,9 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     memoryContext,
     aiEnhanced,
     aiDebug,
-    correlationPattern:
-      primaryInsightCause === "sleep_disruption"
+    correlationPattern: effectiveStable
+      ? "stable_state"
+      : primaryInsightCause === "sleep_disruption"
         ? "sleep_disruption_primary"
         : correlation.patternKey,
     basedOn: {

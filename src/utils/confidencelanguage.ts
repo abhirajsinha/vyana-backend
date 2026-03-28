@@ -169,6 +169,81 @@ export function softHormoneClaim(hormone: string, state: string, confidence: num
   return hedges[getTone(confidence)];
 }
 
+// ─── Post-generation text cleanup ────────────────────────────────────────────
+
+const POSITIVE_MARKERS = ["steady", "stable", "balanced", "good place", "well-supported", "manageable"];
+const NEGATIVE_MARKERS = ["strain", "harder", "heavier", "dropping", "low energy", "takes more effort", "declining"];
+
+function sentencesOf(text: string): string[] {
+  return text.replace(/(\d)\.(\d)/g, "$1\u2024$2")
+    .split(/(?<=[.!?])\s+/)
+    .map(s => s.replace(/\u2024/g, ".").trim())
+    .filter(Boolean);
+}
+
+function dedupSentences(text: string): string {
+  const sents = sentencesOf(text);
+  const unique: string[] = [];
+  for (const s of sents) {
+    const norm = s.toLowerCase().replace(/[^a-z0-9 ]/g, "");
+    if (unique.some(u => {
+      const uNorm = u.toLowerCase().replace(/[^a-z0-9 ]/g, "");
+      if (uNorm === norm) return true;
+      const words = norm.split(" ").filter(Boolean);
+      const uWords = uNorm.split(" ").filter(Boolean);
+      const overlap = words.filter(w => uWords.includes(w)).length;
+      return overlap / Math.max(words.length, 1) > 0.7;
+    })) continue;
+    unique.push(s);
+  }
+  return unique.join(" ");
+}
+
+function hasContradiction(a: string, b: string): boolean {
+  const aLow = a.toLowerCase();
+  const bLow = b.toLowerCase();
+  const aPos = POSITIVE_MARKERS.some(m => aLow.includes(m));
+  const aNeg = NEGATIVE_MARKERS.some(m => aLow.includes(m));
+  const bPos = POSITIVE_MARKERS.some(m => bLow.includes(m));
+  const bNeg = NEGATIVE_MARKERS.some(m => bLow.includes(m));
+  return (aPos && bNeg) || (aNeg && bPos);
+}
+
+export function cleanupInsightText(insights: DailyInsights): DailyInsights {
+  const cleaned = { ...insights };
+  const keys: (keyof DailyInsights)[] = [
+    "physicalInsight", "mentalInsight", "emotionalInsight",
+    "whyThisIsHappening", "solution", "recommendation", "tomorrowPreview",
+  ];
+  for (const k of keys) {
+    cleaned[k] = dedupSentences(cleaned[k]);
+  }
+
+  if (hasContradiction(cleaned.physicalInsight, cleaned.mentalInsight)) {
+    const physNeg = NEGATIVE_MARKERS.some(m => cleaned.physicalInsight.toLowerCase().includes(m));
+    if (physNeg) {
+      cleaned.mentalInsight = cleaned.mentalInsight
+        .replace(/\bbalanced\b/gi, "under some pressure")
+        .replace(/\bsteady\b/gi, "affected");
+    } else {
+      cleaned.physicalInsight = cleaned.physicalInsight
+        .replace(/\bstrain\b/gi, "adjustment")
+        .replace(/\bhigh strain\b/gi, "some strain");
+    }
+  }
+
+  if (hasContradiction(cleaned.emotionalInsight, cleaned.physicalInsight)) {
+    const emoNeg = NEGATIVE_MARKERS.some(m => cleaned.emotionalInsight.toLowerCase().includes(m));
+    if (!emoNeg) {
+      cleaned.emotionalInsight = cleaned.emotionalInsight
+        .replace(/\bsteady\b/gi, "under some pressure")
+        .replace(/\bbalanced\b/gi, "shifted");
+    }
+  }
+
+  return cleaned;
+}
+
 // ─── GPT system prompt addition ───────────────────────────────────────────────
 // Injected into every GPT call for forecast + insight rewriting
 

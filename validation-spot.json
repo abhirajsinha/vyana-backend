@@ -1,0 +1,63 @@
+{
+  "generatedAt": "2026-03-28T07:22:48.398Z",
+  "inputFile": "test-results-spot.json",
+  "totalRows": 20,
+  "rowsWithExpect": 20,
+  "summary": {
+    "noCrash": {
+      "pass": 20,
+      "total": 20,
+      "rate": "100.0%"
+    },
+    "phaseCorrect": {
+      "pass": 20,
+      "total": 20,
+      "rate": "100.0%"
+    },
+    "cycleDayCorrect": {
+      "pass": 20,
+      "total": 20,
+      "rate": "100.0%"
+    },
+    "insightsPresent": {
+      "pass": 20,
+      "total": 20,
+      "rate": "100.0%"
+    },
+    "noForbiddenLanguage": {
+      "pass": 20,
+      "total": 20,
+      "rate": "100.0%"
+    },
+    "gptGating": {
+      "pass": 0,
+      "total": 0,
+      "rate": "n/a"
+    },
+    "stableState": {
+      "pass": 2,
+      "total": 4,
+      "rate": "50.0%"
+    },
+    "sleepDisruption": {
+      "pass": 4,
+      "total": 4,
+      "rate": "100.0%"
+    },
+    "bleedingHeavy": {
+      "pass": 10,
+      "total": 10,
+      "rate": "100.0%"
+    },
+    "periodDelayed": {
+      "pass": 0,
+      "total": 0,
+      "rate": "n/a"
+    }
+  },
+  "failureCount": 2,
+  "failures": [
+    "T_SYS_D01_STABLE_NEUTRAL — stable: expected correlationPattern stable_state, got null",
+    "T_SYS_D02_STABLE_NEUTRAL — stable: expected correlationPattern stable_state, got null"
+  ]
+}

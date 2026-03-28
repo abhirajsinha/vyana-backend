@@ -1,0 +1,1276 @@
+[
+  {
+    "testId": "T1_luteal_low_energy",
+    "description": "Late luteal, low sleep, high stress, mood dropping",
+    "expect": null,
+    "phase": "luteal",
+    "cycleDay": 27,
+    "primaryDriver": "stress_trend_spiking",
+    "aiEnhanced": true,
+    "aiDebug": "accepted",
+    "correlationPattern": "sleep_stress_amplification",
+    "durationMs": 15664,
+    "error": null,
+    "output": {
+      "cycleDay": 27,
+      "home": {
+        "phase": "luteal",
+        "currentDay": 27,
+        "isNewUser": false,
+        "primaryDriver": "stress_trend_spiking",
+        "logsToNextMilestone": 7,
+        "confidence": "high",
+        "isPeriodDelayed": false,
+        "daysOverdue": 0,
+        "isIrregular": false
+      },
+      "isNewUser": false,
+      "progress": {
+        "logsCount": 7,
+        "nextMilestone": 14,
+        "logsToNextMilestone": 7
+      },
+      "mode": "personalized",
+      "confidence": "high",
+      "cycleContext": {
+        "cycleMode": "natural",
+        "cyclePredictionConfidence": "unknown",
+        "nextPeriodEstimate": "2026-03-30",
+        "isIrregular": false,
+        "isPeriodDelayed": false,
+        "daysOverdue": 0
+      },
+      "hormoneContext": {
+        "estrogen": "low",
+        "progesterone": "falling",
+        "lh": "low",
+        "fsh": "low",
+        "confidence": "inferred",
+        "narrativeContext": "Both estrogen and progesterone are typically declining toward their monthly low, which can amplify emotional sensitivity and physical discomfort. This hormone drop is often what drives pre-period symptoms."
+      },
+      "contraceptionContext": {
+        "type": "none",
+        "contextMessage": null,
+        "insightTone": "cycle-based",
+        "showPhaseInsights": true
+      },
+      "numericSummary": {
+        "recentSleepAvg": 5.9,
+        "baselineSleepAvg": null,
+        "sleepDelta": null,
+        "recentStressLabel": "moderate",
+        "recentMoodLabel": "low"
+      },
+      "crossCycleNarrative": null,
+      "memoryContext": {
+        "driver": "stress_trend_spiking",
+        "count": 0,
+        "narrative": null,
+        "severity": "new"
+      },
+      "aiEnhanced": true,
+      "aiDebug": "accepted",
+      "correlationPattern": "sleep_stress_amplification",
+      "basedOn": {
+        "phase": "luteal",
+        "recentLogsCount": 7,
+        "confidenceScore": 1,
+        "baselineDeviation": [],
+        "baselineScope": "none",
+        "priorityDrivers": [
+          "stress_trend_spiking",
+          "sleep_trend_declining",
+          "sleep_stress_amplification",
+          "mood_stress_coupling",
+          "mood_trend_declining",
+          "stress_mood_strain",
+          "high_strain"
+        ],
+        "interactionFlags": [
+          "sleep_stress_amplification",
+          "mood_stress_coupling"
+        ],
+        "trends": [
+          "Sleep decreasing",
+          "Stress increasing",
+          "Mood decreasing",
+          "Sleep variability moderate",
+          "Mood variability low"
+        ],
+        "reasoning": [
+          "Phase is luteal",
+          "Physical state mapped to high_strain",
+          "Mental state mapped to fatigued_and_stressed",
+          "Emotional state mapped to loaded",
+          "Bleeding load mapped to unknown",
+          "Cross-signal interactions: sleep_stress_amplification, mood_stress_coupling",
+          "No strong personal baseline deviation detected",
+          "Insight priority drivers: stress_trend_spiking, sleep_trend_declining, sleep_stress_amplification, mood_stress_coupling, mood_trend_declining, stress_mood_strain, high_strain",
+          "No strong phase deviation detected",
+          "Trends: Sleep decreasing, Stress increasing, Mood decreasing, Sleep variability moderate, Mood variability low"
+        ]
+      },
+      "insights": {
+        "physicalInsight": "Your body is feeling the weight of stress today, making everything feel a bit more demanding. Slowing down isn't just a suggestion — it's essential for your well-being right now.",
+        "mentalInsight": "With stress levels elevated, your focus is likely to wane, making decisions feel more challenging than they should. This is why clarity drops when stress rises.",
+        "emotionalInsight": "Everything feels a bit more overwhelming today, as stress is amplifying your emotional sensitivity. Small things are taking more effort, and it’s okay to acknowledge that.",
+        "whyThisIsHappening": "Stress has been climbing recently, and it's driving how you feel right now, overshadowing the natural hormonal shifts of this luteal phase.",
+        "solution": "Take 20 minutes to wind down tonight — this will help break the cycle of stress and fatigue.",
+        "recommendation": "Try to lighten your obligations over the next few days; your body is already working harder than it appears.",
+        "tomorrowPreview": "You're just 2 days away from your period — most people feel better within a day of their period starting, so hang in there."
+      },
+      "view": {
+        "primaryInsight": "With stress levels elevated, your focus is likely to wane, making decisions feel more challenging than they should. This is why clarity drops when stress rises.",
+        "supportingInsights": [
+          "Your body is feeling the weight of stress today, making everything feel a bit more demanding. Slowing down isn't just a suggestion — it's essential for your well-being right now.",
+          "Everything feels a bit more overwhelming today, as stress is amplifying your emotional sensitivity. Small things are taking more effort, and it’s okay to acknowledge that."
+        ],
+        "action": "Take 20 minutes to wind down tonight — this will help break the cycle of stress and fatigue.",
+        "explanation": "Stress has been climbing recently, and it's driving how you feel right now, overshadowing the natural hormonal shifts of this luteal phase.",
+        "recommendation": "Try to lighten your obligations over the next few days; your body is already working harder than it appears.",
+        "tomorrowPreview": "You're just 2 days away from your period — most people feel better within a day of their period starting, so hang in there.",
+        "confidenceLabel": "High confidence insights"
+      },
+      "pmsWarning": null,
+      "lastAnticipationCycleDay": 27,
+      "lastAnticipationTypeKey": "period_relief"
+    }
+  },
+  {
+    "testId": "T2_menstrual_heavy",
+    "description": "Day 1 heavy bleeding, low energy",
+    "expect": null,
+    "phase": "menstrual",
+    "cycleDay": 1,
+    "primaryDriver": "stress_trend_spiking",
+    "aiEnhanced": true,
+    "aiDebug": "accepted",
+    "correlationPattern": null,
+    "durationMs": 9180,
+    "error": null,
+    "output": {
+      "cycleDay": 1,
+      "home": {
+        "phase": "menstrual",
+        "currentDay": 1,
+        "isNewUser": false,
+        "primaryDriver": "stress_trend_spiking",
+        "logsToNextMilestone": 3,
+        "confidence": "medium",
+        "isPeriodDelayed": false,
+        "daysOverdue": 0,
+        "isIrregular": false
+      },
+      "isNewUser": false,
+      "progress": {
+        "logsCount": 4,
+        "nextMilestone": 7,
+        "logsToNextMilestone": 3
+      },
+      "mode": "personalized",
+      "confidence": "medium",
+      "cycleContext": {
+        "cycleMode": "natural",
+        "cyclePredictionConfidence": "unknown",
+        "nextPeriodEstimate": "2026-04-25",
+        "isIrregular": false,
+        "isPeriodDelayed": false,
+        "daysOverdue": 0
+      },
+      "hormoneContext": {
+        "estrogen": "low",
+        "progesterone": "low",
+        "lh": "low",
+        "fsh": "rising",
+        "confidence": "inferred",
+        "narrativeContext": "Both estrogen and progesterone are typically at their lowest point, which is what triggers bleeding. FSH is beginning its gradual rise to start preparing the next follicle."
+      },
+      "contraceptionContext": {
+        "type": "none",
+        "contextMessage": null,
+        "insightTone": "cycle-based",
+        "showPhaseInsights": true
+      },
+      "numericSummary": {
+        "recentSleepAvg": 5.9,
+        "baselineSleepAvg": null,
+        "sleepDelta": null,
+        "recentStressLabel": "calm",
+        "recentMoodLabel": "low"
+      },
+      "crossCycleNarrative": null,
+      "memoryContext": {
+        "driver": "stress_trend_spiking",
+        "count": 0,
+        "narrative": null,
+        "severity": "new"
+      },
+      "aiEnhanced": true,
+      "aiDebug": "accepted",
+      "correlationPattern": null,
+      "basedOn": {
+        "phase": "menstrual",
+        "recentLogsCount": 4,
+        "confidenceScore": 0.83,
+        "baselineDeviation": [],
+        "baselineScope": "none",
+        "priorityDrivers": [
+          "stress_trend_spiking",
+          "bleeding_heavy",
+          "sleep_trend_declining",
+          "mood_stress_coupling",
+          "mood_trend_declining",
+          "high_strain"
+        ],
+        "interactionFlags": [
+          "mood_stress_coupling"
+        ],
+        "trends": [
+          "Sleep decreasing",
+          "Stress increasing",
+          "Mood decreasing",
+          "Sleep variability low",
+          "Mood variability low"
+        ],
+        "reasoning": [
+          "Phase is menstrual",
+          "Physical state mapped to high_strain",
+          "Mental state mapped to fatigued",
+          "Emotional state mapped to loaded",
+          "Bleeding load mapped to heavy",
+          "Cross-signal interactions: mood_stress_coupling",
+          "No strong personal baseline deviation detected",
+          "Insight priority drivers: stress_trend_spiking, bleeding_heavy, sleep_trend_declining, mood_stress_coupling, mood_trend_declining, high_strain",
+          "No strong phase deviation detected",
+          "Trends: Sleep decreasing, Stress increasing, Mood decreasing, Sleep variability low, Mood variability low"
+        ]
+      },
+      "insights": {
+        "physicalInsight": "Your body is doing a lot right now, and the heaviness of your bleeding can make you feel physically low. It's okay to take it easier today and listen to what your body needs.",
+        "mentalInsight": "Focus is lower today — your body is prioritizing recovery over clarity.",
+        "emotionalInsight": "Everything takes more effort right now — even small things feel harder than they should.",
+        "whyThisIsHappening": "Stress has been building recently, and that's influencing how you're feeling today. This is why your mood feels lower — it’s all connected.",
+        "solution": "Take a moment for a short reset between tasks today to help ease the load.",
+        "recommendation": "Keep your schedule lighter this week — your body is doing its hardest work right now, and it needs space to recover.",
+        "tomorrowPreview": "You're on Day 1 of your cycle — if today is hard, it's usually the peak. Things tend to ease from here."
+      },
+      "view": {
+        "primaryInsight": "Focus is lower today — your body is prioritizing recovery over clarity.",
+        "supportingInsights": [
+          "Your body is doing a lot right now, and the heaviness of your bleeding can make you feel physically low. It's okay to take it easier today and listen to what your body needs.",
+          "Everything takes more effort right now — even small things feel harder than they should."
+        ],
+        "action": "Take a moment for a short reset between tasks today to help ease the load.",
+        "explanation": "Stress has been building recently, and that's influencing how you're feeling today. This is why your mood feels lower — it’s all connected.",
+        "recommendation": "Keep your schedule lighter this week — your body is doing its hardest work right now, and it needs space to recover.",
+        "tomorrowPreview": "You're on Day 1 of your cycle — if today is hard, it's usually the peak. Things tend to ease from here.",
+        "confidenceLabel": "Emerging patterns"
+      },
+      "pmsWarning": null,
+      "lastAnticipationCycleDay": 1,
+      "lastAnticipationTypeKey": "menstrual_peak"
+    }
+  },
+  {
+    "testId": "T3_ovulation_peak",
+    "description": "High energy, high mood, peak state",
+    "expect": null,
+    "phase": "ovulation",
+    "cycleDay": 14,
+    "primaryDriver": null,
+    "aiEnhanced": true,
+    "aiDebug": "accepted",
+    "correlationPattern": null,
+    "durationMs": 10085,
+    "error": null,
+    "output": {
+      "cycleDay": 14,
+      "home": {
+        "phase": "ovulation",
+        "currentDay": 14,
+        "isNewUser": false,
+        "primaryDriver": null,
+        "logsToNextMilestone": 2,
+        "confidence": "high",
+        "isPeriodDelayed": false,
+        "daysOverdue": 0,
+        "isIrregular": false
+      },
+      "isNewUser": false,
+      "progress": {
+        "logsCount": 5,
+        "nextMilestone": 7,
+        "logsToNextMilestone": 2
+      },
+      "mode": "personalized",
+      "confidence": "high",
+      "cycleContext": {
+        "cycleMode": "natural",
+        "cyclePredictionConfidence": "unknown",
+        "nextPeriodEstimate": "2026-04-12",
+        "isIrregular": false,
+        "isPeriodDelayed": false,
+        "daysOverdue": 0
+      },
+      "hormoneContext": {
+        "estrogen": "peak",
+        "progesterone": "rising",
+        "lh": "peak",
+        "fsh": "rising",
+        "confidence": "inferred",
+        "narrativeContext": "The LH surge typically peaks around ovulation, accompanied by an estrogen peak. Progesterone begins rising as the body shifts into the luteal phase. This window is often associated with high energy, social confidence, and physical vitality."
+      },
+      "contraceptionContext": {
+        "type": "none",
+        "contextMessage": null,
+        "insightTone": "cycle-based",
+        "showPhaseInsights": true
+      },
+      "numericSummary": {
+        "recentSleepAvg": 7.2,
+        "baselineSleepAvg": null,
+        "sleepDelta": null,
+        "recentStressLabel": "calm",
+        "recentMoodLabel": "positive"
+      },
+      "crossCycleNarrative": null,
+      "memoryContext": null,
+      "aiEnhanced": true,
+      "aiDebug": "accepted",
+      "correlationPattern": null,
+      "basedOn": {
+        "phase": "ovulation",
+        "recentLogsCount": 5,
+        "confidenceScore": 0.85,
+        "baselineDeviation": [],
+        "baselineScope": "none",
+        "priorityDrivers": [],
+        "interactionFlags": [],
+        "trends": [
+          "Sleep stable",
+          "Stress stable",
+          "Mood increasing",
+          "Sleep variability low",
+          "Mood variability low"
+        ],
+        "reasoning": [
+          "Phase is ovulation",
+          "Physical state mapped to stable",
+          "Mental state mapped to balanced",
+          "Emotional state mapped to uplifted",
+          "Bleeding load mapped to unknown",
+          "No strong cross-signal interaction detected",
+          "No strong personal baseline deviation detected",
+          "No high-priority drivers triggered",
+          "No strong phase deviation detected",
+          "Trends: Sleep stable, Stress stable, Mood increasing, Sleep variability low, Mood variability low"
+        ]
+      },
+      "insights": {
+        "physicalInsight": "Your energy is high right now — your body is in a strong, well-supported state. Movement and focus feel effortless, making it a great time to tackle tasks that require your full attention.",
+        "mentalInsight": "Clarity and focus are at their peak — ideas flow more easily and conversations feel smoother. Decisions come naturally and you feel more in control.",
+        "emotionalInsight": "Things feel lighter and more enjoyable — it's easier to connect with people right now. This is your cycle at its highest point, and you find joy in social interactions.",
+        "whyThisIsHappening": "The LH surge peaks around ovulation, bringing an elevation in estrogen that fuels this lift in energy, confidence, and clarity. As progesterone begins to rise, you're experiencing the vitality that comes with this phase.",
+        "solution": "Lean into this momentum today — social plans, focused work, or anything that needs your full presence tend to land easier in this window.",
+        "recommendation": "This is your peak window — use it for whatever needs your best focus or presence this week. As the post-ovulatory shift approaches, start thinking about how to protect your energy.",
+        "tomorrowPreview": "Tomorrow marks the transition into the luteal phase, so your energy and mood may start to shift as you move closer to your next period in 14 days."
+      },
+      "view": {
+        "primaryInsight": "Your energy is high right now — your body is in a strong, well-supported state. Movement and focus feel effortless, making it a great time to tackle tasks that require your full attention.",
+        "supportingInsights": [
+          "Clarity and focus are at their peak — ideas flow more easily and conversations feel smoother. Decisions come naturally and you feel more in control.",
+          "Things feel lighter and more enjoyable — it's easier to connect with people right now. This is your cycle at its highest point, and you find joy in social interactions."
+        ],
+        "action": "Lean into this momentum today — social plans, focused work, or anything that needs your full presence tend to land easier in this window.",
+        "explanation": "The LH surge peaks around ovulation, bringing an elevation in estrogen that fuels this lift in energy, confidence, and clarity. As progesterone begins to rise, you're experiencing the vitality that comes with this phase.",
+        "recommendation": "This is your peak window — use it for whatever needs your best focus or presence this week. As the post-ovulatory shift approaches, start thinking about how to protect your energy.",
+        "tomorrowPreview": "Tomorrow marks the transition into the luteal phase, so your energy and mood may start to shift as you move closer to your next period in 14 days.",
+        "confidenceLabel": "High confidence insights"
+      },
+      "pmsWarning": null,
+      "lastAnticipationCycleDay": 14,
+      "lastAnticipationTypeKey": "luteal_incoming"
+    }
+  },
+  {
+    "testId": "T4_sleep_disruption",
+    "description": "Sleep dropped sharply, not cycle-related",
+    "expect": null,
+    "phase": "follicular",
+    "cycleDay": 9,
+    "primaryDriver": "sleep_below_baseline",
+    "aiEnhanced": true,
+    "aiDebug": "accepted",
+    "correlationPattern": "sleep_disruption_primary",
+    "durationMs": 9962,
+    "error": null,
+    "output": {
+      "cycleDay": 9,
+      "home": {
+        "phase": "follicular",
+        "currentDay": 9,
+        "isNewUser": false,
+        "primaryDriver": "sleep_below_baseline",
+        "logsToNextMilestone": 7,
+        "confidence": "high",
+        "isPeriodDelayed": false,
+        "daysOverdue": 0,
+        "isIrregular": false
+      },
+      "isNewUser": false,
+      "progress": {
+        "logsCount": 7,
+        "nextMilestone": 14,
+        "logsToNextMilestone": 7
+      },
+      "mode": "personalized",
+      "confidence": "high",
+      "cycleContext": {
+        "cycleMode": "natural",
+        "cyclePredictionConfidence": "unknown",
+        "nextPeriodEstimate": "2026-04-17",
+        "isIrregular": false,
+        "isPeriodDelayed": false,
+        "daysOverdue": 0
+      },
+      "hormoneContext": {
+        "estrogen": "rising",
+        "progesterone": "low",
+        "lh": "low",
+        "fsh": "rising",
+        "confidence": "inferred",
+        "narrativeContext": "Estrogen is typically climbing during this window, with FSH helping follicles develop. Progesterone and LH tend to stay low. This gradual estrogen rise is often linked to improving energy and mood."
+      },
+      "contraceptionContext": {
+        "type": "none",
+        "contextMessage": null,
+        "insightTone": "cycle-based",
+        "showPhaseInsights": true
+      },
+      "numericSummary": {
+        "recentSleepAvg": 5.5,
+        "baselineSleepAvg": 7,
+        "sleepDelta": -1.5,
+        "recentStressLabel": "calm",
+        "recentMoodLabel": "neutral"
+      },
+      "crossCycleNarrative": null,
+      "memoryContext": {
+        "driver": "sleep_below_baseline",
+        "count": 0,
+        "narrative": null,
+        "severity": "new"
+      },
+      "aiEnhanced": true,
+      "aiDebug": "accepted",
+      "correlationPattern": "sleep_disruption_primary",
+      "basedOn": {
+        "phase": "follicular",
+        "recentLogsCount": 7,
+        "confidenceScore": 1,
+        "baselineDeviation": [
+          "sleep_below_personal_baseline"
+        ],
+        "baselineScope": "global",
+        "priorityDrivers": [
+          "sleep_below_baseline",
+          "sleep_trend_declining",
+          "mood_trend_declining",
+          "high_strain"
+        ],
+        "interactionFlags": [],
+        "trends": [
+          "Sleep decreasing",
+          "Stress increasing",
+          "Mood decreasing",
+          "Sleep variability moderate",
+          "Mood variability moderate"
+        ],
+        "reasoning": [
+          "Phase is follicular",
+          "Physical state mapped to high_strain",
+          "Mental state mapped to fatigued",
+          "Emotional state mapped to stable",
+          "Bleeding load mapped to unknown",
+          "No strong cross-signal interaction detected",
+          "Personal baseline deviations: sleep_below_personal_baseline",
+          "Insight priority drivers: sleep_below_baseline, sleep_trend_declining, mood_trend_declining, high_strain",
+          "No strong phase deviation detected",
+          "Trends: Sleep decreasing, Stress increasing, Mood decreasing, Sleep variability moderate, Mood variability moderate"
+        ]
+      },
+      "insights": {
+        "physicalInsight": "Your sleep has dropped sharply over the last few days — around 5.5h, noticeably less than your usual. This is why your body feels off balance and physically low right now.",
+        "mentalInsight": "Focus drops when sleep dips like this — even simple tasks require more effort, leaving you feeling a bit foggy.",
+        "emotionalInsight": "Everything feels like it takes more effort than it should — small things feel harder, and your mood is lower than your usual neutral.",
+        "whyThisIsHappening": "This isn't about your cycle — the recent drop in sleep is what's driving how you feel right now.",
+        "solution": "Prioritize getting your sleep back on track — that will shift how everything feels more than anything else.",
+        "recommendation": "Keep your load lighter until your sleep recovers — your energy will come back quickly once it does.",
+        "tomorrowPreview": "You're 19 days from your period, and ovulation is close — this is where things tend to click into place."
+      },
+      "view": {
+        "primaryInsight": "Your sleep has dropped sharply over the last few days — around 5.5h, noticeably less than your usual. This is why your body feels off balance and physically low right now.",
+        "supportingInsights": [
+          "Focus drops when sleep dips like this — even simple tasks require more effort, leaving you feeling a bit foggy.",
+          "Everything feels like it takes more effort than it should — small things feel harder, and your mood is lower than your usual neutral."
+        ],
+        "action": "Prioritize getting your sleep back on track — that will shift how everything feels more than anything else.",
+        "explanation": "This isn't about your cycle — the recent drop in sleep is what's driving how you feel right now.",
+        "recommendation": "Keep your load lighter until your sleep recovers — your energy will come back quickly once it does.",
+        "tomorrowPreview": "You're 19 days from your period, and ovulation is close — this is where things tend to click into place.",
+        "confidenceLabel": "High confidence insights"
+      },
+      "pmsWarning": null,
+      "lastAnticipationCycleDay": 9,
+      "lastAnticipationTypeKey": "peak_approaching"
+    }
+  },
+  {
+    "testId": "T5_stable_state",
+    "description": "No changes, stable everything",
+    "expect": null,
+    "phase": "follicular",
+    "cycleDay": 11,
+    "primaryDriver": null,
+    "aiEnhanced": false,
+    "aiDebug": "gated",
+    "correlationPattern": "stable_state",
+    "durationMs": 3353,
+    "error": null,
+    "output": {
+      "cycleDay": 11,
+      "home": {
+        "phase": "follicular",
+        "currentDay": 11,
+        "isNewUser": false,
+        "primaryDriver": null,
+        "logsToNextMilestone": 7,
+        "confidence": "high",
+        "isPeriodDelayed": false,
+        "daysOverdue": 0,
+        "isIrregular": false
+      },
+      "isNewUser": false,
+      "progress": {
+        "logsCount": 7,
+        "nextMilestone": 14,
+        "logsToNextMilestone": 7
+      },
+      "mode": "personalized",
+      "confidence": "high",
+      "cycleContext": {
+        "cycleMode": "natural",
+        "cyclePredictionConfidence": "unknown",
+        "nextPeriodEstimate": "2026-04-15",
+        "isIrregular": false,
+        "isPeriodDelayed": false,
+        "daysOverdue": 0
+      },
+      "hormoneContext": {
+        "estrogen": "peak",
+        "progesterone": "low",
+        "lh": "rising",
+        "fsh": "rising",
+        "confidence": "inferred",
+        "narrativeContext": "Estrogen is approaching its monthly peak, with LH starting to build toward its surge. This is often associated with peak energy, confidence, and mental clarity."
+      },
+      "contraceptionContext": {
+        "type": "none",
+        "contextMessage": null,
+        "insightTone": "cycle-based",
+        "showPhaseInsights": true
+      },
+      "numericSummary": {
+        "recentSleepAvg": 7,
+        "baselineSleepAvg": null,
+        "sleepDelta": null,
+        "recentStressLabel": "moderate",
+        "recentMoodLabel": "neutral"
+      },
+      "crossCycleNarrative": null,
+      "memoryContext": null,
+      "aiEnhanced": false,
+      "aiDebug": "gated",
+      "correlationPattern": "stable_state",
+      "basedOn": {
+        "phase": "follicular",
+        "recentLogsCount": 7,
+        "confidenceScore": 1,
+        "baselineDeviation": [],
+        "baselineScope": "none",
+        "priorityDrivers": [],
+        "interactionFlags": [],
+        "trends": [],
+        "reasoning": [
+          "Phase is follicular",
+          "Recent logs are steady — no meaningful shifts in sleep, stress, or mood."
+        ]
+      },
+      "insights": {
+        "physicalInsight": "Your body feels steady right now — nothing is pulling it in either direction.",
+        "mentalInsight": "Focus is stable — things feel manageable without extra effort or strain.",
+        "emotionalInsight": "Your mood is balanced — nothing feels too heavy or too elevated.",
+        "whyThisIsHappening": "There aren't any strong shifts right now — your system is in a stable, consistent state.",
+        "solution": "Keep doing what's working — consistency is what's supporting this balance.",
+        "recommendation": "Maintain your current rhythm — sleep, stress, and energy are all holding steady.",
+        "tomorrowPreview": "Things should feel similar tomorrow — no major shifts expected."
+      },
+      "view": {
+        "primaryInsight": "Your body feels steady right now — nothing is pulling it in either direction.",
+        "supportingInsights": [
+          "Focus is stable — things feel manageable without extra effort or strain.",
+          "Your mood is balanced — nothing feels too heavy or too elevated."
+        ],
+        "action": "Keep doing what's working — consistency is what's supporting this balance.",
+        "explanation": "There aren't any strong shifts right now — your system is in a stable, consistent state.",
+        "recommendation": "Maintain your current rhythm — sleep, stress, and energy are all holding steady.",
+        "tomorrowPreview": "Things should feel similar tomorrow — no major shifts expected.",
+        "confidenceLabel": "High confidence insights"
+      },
+      "pmsWarning": null,
+      "lastAnticipationCycleDay": 11,
+      "lastAnticipationTypeKey": "peak_approaching"
+    }
+  },
+  {
+    "testId": "T6_follicular_recovery",
+    "description": "Post-period, energy slowly rising",
+    "expect": null,
+    "phase": "menstrual",
+    "cycleDay": 5,
+    "primaryDriver": "mood_stress_coupling",
+    "aiEnhanced": true,
+    "aiDebug": "accepted",
+    "correlationPattern": null,
+    "durationMs": 12426,
+    "error": null,
+    "output": {
+      "cycleDay": 5,
+      "home": {
+        "phase": "menstrual",
+        "currentDay": 5,
+        "isNewUser": false,
+        "primaryDriver": "mood_stress_coupling",
+        "logsToNextMilestone": 2,
+        "confidence": "high",
+        "isPeriodDelayed": false,
+        "daysOverdue": 0,
+        "isIrregular": false
+      },
+      "isNewUser": false,
+      "progress": {
+        "logsCount": 5,
+        "nextMilestone": 7,
+        "logsToNextMilestone": 2
+      },
+      "mode": "personalized",
+      "confidence": "high",
+      "cycleContext": {
+        "cycleMode": "natural",
+        "cyclePredictionConfidence": "unknown",
+        "nextPeriodEstimate": "2026-04-21",
+        "isIrregular": false,
+        "isPeriodDelayed": false,
+        "daysOverdue": 0
+      },
+      "hormoneContext": {
+        "estrogen": "low",
+        "progesterone": "low",
+        "lh": "low",
+        "fsh": "rising",
+        "confidence": "inferred",
+        "narrativeContext": "Both estrogen and progesterone are typically at their lowest point, which is what triggers bleeding. FSH is beginning its gradual rise to start preparing the next follicle."
+      },
+      "contraceptionContext": {
+        "type": "none",
+        "contextMessage": null,
+        "insightTone": "cycle-based",
+        "showPhaseInsights": true
+      },
+      "numericSummary": {
+        "recentSleepAvg": 6.1,
+        "baselineSleepAvg": null,
+        "sleepDelta": null,
+        "recentStressLabel": "moderate",
+        "recentMoodLabel": "low"
+      },
+      "crossCycleNarrative": null,
+      "memoryContext": {
+        "driver": "mood_stress_coupling",
+        "count": 0,
+        "narrative": null,
+        "severity": "new"
+      },
+      "aiEnhanced": true,
+      "aiDebug": "accepted",
+      "correlationPattern": null,
+      "basedOn": {
+        "phase": "menstrual",
+        "recentLogsCount": 5,
+        "confidenceScore": 0.9,
+        "baselineDeviation": [],
+        "baselineScope": "none",
+        "priorityDrivers": [
+          "mood_stress_coupling"
+        ],
+        "interactionFlags": [
+          "mood_stress_coupling"
+        ],
+        "trends": [
+          "Sleep increasing",
+          "Stress decreasing",
+          "Mood increasing",
+          "Sleep variability moderate",
+          "Mood variability low"
+        ],
+        "reasoning": [
+          "Phase is menstrual",
+          "Physical state mapped to low_recovery",
+          "Mental state mapped to balanced",
+          "Emotional state mapped to loaded",
+          "Bleeding load mapped to unknown",
+          "Cross-signal interactions: mood_stress_coupling",
+          "No strong personal baseline deviation detected",
+          "Insight priority drivers: mood_stress_coupling",
+          "No strong phase deviation detected",
+          "Trends: Sleep increasing, Stress decreasing, Mood increasing, Sleep variability moderate, Mood variability low"
+        ]
+      },
+      "insights": {
+        "physicalInsight": "Your body is doing a lot right now, and it's normal to feel physically low. Recovery is the priority as you wrap up your period.",
+        "mentalInsight": "Focus is lower today — your body is prioritizing recovery over clarity. It feels like everything takes more effort.",
+        "emotionalInsight": "The pressure is starting to lift.",
+        "whyThisIsHappening": "Both estrogen and progesterone are at their lowest point, triggering this phase. FSH is beginning to rise, preparing for the next follicle.",
+        "solution": "It's okay to take it easier today — keep your task list short and allow yourself to rest.",
+        "recommendation": "Over the next few days, give yourself permission to slow down and keep things lighter. Your body is doing its hardest work right now.",
+        "tomorrowPreview": "You're just one day away from the follicular phase — energy starts returning then, and you should feel a shift in mood and clarity."
+      },
+      "view": {
+        "primaryInsight": "Focus is lower today — your body is prioritizing recovery over clarity. It feels like everything takes more effort.",
+        "supportingInsights": [
+          "Your body is doing a lot right now, and it's normal to feel physically low. Recovery is the priority as you wrap up your period.",
+          "The pressure is starting to lift."
+        ],
+        "action": "It's okay to take it easier today — keep your task list short and allow yourself to rest.",
+        "explanation": "Both estrogen and progesterone are at their lowest point, triggering this phase. FSH is beginning to rise, preparing for the next follicle.",
+        "recommendation": "Over the next few days, give yourself permission to slow down and keep things lighter. Your body is doing its hardest work right now.",
+        "tomorrowPreview": "You're just one day away from the follicular phase — energy starts returning then, and you should feel a shift in mood and clarity.",
+        "confidenceLabel": "High confidence insights"
+      },
+      "pmsWarning": null,
+      "lastAnticipationCycleDay": 5,
+      "lastAnticipationTypeKey": "follicular_approaching"
+    }
+  },
+  {
+    "testId": "T7_luteal_mood_drop",
+    "description": "Sleep good but mood dropping (hormonal)",
+    "expect": null,
+    "phase": "luteal",
+    "cycleDay": 27,
+    "primaryDriver": "stress_trend_spiking",
+    "aiEnhanced": true,
+    "aiDebug": "accepted",
+    "correlationPattern": null,
+    "durationMs": 9918,
+    "error": null,
+    "output": {
+      "cycleDay": 27,
+      "home": {
+        "phase": "luteal",
+        "currentDay": 27,
+        "isNewUser": false,
+        "primaryDriver": "stress_trend_spiking",
+        "logsToNextMilestone": 2,
+        "confidence": "high",
+        "isPeriodDelayed": false,
+        "daysOverdue": 0,
+        "isIrregular": false
+      },
+      "isNewUser": false,
+      "progress": {
+        "logsCount": 5,
+        "nextMilestone": 7,
+        "logsToNextMilestone": 2
+      },
+      "mode": "personalized",
+      "confidence": "high",
+      "cycleContext": {
+        "cycleMode": "natural",
+        "cyclePredictionConfidence": "unknown",
+        "nextPeriodEstimate": "2026-03-30",
+        "isIrregular": false,
+        "isPeriodDelayed": false,
+        "daysOverdue": 0
+      },
+      "hormoneContext": {
+        "estrogen": "low",
+        "progesterone": "falling",
+        "lh": "low",
+        "fsh": "low",
+        "confidence": "inferred",
+        "narrativeContext": "Both estrogen and progesterone are typically declining toward their monthly low, which can amplify emotional sensitivity and physical discomfort. This hormone drop is often what drives pre-period symptoms."
+      },
+      "contraceptionContext": {
+        "type": "none",
+        "contextMessage": null,
+        "insightTone": "cycle-based",
+        "showPhaseInsights": true
+      },
+      "numericSummary": {
+        "recentSleepAvg": 7,
+        "baselineSleepAvg": null,
+        "sleepDelta": null,
+        "recentStressLabel": "calm",
+        "recentMoodLabel": "neutral"
+      },
+      "crossCycleNarrative": null,
+      "memoryContext": {
+        "driver": "stress_trend_spiking",
+        "count": 0,
+        "narrative": null,
+        "severity": "new"
+      },
+      "aiEnhanced": true,
+      "aiDebug": "accepted",
+      "correlationPattern": null,
+      "basedOn": {
+        "phase": "luteal",
+        "recentLogsCount": 5,
+        "confidenceScore": 0.9,
+        "baselineDeviation": [],
+        "baselineScope": "none",
+        "priorityDrivers": [
+          "stress_trend_spiking",
+          "mood_stress_coupling",
+          "mood_trend_declining"
+        ],
+        "interactionFlags": [
+          "mood_stress_coupling"
+        ],
+        "trends": [
+          "Sleep stable",
+          "Stress increasing",
+          "Mood decreasing",
+          "Sleep variability low",
+          "Mood variability moderate"
+        ],
+        "reasoning": [
+          "Phase is luteal",
+          "Physical state mapped to low_recovery",
+          "Mental state mapped to balanced",
+          "Emotional state mapped to loaded",
+          "Bleeding load mapped to unknown",
+          "Cross-signal interactions: mood_stress_coupling",
+          "No strong personal baseline deviation detected",
+          "Insight priority drivers: stress_trend_spiking, mood_stress_coupling, mood_trend_declining",
+          "No strong phase deviation detected",
+          "Trends: Sleep stable, Stress increasing, Mood decreasing, Sleep variability low, Mood variability moderate"
+        ]
+      },
+      "insights": {
+        "physicalInsight": "Your physical energy feels stable today, allowing you to move through tasks without major fatigue. Adjust your activity based on how your body feels as you navigate this phase.",
+        "mentalInsight": "When stress lingers, your focus and clarity take a hit — decisions feel more complicated than they should. This connection between stress and mood is palpable right now.",
+        "emotionalInsight": "Everything feels a bit more overwhelming than they should, with small things requiring more effort. This emotional weight is tied directly to the stress you're experiencing.",
+        "whyThisIsHappening": "Elevated stress has been building recently, and that's what's driving how you feel right now. The sensitivity in your mood is amplified by this stress, making it harder to shake off.",
+        "solution": "Take a short reset between tasks today — it will help prevent any buildup from compounding as you move through your day.",
+        "recommendation": "Wind down obligations where you can this week; your body is already working harder than it appears. Protecting your energy will help you feel more balanced.",
+        "tomorrowPreview": "You're just 2 days from your period — relief usually comes within hours of bleeding starting, so you're very close to feeling lighter."
+      },
+      "view": {
+        "primaryInsight": "When stress lingers, your focus and clarity take a hit — decisions feel more complicated than they should. This connection between stress and mood is palpable right now.",
+        "supportingInsights": [
+          "Your physical energy feels stable today, allowing you to move through tasks without major fatigue. Adjust your activity based on how your body feels as you navigate this phase.",
+          "Everything feels a bit more overwhelming than they should, with small things requiring more effort. This emotional weight is tied directly to the stress you're experiencing."
+        ],
+        "action": "Take a short reset between tasks today — it will help prevent any buildup from compounding as you move through your day.",
+        "explanation": "Elevated stress has been building recently, and that's what's driving how you feel right now. The sensitivity in your mood is amplified by this stress, making it harder to shake off.",
+        "recommendation": "Wind down obligations where you can this week; your body is already working harder than it appears. Protecting your energy will help you feel more balanced.",
+        "tomorrowPreview": "You're just 2 days from your period — relief usually comes within hours of bleeding starting, so you're very close to feeling lighter.",
+        "confidenceLabel": "High confidence insights"
+      },
+      "pmsWarning": null,
+      "lastAnticipationCycleDay": 27,
+      "lastAnticipationTypeKey": "period_relief"
+    }
+  },
+  {
+    "testId": "T8_ovulation_stress",
+    "description": "High energy but stress spiking",
+    "expect": null,
+    "phase": "ovulation",
+    "cycleDay": 13,
+    "primaryDriver": "stress_trend_spiking",
+    "aiEnhanced": true,
+    "aiDebug": "accepted",
+    "correlationPattern": "ovulation_energy_blocked",
+    "durationMs": 9566,
+    "error": null,
+    "output": {
+      "cycleDay": 13,
+      "home": {
+        "phase": "ovulation",
+        "currentDay": 13,
+        "isNewUser": false,
+        "primaryDriver": "stress_trend_spiking",
+        "logsToNextMilestone": 2,
+        "confidence": "high",
+        "isPeriodDelayed": false,
+        "daysOverdue": 0,
+        "isIrregular": false
+      },
+      "isNewUser": false,
+      "progress": {
+        "logsCount": 5,
+        "nextMilestone": 7,
+        "logsToNextMilestone": 2
+      },
+      "mode": "personalized",
+      "confidence": "high",
+      "cycleContext": {
+        "cycleMode": "natural",
+        "cyclePredictionConfidence": "unknown",
+        "nextPeriodEstimate": "2026-04-13",
+        "isIrregular": false,
+        "isPeriodDelayed": false,
+        "daysOverdue": 0
+      },
+      "hormoneContext": {
+        "estrogen": "peak",
+        "progesterone": "rising",
+        "lh": "peak",
+        "fsh": "rising",
+        "confidence": "inferred",
+        "narrativeContext": "The LH surge typically peaks around ovulation, accompanied by an estrogen peak. Progesterone begins rising as the body shifts into the luteal phase. This window is often associated with high energy, social confidence, and physical vitality."
+      },
+      "contraceptionContext": {
+        "type": "none",
+        "contextMessage": null,
+        "insightTone": "cycle-based",
+        "showPhaseInsights": true
+      },
+      "numericSummary": {
+        "recentSleepAvg": 7,
+        "baselineSleepAvg": null,
+        "sleepDelta": null,
+        "recentStressLabel": "moderate",
+        "recentMoodLabel": "positive"
+      },
+      "crossCycleNarrative": null,
+      "memoryContext": {
+        "driver": "stress_trend_spiking",
+        "count": 0,
+        "narrative": null,
+        "severity": "new"
+      },
+      "aiEnhanced": true,
+      "aiDebug": "accepted",
+      "correlationPattern": "ovulation_energy_blocked",
+      "basedOn": {
+        "phase": "ovulation",
+        "recentLogsCount": 5,
+        "confidenceScore": 0.9,
+        "baselineDeviation": [],
+        "baselineScope": "none",
+        "priorityDrivers": [
+          "stress_trend_spiking"
+        ],
+        "interactionFlags": [],
+        "trends": [
+          "Sleep stable",
+          "Stress increasing",
+          "Mood decreasing",
+          "Sleep variability low",
+          "Mood variability low"
+        ],
+        "reasoning": [
+          "Phase is ovulation",
+          "Physical state mapped to stable",
+          "Mental state mapped to stressed",
+          "Emotional state mapped to loaded",
+          "Bleeding load mapped to unknown",
+          "No strong cross-signal interaction detected",
+          "No strong personal baseline deviation detected",
+          "Insight priority drivers: stress_trend_spiking",
+          "No strong phase deviation detected",
+          "Trends: Sleep stable, Stress increasing, Mood decreasing, Sleep variability low, Mood variability low"
+        ]
+      },
+      "insights": {
+        "physicalInsight": "You're feeling a surge of energy today, which is typical for this phase of your cycle. Your body is primed for activity and connection.",
+        "mentalInsight": "Clarity and focus are at their peak — ideas flow more easily and conversations feel smoother. However, the elevated stress is still creating some friction in your thoughts.",
+        "emotionalInsight": "Things feel lighter and more enjoyable — it's easier to connect with people right now. Peak energy like this is normal, so embrace it.",
+        "whyThisIsHappening": "The moderate stress you've been experiencing is influencing your mood and clarity, making it feel like everything requires more effort than it should.",
+        "solution": "Lean into this momentum — it's a good time for things that need energy or presence.",
+        "recommendation": "As the post-ovulatory shift approaches, start protecting your energy over the next few days to maintain this positive flow.",
+        "tomorrowPreview": "You're on Day 14 of your cycle, and the transition to the next phase is close — expect some shifts in energy as you move forward."
+      },
+      "view": {
+        "primaryInsight": "Clarity and focus are at their peak — ideas flow more easily and conversations feel smoother. However, the elevated stress is still creating some friction in your thoughts.",
+        "supportingInsights": [
+          "You're feeling a surge of energy today, which is typical for this phase of your cycle. Your body is primed for activity and connection.",
+          "Things feel lighter and more enjoyable — it's easier to connect with people right now. Peak energy like this is normal, so embrace it."
+        ],
+        "action": "Lean into this momentum — it's a good time for things that need energy or presence.",
+        "explanation": "The moderate stress you've been experiencing is influencing your mood and clarity, making it feel like everything requires more effort than it should.",
+        "recommendation": "As the post-ovulatory shift approaches, start protecting your energy over the next few days to maintain this positive flow.",
+        "tomorrowPreview": "You're on Day 14 of your cycle, and the transition to the next phase is close — expect some shifts in energy as you move forward.",
+        "confidenceLabel": "High confidence insights"
+      },
+      "pmsWarning": null,
+      "lastAnticipationCycleDay": 13,
+      "lastAnticipationTypeKey": "luteal_incoming"
+    }
+  },
+  {
+    "testId": "T9_menstrual_positive",
+    "description": "On period but feeling okay",
+    "expect": null,
+    "phase": "menstrual",
+    "cycleDay": 1,
+    "primaryDriver": null,
+    "aiEnhanced": true,
+    "aiDebug": "accepted",
+    "correlationPattern": null,
+    "durationMs": 8900,
+    "error": null,
+    "output": {
+      "cycleDay": 1,
+      "home": {
+        "phase": "menstrual",
+        "currentDay": 1,
+        "isNewUser": false,
+        "primaryDriver": null,
+        "logsToNextMilestone": 3,
+        "confidence": "medium",
+        "isPeriodDelayed": false,
+        "daysOverdue": 0,
+        "isIrregular": false
+      },
+      "isNewUser": false,
+      "progress": {
+        "logsCount": 4,
+        "nextMilestone": 7,
+        "logsToNextMilestone": 3
+      },
+      "mode": "personalized",
+      "confidence": "medium",
+      "cycleContext": {
+        "cycleMode": "natural",
+        "cyclePredictionConfidence": "unknown",
+        "nextPeriodEstimate": "2026-04-25",
+        "isIrregular": false,
+        "isPeriodDelayed": false,
+        "daysOverdue": 0
+      },
+      "hormoneContext": {
+        "estrogen": "low",
+        "progesterone": "low",
+        "lh": "low",
+        "fsh": "rising",
+        "confidence": "inferred",
+        "narrativeContext": "Both estrogen and progesterone are typically at their lowest point, which is what triggers bleeding. FSH is beginning its gradual rise to start preparing the next follicle."
+      },
+      "contraceptionContext": {
+        "type": "none",
+        "contextMessage": null,
+        "insightTone": "cycle-based",
+        "showPhaseInsights": true
+      },
+      "numericSummary": {
+        "recentSleepAvg": 7.1,
+        "baselineSleepAvg": null,
+        "sleepDelta": null,
+        "recentStressLabel": "calm",
+        "recentMoodLabel": "positive"
+      },
+      "crossCycleNarrative": null,
+      "memoryContext": null,
+      "aiEnhanced": true,
+      "aiDebug": "accepted",
+      "correlationPattern": null,
+      "basedOn": {
+        "phase": "menstrual",
+        "recentLogsCount": 4,
+        "confidenceScore": 0.73,
+        "baselineDeviation": [],
+        "baselineScope": "none",
+        "priorityDrivers": [],
+        "interactionFlags": [],
+        "trends": [
+          "Sleep stable",
+          "Stress decreasing",
+          "Mood increasing",
+          "Sleep variability low",
+          "Mood variability low"
+        ],
+        "reasoning": [
+          "Phase is menstrual",
+          "Physical state mapped to stable",
+          "Mental state mapped to balanced",
+          "Emotional state mapped to uplifted",
+          "Bleeding load mapped to unknown",
+          "No strong cross-signal interaction detected",
+          "No strong personal baseline deviation detected",
+          "No high-priority drivers triggered",
+          "No strong phase deviation detected",
+          "Trends: Sleep stable, Stress decreasing, Mood increasing, Sleep variability low, Mood variability low"
+        ]
+      },
+      "insights": {
+        "physicalInsight": "Your body feels steady and well-supported right now. It’s normal to feel physically low as your period begins, but you’re managing well with about 7 hours of sleep.",
+        "mentalInsight": "Focus is lower today — your body is prioritizing recovery over clarity. You notice that small tasks take a bit more effort.",
+        "emotionalInsight": "Things feel emotionally steady right now, and the pressure is starting to lift. It’s a good moment to acknowledge how you’re feeling without any rush.",
+        "whyThisIsHappening": "Both estrogen and progesterone are at their lowest point, triggering your period. FSH is beginning to rise, preparing for the next cycle.",
+        "solution": "It’s okay to take it easier today — listen to what your body needs.",
+        "recommendation": "Keep your schedule lighter over the next few days; your body is doing a lot right now.",
+        "tomorrowPreview": "You're on day 1 of your cycle — day 2 is typically the most intense, but relief usually comes faster than it feels."
+      },
+      "view": {
+        "primaryInsight": "Your body feels steady and well-supported right now. It’s normal to feel physically low as your period begins, but you’re managing well with about 7 hours of sleep.",
+        "supportingInsights": [
+          "Focus is lower today — your body is prioritizing recovery over clarity. You notice that small tasks take a bit more effort.",
+          "Things feel emotionally steady right now, and the pressure is starting to lift. It’s a good moment to acknowledge how you’re feeling without any rush."
+        ],
+        "action": "It’s okay to take it easier today — listen to what your body needs.",
+        "explanation": "Both estrogen and progesterone are at their lowest point, triggering your period. FSH is beginning to rise, preparing for the next cycle.",
+        "recommendation": "Keep your schedule lighter over the next few days; your body is doing a lot right now.",
+        "tomorrowPreview": "You're on day 1 of your cycle — day 2 is typically the most intense, but relief usually comes faster than it feels.",
+        "confidenceLabel": "Emerging patterns"
+      },
+      "pmsWarning": null,
+      "lastAnticipationCycleDay": 1,
+      "lastAnticipationTypeKey": "menstrual_peak"
+    }
+  },
+  {
+    "testId": "T10_mixed_signals",
+    "description": "Sleep low, stress high, mood fluctuating",
+    "expect": null,
+    "phase": "luteal",
+    "cycleDay": 19,
+    "primaryDriver": "sleep_variability_high",
+    "aiEnhanced": true,
+    "aiDebug": "accepted",
+    "correlationPattern": null,
+    "durationMs": 10868,
+    "error": null,
+    "output": {
+      "cycleDay": 19,
+      "home": {
+        "phase": "luteal",
+        "currentDay": 19,
+        "isNewUser": false,
+        "primaryDriver": "sleep_variability_high",
+        "logsToNextMilestone": 2,
+        "confidence": "high",
+        "isPeriodDelayed": false,
+        "daysOverdue": 0,
+        "isIrregular": false
+      },
+      "isNewUser": false,
+      "progress": {
+        "logsCount": 5,
+        "nextMilestone": 7,
+        "logsToNextMilestone": 2
+      },
+      "mode": "personalized",
+      "confidence": "high",
+      "cycleContext": {
+        "cycleMode": "natural",
+        "cyclePredictionConfidence": "unknown",
+        "nextPeriodEstimate": "2026-04-07",
+        "isIrregular": false,
+        "isPeriodDelayed": false,
+        "daysOverdue": 0
+      },
+      "hormoneContext": {
+        "estrogen": "falling",
+        "progesterone": "peak",
+        "lh": "low",
+        "fsh": "low",
+        "confidence": "inferred",
+        "narrativeContext": "Progesterone is typically dominant in this window, while LH and FSH tend to stay low. Estrogen has a secondary rise then begins to fall. This progesterone influence is often linked to the calmer, more inward energy of the luteal phase."
+      },
+      "contraceptionContext": {
+        "type": "none",
+        "contextMessage": null,
+        "insightTone": "cycle-based",
+        "showPhaseInsights": true
+      },
+      "numericSummary": {
+        "recentSleepAvg": 5.7,
+        "baselineSleepAvg": null,
+        "sleepDelta": null,
+        "recentStressLabel": "moderate",
+        "recentMoodLabel": "neutral"
+      },
+      "crossCycleNarrative": null,
+      "memoryContext": {
+        "driver": "sleep_variability_high",
+        "count": 0,
+        "narrative": null,
+        "severity": "new"
+      },
+      "aiEnhanced": true,
+      "aiDebug": "accepted",
+      "correlationPattern": null,
+      "basedOn": {
+        "phase": "luteal",
+        "recentLogsCount": 5,
+        "confidenceScore": 0.9,
+        "baselineDeviation": [],
+        "baselineScope": "none",
+        "priorityDrivers": [
+          "sleep_variability_high",
+          "sleep_trend_declining",
+          "high_strain"
+        ],
+        "interactionFlags": [],
+        "trends": [
+          "Sleep decreasing",
+          "Stress stable",
+          "Mood stable",
+          "Sleep variability high",
+          "Mood variability moderate"
+        ],
+        "reasoning": [
+          "Phase is luteal",
+          "Physical state mapped to high_strain",
+          "Mental state mapped to fatigued",
+          "Emotional state mapped to stable",
+          "Bleeding load mapped to unknown",
+          "No strong cross-signal interaction detected",
+          "No strong personal baseline deviation detected",
+          "Insight priority drivers: sleep_variability_high, sleep_trend_declining, high_strain",
+          "No strong phase deviation detected",
+          "Trends: Sleep decreasing, Stress stable, Mood stable, Sleep variability high, Mood variability moderate"
+        ]
+      },
+      "insights": {
+        "physicalInsight": "Your sleep has been inconsistent and lower than your usual 5.5 hours, which is making your body feel more strained today. This is why slowing down isn't optional right now — it's what helps you navigate this phase.",
+        "mentalInsight": "Focus drops when sleep dips like this, and maintaining clarity feels more challenging. Everything takes more effort, and that’s okay.",
+        "emotionalInsight": "You feel like small things are harder than they should be, and you're not imagining it — this phase is genuinely harder. It’s normal to feel overwhelmed by everyday tasks right now.",
+        "whyThisIsHappening": "The progesterone that's dominant in this phase brings a calmer, inward energy, but it also amplifies sensitivity and lowers your capacity to cope with stress. This hormonal shift is contributing to how you're feeling today.",
+        "solution": "Pick a consistent bedtime and stick to it for the next three nights — that regularity will do more than extra hours.",
+        "recommendation": "This week, keep your sleep consistent and reduce your load — stress lands harder in this phase.",
+        "tomorrowPreview": "You're 9 days from your period — tomorrow should feel a bit lighter as your body starts to shift towards the next phase."
+      },
+      "view": {
+        "primaryInsight": "Your sleep has been inconsistent and lower than your usual 5.5 hours, which is making your body feel more strained today. This is why slowing down isn't optional right now — it's what helps you navigate this phase.",
+        "supportingInsights": [
+          "Focus drops when sleep dips like this, and maintaining clarity feels more challenging. Everything takes more effort, and that’s okay.",
+          "You feel like small things are harder than they should be, and you're not imagining it — this phase is genuinely harder. It’s normal to feel overwhelmed by everyday tasks right now."
+        ],
+        "action": "Pick a consistent bedtime and stick to it for the next three nights — that regularity will do more than extra hours.",
+        "explanation": "The progesterone that's dominant in this phase brings a calmer, inward energy, but it also amplifies sensitivity and lowers your capacity to cope with stress. This hormonal shift is contributing to how you're feeling today.",
+        "recommendation": "This week, keep your sleep consistent and reduce your load — stress lands harder in this phase.",
+        "tomorrowPreview": "You're 9 days from your period — tomorrow should feel a bit lighter as your body starts to shift towards the next phase.",
+        "confidenceLabel": "High confidence insights"
+      },
+      "pmsWarning": null,
+      "lastAnticipationCycleDay": null,
+      "lastAnticipationTypeKey": null
+    }
+  }
+]

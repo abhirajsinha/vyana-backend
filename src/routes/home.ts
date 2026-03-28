@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getHomeScreen } from "../controllers/homecontroller";
+import { getHomeScreen } from "../controllers/homeController";
 import { requireAuth } from "../middleware/auth";
  
 const router = Router();

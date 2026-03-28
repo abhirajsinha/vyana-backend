@@ -76,16 +76,19 @@ function enforceTwoLinesOnInsights(insights: DailyInsights): DailyInsights {
 function countSentences(text: string): number {
   const trimmed = text.trim();
   if (!trimmed) return 0;
-  return (trimmed.match(/[.!?]+/g) || []).length;
+  const cleaned = trimmed.replace(/(\d)\.(\d)/g, "$1\u2024$2");
+  return (cleaned.match(/[.!?]+/g) || []).length;
 }
 
 /** Keeps at most N sentence boundaries (., !, ?) so GPT output passes the 2-sentence guard. */
 function truncateToMaxSentences(text: string, max: number): string {
   const t = text.trim();
   if (!t || max <= 0) return t;
-  const parts = t.split(/(?<=[.!?])\s+/).filter(Boolean);
+  const safe = t.replace(/(\d)\.(\d)/g, "$1\u2024$2");
+  const parts = safe.split(/(?<=[.!?])\s+/).filter(Boolean);
   if (parts.length <= max) return t;
-  return parts.slice(0, max).join(" ").trim();
+  const kept = parts.slice(0, max).join(" ").trim();
+  return kept.replace(/\u2024/g, ".");
 }
 
 function enforceMaxSentencesOnInsights(
@@ -147,7 +150,7 @@ function hasStrengthRegression(
   return unreplaced.length >= 2;
 }
 
-function anyFieldExceedsTwoSentences(insights: DailyInsights): boolean {
+function anyFieldExceedsMaxSentences(insights: DailyInsights): boolean {
   const fields: (keyof DailyInsights)[] = [
     "physicalInsight",
     "mentalInsight",
@@ -157,7 +160,7 @@ function anyFieldExceedsTwoSentences(insights: DailyInsights): boolean {
     "recommendation",
     "tomorrowPreview",
   ];
-  return fields.some((k) => countSentences(insights[k]) > 2);
+  return fields.some((k) => countSentences(insights[k]) > 3);
 }
 
 export function sanitizeInsights(
@@ -188,10 +191,10 @@ export function sanitizeInsights(
       recommendation: o.recommendation as string,
       tomorrowPreview: o.tomorrowPreview as string,
     },
-    2,
+    3,
   );
   const candidate = enforceTwoLinesOnInsights(trimmed);
-  if (anyFieldExceedsTwoSentences(candidate)) return fallback;
+  if (anyFieldExceedsMaxSentences(candidate)) return fallback;
   return candidate;
 }
 
@@ -628,9 +631,9 @@ function safeParseInsightsDetailed(
       enforced = sharpenHighConfidenceTone(enforced);
     }
     enforced = fixCapitalization(enforced);
-    enforced = enforceMaxSentencesOnInsights(enforced, 2);
+    enforced = enforceMaxSentencesOnInsights(enforced, 3);
 
-    if (anyFieldExceedsTwoSentences(enforced)) {
+    if (anyFieldExceedsMaxSentences(enforced)) {
       return { insights: fallback, status: "sentence_guard_fallback" };
     }
     if (hasStrengthRegression(fallback, enforced)) {
@@ -1035,8 +1038,20 @@ export async function generateInsightsWithGpt(
 - Explain cause -> effect clearly without sounding generic.`;
 
   // Build primary driver instruction — explicit first-sentence directive
+  // Bug A: on menstrual day 1-2, bleeding_heavy is the physical reality — force it as opener
+  //         even if sleep_below_baseline outscores it in resolvePriorityDrivers
+  // Bug C: prefer sleep_stress_amplification over the individual sleep signal when the
+  //         interaction is active — the compound is the more descriptive driver
+  const interactionIsActive = ctx.interaction_flags.includes("sleep_stress_amplification");
+  const bleedingIsActive =
+    ctx.phase === "menstrual" &&
+    ctx.cycleDay <= 2 &&
+    ctx.priorityDrivers.includes("bleeding_heavy");
+
   const primaryDriver =
     vyanaCtx?.prioritySignals.find((s) => s.layer === "core")?.text ??
+    (bleedingIsActive ? "bleeding_heavy" : null) ??
+    (interactionIsActive ? "sleep_stress_amplification" : null) ??
     ctx.priorityDrivers[0] ??
     (ctx.phase === "ovulation" && ctx.priorityDrivers.length === 0
       ? "ovulation_peak_energy"
@@ -1069,9 +1084,21 @@ export async function generateInsightsWithGpt(
     primaryDriverInstruction = `\nCRITICAL — SLEEP-DISRUPTION PRIMARY: physicalInsight MUST open with the sharp sleep drop (use recentSleepAvg and baselineSleepAvg from HER DATA verbatim). Do NOT open with generic strain, iron, or "past cycles". whyThisIsHappening MUST attribute how she feels to sleep, not hormones. recommendation MUST keep load lighter until sleep recovers — NOT "take on harder things" or peak-phase messaging.`;
   }
 
+  if (vyanaCtx?.primaryInsightCause === "stress_led") {
+    primaryDriverInstruction = `\nCRITICAL — STRESS-LED PRIMARY: whyThisIsHappening MUST attribute how she feels to stress, NOT hormones or sleep. physicalInsight should NOT mention sleep dropping (sleep is fine). mentalInsight should reference focus affected by stress load.`;
+  }
+
+  const signalPositiveOverride =
+    ctx.priorityDrivers.length === 0 &&
+    ctx.physical_state !== "high_strain" &&
+    ctx.mental_state === "balanced" &&
+    (ctx.emotional_state === "uplifted" || ctx.emotional_state === "stable")
+      ? `\nSIGNAL-POSITIVE OVERRIDE: Her logged signals are clearly positive (mood good, stress low, sleep adequate). Do NOT inject negative phase language even if she is in menstrual phase. Acknowledge her actual state. Tone should be warm, calm, and affirmative — not cautionary or sympathetic.`
+      : "";
+
   const userPrompt = `
 TONE: ${toneInstruction}
-${phaseVoiceInstruction}
+${phaseVoiceInstruction}${signalPositiveOverride}
 ${historicalClaimsBlockInstruction}
 ${primaryDriverInstruction}
 ${priorityBlock}

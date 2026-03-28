@@ -52,6 +52,8 @@ export interface InsightContext {
   baselineScope: "phase" | "global" | "none";
   sleep_variability: TrendState["sleepVariability"];
   mood_variability: TrendState["moodVariability"];
+  stress_state: SignalState["stressState"];
+  mood_state: SignalState["moodState"];
   priorityDrivers: string[];
   reasoning: string[];
 }
@@ -77,6 +79,7 @@ type InsightDriver =
   | "sleep_stress_amplification"
   | "mood_stress_coupling"
   | "sedentary_strain"
+  | "stress_mood_strain"
   | "phase_deviation"
   | "high_strain";
 
@@ -384,6 +387,7 @@ function resolvePriorityDrivers(input: {
     { key: "mood_stress_coupling", score: 75, active: input.interactionFlags.includes("mood_stress_coupling") },
     { key: "mood_trend_declining", score: 72, active: input.moodTrend === "decreasing" && input.moodState !== "positive" },
     { key: "sedentary_strain", score: 70, active: input.interactionFlags.includes("sedentary_strain") },
+    { key: "stress_mood_strain", score: 68, active: input.stressState === "elevated" && input.moodState === "low" },
     { key: "phase_deviation", score: 65, active: Boolean(input.phaseDeviation) },
     { key: "high_strain", score: 60 + physicalBoost, active: input.physicalState === "high_strain" },
   ];
@@ -491,6 +495,8 @@ export function buildInsightContext(
     confidenceScore: Number(confidenceScore.toFixed(2)),
     baselineDeviation,
     baselineScope,
+    stress_state: signals.stressState,
+    mood_state: signals.moodState,
     sleep_variability: trends.sleepVariability,
     mood_variability: trends.moodVariability,
     priorityDrivers,
@@ -508,6 +514,21 @@ function isPeakPositiveWindow(ctx: InsightContext): boolean {
     ctx.mental_state === "balanced" &&
     ctx.physical_state === "stable" &&
     (ctx.phase === "ovulation" || ctx.phase === "follicular")
+  );
+}
+
+/**
+ * Signals clearly positive regardless of phase. Phase should NOT inject negative
+ * language when user data shows they are actually doing well.
+ */
+function isSignalPositive(ctx: InsightContext): boolean {
+  return (
+    ctx.mode === "personalized" &&
+    ctx.priorityDrivers.length === 0 &&
+    ctx.mental_state === "balanced" &&
+    ctx.physical_state !== "high_strain" &&
+    (ctx.emotional_state === "uplifted" || ctx.emotional_state === "stable") &&
+    ctx.stress_state === "calm"
   );
 }
 
@@ -537,6 +558,10 @@ function buildPhysicalInsight(ctx: InsightContext): string {
       return `Your energy is high right now — your body is in a strong, well-supported state.\nMovement and focus tend to feel easier in this window.`;
     }
     return `Your energy is building — your body is in a good place to take on more.\nPhysical tasks often feel lighter than they did earlier in the cycle.`;
+  }
+
+  if (isSignalPositive(ctx)) {
+    return `Your body feels steady and well-supported right now.\nEnergy and recovery both look good.`;
   }
 
   if (ctx.priorityDrivers.includes("sleep_trend_declining")) {
@@ -587,6 +612,10 @@ function buildMentalInsight(ctx: InsightContext): string {
     return `Mental bandwidth is opening up — tasks feel more manageable than they did a week ago.\nClarity tends to improve as energy builds in this phase.`;
   }
 
+  if (isSignalPositive(ctx)) {
+    return `Focus feels steady and manageable right now.\nNo signs of mental strain or overload.`;
+  }
+
   return `Your recent signal suggests a relatively balanced mental state.\nNo strong strain signals detected.`;
 }
 
@@ -610,6 +639,10 @@ function buildEmotionalInsight(ctx: InsightContext): string {
       return `You feel more open and engaged — social connection and motivation often come easier here.\nThis is a connected, upbeat kind of energy.`;
     }
     return `Things feel lighter emotionally — there's less heaviness dragging through the day.\nMotivation and mood tend to lift in this part of the cycle.`;
+  }
+
+  if (isSignalPositive(ctx)) {
+    return `Things feel emotionally steady right now.\nNothing is pulling your mood down.`;
   }
 
   return `Your emotional state looks steady right now.\nNo strong shifts in either direction.`;
@@ -643,7 +676,7 @@ function buildRecommendation(ctx: InsightContext): string {
     if (ctx.mode === "fallback") {
       return getDayInsight(ctx.cycleDay, ctx.variantIndex).actionTip;
     }
-    if (isPeakPositiveWindow(ctx)) {
+    if (isPeakPositiveWindow(ctx) || isSignalPositive(ctx)) {
       return `Lean into momentum today — social plans, focused work, or anything that needs your full presence tend to land easier in this window.`;
     }
     return `Keep your current rhythm and add one anchor habit today (sleep timing or movement) for consistency.`;
@@ -671,6 +704,9 @@ function buildRecommendation(ctx: InsightContext): string {
   }
   if (primary === "mood_stress_coupling") {
     return `Keep your task list short today. When stress spikes, take 5 minutes before reacting — it protects how you feel tonight.`;
+  }
+  if (primary === "stress_mood_strain") {
+    return `Stress is weighing on your mood right now. One short break and one boundary today will help more than pushing through.`;
   }
   if (primary === "sedentary_strain") {
     return `A short walk today — even 10 minutes — will help more than rest alone right now.`;
@@ -722,6 +758,9 @@ function buildWhyThisIsHappening(ctx: InsightContext): string {
     }
     if (isPeakPositiveWindow(ctx) && ctx.phase === "follicular") {
       return `In this part of your cycle, hormones are often moving toward a stronger energy window — that can show up as better mood and motivation.`;
+    }
+    if (isSignalPositive(ctx)) {
+      return `Your signals are steady and positive right now. No strong shifts driving how you feel.`;
     }
     if (ctx.trends.length > 0) {
       return `Recent trends (${ctx.trends.join(", ")}) indicate your body and mood are responding to day-to-day changes.`;
@@ -867,6 +906,25 @@ export function buildPatternReassurance(
     return "For you, this sensitivity is hormonal and temporary — it lifts within a day or two of your period.";
   }
   return undefined;
+}
+
+/** Flatten false alarms when raw logs are objectively steady (see isStableInsightState). */
+export function insightContextAsStableBaseline(ctx: InsightContext): InsightContext {
+  return {
+    ...ctx,
+    baselineDeviation: [],
+    trends: [],
+    interaction_flags: [],
+    priorityDrivers: [],
+    phase_deviation: null,
+    physical_state: "stable",
+    mental_state: "balanced",
+    emotional_state: "stable",
+    reasoning: [
+      `Phase is ${ctx.phase}`,
+      "Recent logs are steady — no meaningful shifts in sleep, stress, or mood.",
+    ],
+  };
 }
 
 export function generateRuleBasedInsights(ctx: InsightContext): DailyInsights {

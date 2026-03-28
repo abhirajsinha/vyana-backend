@@ -1,14 +1,55 @@
+import type { DailyLog } from "@prisma/client";
 import type { DailyInsights } from "./insightService";
 import type { NumericBaseline } from "./insightData";
 
 /** What is mainly driving how she feels right now — cycle context vs life factors. */
-export type PrimaryInsightCause = "sleep_disruption" | "stress_led" | "cycle";
+export type PrimaryInsightCause =
+  | "stable"
+  | "sleep_disruption"
+  | "stress_led"
+  | "cycle";
+
+/**
+ * Log-grounded steady state: recent days look the same (sleep ~7h, moderate stress, neutral mood).
+ * Uses raw recent logs so aggregate/baseline split bugs cannot force a fake "crisis" mode.
+ */
+export function isStableInsightState(
+  recentLogs: DailyLog[],
+  _baseline: NumericBaseline,
+): boolean {
+  if (recentLogs.length < 5) return false;
+
+  const slice = recentLogs.slice(0, 7);
+  for (const log of slice) {
+    if (typeof log.sleep !== "number" || log.sleep < 6.35 || log.sleep > 7.85) {
+      return false;
+    }
+    const st = log.stress?.trim().toLowerCase() ?? "";
+    if (st !== "moderate") return false;
+
+    const mo = log.mood?.trim().toLowerCase() ?? "";
+    if (mo !== "neutral") return false;
+
+    if (Array.isArray(log.symptoms) && log.symptoms.length > 0) return false;
+
+    if (log.pain?.trim()) {
+      const p = log.pain.trim().toLowerCase();
+      if (p !== "none" && !p.startsWith("none")) return false;
+    }
+
+    const flow = log.padsChanged;
+    if (typeof flow === "number" && flow >= 6) return false;
+  }
+
+  return true;
+}
 
 export function detectPrimaryInsightCause(input: {
   baselineDeviation: string[];
   trends: string[];
   sleepDelta: number | null;
-}): PrimaryInsightCause {
+  priorityDrivers?: string[];
+}): Exclude<PrimaryInsightCause, "stable"> {
   const sleepBelow = input.baselineDeviation.includes(
     "sleep_below_personal_baseline",
   );
@@ -31,7 +72,14 @@ export function detectPrimaryInsightCause(input: {
     "stress_above_personal_baseline",
   );
   const stressRising = input.trends.some((t) => t === "Stress increasing");
-  if (stressAbove && stressRising) {
+  const drivers = input.priorityDrivers ?? [];
+  const hasStressDriver =
+    drivers.includes("stress_above_baseline") ||
+    drivers.includes("stress_trend_spiking") ||
+    drivers.includes("stress_mood_strain") ||
+    drivers.includes("mood_stress_coupling");
+
+  if ((stressAbove && stressRising) || (stressRising && hasStressDriver)) {
     return "stress_led";
   }
 
@@ -61,5 +109,30 @@ export function applySleepDisruptionNarrative(
     solution: `The most important thing right now is getting your sleep back on track — that will shift how everything feels more than anything else.`,
     recommendation: `Keep your load lighter until your sleep recovers — your energy will come back quickly once it does.`,
     tomorrowPreview: `If your sleep improves tonight, you'll feel noticeably better tomorrow — your system just needs that reset.`,
+  };
+}
+
+/** Deterministic copy when stress is the primary driver — do not blame hormones or sleep. */
+export function applyStressLedNarrative(insights: DailyInsights): DailyInsights {
+  return {
+    ...insights,
+    whyThisIsHappening: `Stress has been building over the last few days, and that's what's driving how you feel right now.`,
+    mentalInsight: `When stress stays elevated like this, focus and clarity both take a hit — decisions feel harder than they should.`,
+    emotionalInsight: `Things feel emotionally heavier right now — that's stress showing up in your mood, not just your head.`,
+    tomorrowPreview: `If stress eases even slightly, you'll notice the difference — your system responds quickly when the pressure drops.`,
+  };
+}
+
+/** Deterministic copy when logs show no meaningful movement — do not invent problems. */
+export function applyStableStateNarrative(insights: DailyInsights): DailyInsights {
+  return {
+    ...insights,
+    physicalInsight: `Your body feels steady right now — nothing is pulling it in either direction.`,
+    mentalInsight: `Focus is stable — things feel manageable without extra effort or strain.`,
+    emotionalInsight: `Your mood is balanced — nothing feels too heavy or too elevated.`,
+    whyThisIsHappening: `There aren't any strong shifts right now — your system is in a stable, consistent state.`,
+    solution: `Keep doing what's working — consistency is what's supporting this balance.`,
+    recommendation: `Maintain your current rhythm — sleep, stress, and energy are all holding steady.`,
+    tomorrowPreview: `Things should feel similar tomorrow — no major shifts expected.`,
   };
 }

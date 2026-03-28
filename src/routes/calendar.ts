@@ -2,7 +2,7 @@ import { Router as CRouter } from "express";
 import {
   getCalendar,
   getCalendarDayInsight,
-} from "../controllers/calendarcontroller";
+} from "../controllers/calendarController";
 import { requireAuth as cAuth } from "../middleware/auth";
 
 const calendarRouter = CRouter();
