@@ -1,5 +1,6 @@
 // src/controllers/insightController.ts
 // Insight controller — GET /api/insights, GET /api/insights/context, GET /api/insights/forecast
+// FIX: Removed dead canUseAI gating variables. GPT fires on every insight request.
 
 import "../types/express";
 import { Request, Response } from "express";
@@ -47,7 +48,10 @@ import {
 import { getCycleNumber } from "../services/cycleInsightLibrary";
 import { runCorrelationEngine } from "../services/correlationEngine";
 import { buildTomorrowPreview } from "../services/tomorrowEngine";
-import { buildPmsSymptomForecast, type PmsForecast } from "../services/pmsEngine";
+import {
+  buildPmsSymptomForecast,
+  type PmsForecast,
+} from "../services/pmsEngine";
 import {
   buildHormoneState,
   buildHormoneLanguage,
@@ -74,7 +78,10 @@ import {
   isStableInsightState,
   type PrimaryInsightCause,
 } from "../services/insightCause";
-import { buildMonitorEntry, recordInsightGeneration } from "../services/insightMonitor";
+import {
+  buildMonitorEntry,
+  recordInsightGeneration,
+} from "../services/insightMonitor";
 import { buildTransitionWarmup } from "../services/transitionWarmup";
 
 function isInsightsPayloadCached(payload: unknown): boolean {
@@ -86,7 +93,6 @@ function isInsightsPayloadCached(payload: unknown): boolean {
     "view" in payload
   );
 }
-
 
 function getAnticipationState(
   cached: { payload?: unknown } | null,
@@ -241,7 +247,9 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     crossCycleNarrative,
   } = data;
 
-  const transitionWarmup = buildTransitionWarmup(user.contraceptionChangedAt ?? null);
+  const transitionWarmup = buildTransitionWarmup(
+    user.contraceptionChangedAt ?? null,
+  );
 
   const contraceptionType = resolveContraceptionType(user.contraceptiveMethod);
   const contraceptionBehavior = getContraceptionBehavior(contraceptionType);
@@ -261,17 +269,14 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
   );
   const effectiveCycleLength = cyclePrediction.avgLength || user.cycleLength;
 
-  // ── NEW: Detect delayed period ─────────────────────────────────────────────
+  // ── Detect delayed period ──────────────────────────────────────────────────
   const rawDiffDays = utcDayDiff(now, user.lastPeriodStart);
   const daysOverdue = Math.max(0, rawDiffDays - effectiveCycleLength);
   const isPeriodDelayed =
     daysOverdue > 0 &&
     cyclePrediction.confidence !== "irregular" &&
     cycleMode !== "hormonal";
-  // Irregular flag is only meaningful for natural cycle users — hormonal mode uses pattern-based
-  // insights regardless, so applying irregular language on top creates a confusing mix
   const isIrregular = cycleMode !== "hormonal" && cyclePrediction.isIrregular;
-  // ── END NEW ────────────────────────────────────────────────────────────────
 
   const cycleInfo = calculateCycleInfo(
     user.lastPeriodStart,
@@ -411,8 +416,29 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
         .replace(/\bLH peaks\b/gi, "your cycle peaks")
         .replace(/\bLH begins surging\b/gi, "your cycle is shifting")
         .replace(/\bLuteinizing hormone\b/gi, "Your cycle")
-        .replace(/\bEstrogen [a-z]+s\b/gi, "Energy")
-        .replace(/\bEstrogen\b/gi, "Your energy levels")
+        .replace(/\bEstrogen is rising\b/gi, "Energy is building")
+        .replace(/\bEstrogen rises\b/gi, "Energy builds")
+        .replace(/\bEstrogen is climbing\b/gi, "Energy is building")
+        .replace(/\bEstrogen is at its peak\b/gi, "Energy is at its peak")
+        .replace(/\bEstrogen peaks\b/gi, "Energy peaks")
+        .replace(/\bEstrogen drops\b/gi, "Energy drops")
+        .replace(/\bEstrogen is falling\b/gi, "Energy is shifting")
+        .replace(/\bEstrogen is low\b/gi, "Energy is lower")
+        .replace(/\bEstrogen is typically\b/gi, "Energy is typically")
+        .replace(/\bEstrogen\b/gi, "Energy")
+        .replace(/\bProgesterone is rising\b/gi, "Your body is shifting")
+        .replace(/\bProgesterone rises\b/gi, "Your body shifts")
+        .replace(/\bProgesterone peaks\b/gi, "Your body settles")
+        .replace(
+          /\bProgesterone is at its peak\b/gi,
+          "Your body is in its quieter mode",
+        )
+        .replace(
+          /\bProgesterone dominates\b/gi,
+          "Your body is in a calmer rhythm",
+        )
+        .replace(/\bProgesterone is falling\b/gi, "Your body is transitioning")
+        .replace(/\bProgesterone is typically\b/gi, "Your body is typically")
         .replace(/\bProgesterone\b/gi, "Your body")
         .replace(/\bmost fertile window\b/gi, "your energy peak")
         .replace(/\bfertile window\b/gi, "your energy peak")
@@ -425,14 +451,16 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
       physicalInsight: stripHormonalLanguage(draftInsights.physicalInsight),
       mentalInsight: stripHormonalLanguage(draftInsights.mentalInsight),
       emotionalInsight: stripHormonalLanguage(draftInsights.emotionalInsight),
-      whyThisIsHappening: stripHormonalLanguage(draftInsights.whyThisIsHappening),
+      whyThisIsHappening: stripHormonalLanguage(
+        draftInsights.whyThisIsHappening,
+      ),
       solution: stripHormonalLanguage(draftInsights.solution),
       recommendation: stripHormonalLanguage(draftInsights.recommendation),
       tomorrowPreview: stripHormonalLanguage(draftInsights.tomorrowPreview),
     };
   }
 
-  // ── NEW: Irregular cycle — soften language ─────────────────────────────────
+  // Irregular cycle — soften language
   if (isIrregular || cyclePrediction.confidence === "irregular") {
     draftInsights = {
       ...draftInsights,
@@ -442,7 +470,7 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     };
   }
 
-  // ── NEW: Delayed period — override insight content ─────────────────────────
+  // Delayed period — override insight content
   if (isPeriodDelayed) {
     draftInsights = {
       ...draftInsights,
@@ -459,7 +487,6 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
         "Keep logging how you feel — the more data you have, the better we can support you.",
     };
   }
-  // ── END NEW ────────────────────────────────────────────────────────────────
 
   const previousCycleDrivers =
     context.mode === "personalized"
@@ -532,8 +559,6 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     }
   }
 
-  // Bug B: skip sleep_disruption override when the drop is part of a recurring
-  // cross-cycle pattern — otherwise "this isn't about your cycle" fires incorrectly
   const skipSleepDisruptionOverride =
     primaryInsightCause === "sleep_disruption" &&
     crossCycleNarrative !== null &&
@@ -544,13 +569,13 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     context.mode === "personalized" &&
     !skipSleepDisruptionOverride
   ) {
-    draftInsights = applySleepDisruptionNarrative(draftInsights, numericBaseline);
+    draftInsights = applySleepDisruptionNarrative(
+      draftInsights,
+      numericBaseline,
+    );
   }
 
-  if (
-    primaryInsightCause === "stress_led" &&
-    context.mode === "personalized"
-  ) {
+  if (primaryInsightCause === "stress_led" && context.mode === "personalized") {
     draftInsights = applyStressLedNarrative(draftInsights);
   }
 
@@ -650,85 +675,43 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     | "unchanged_output"
     | "stable_state" = "gated";
 
-  const logSpanDays = computeLogSpanDays(recentLogs);
-  // Signal-rich: has at least some logged data with numeric signals
-  const hasSignalRichness =
-    logsCount >= 3 &&
-    logSpanDays >= 2 &&
-    (numericBaseline.recentSleepAvg !== null ||
-      numericBaseline.recentStressAvg !== null ||
-      numericBaseline.recentMoodAvg !== null);
-
-  // High-priority physical signal — fire AI even with minimal logs
-  // Heavy bleeding and high strain are the days that need the best output
-  const hasHighPrioritySignal =
-    context.priorityDrivers.includes("bleeding_heavy") ||
-    context.priorityDrivers.includes("high_strain") ||
-    context.priorityDrivers.includes("sleep_stress_amplification") ||
-    context.baselineDeviation.includes("sleep_below_personal_baseline") ||
-    (numericBaseline.sleepDelta !== null && numericBaseline.sleepDelta <= -1.5);
-
-  // Cycle context — fire AI when we have phase data even without logs
-  const hasCycleContext = cycleInfo.currentDay > 0 && cycleInfo.phase !== undefined;
-
-  // Peak positive days (e.g. ovulation): high mood + calm stress — still deserve GPT even with empty priorityDrivers
-  const hasPositivePeakSignal =
-    logsCount >= 3 &&
-    numericBaseline.recentMoodAvg !== null &&
-    numericBaseline.recentMoodAvg >= 2.4 &&
-    numericBaseline.recentStressAvg !== null &&
-    numericBaseline.recentStressAvg < 1.6 &&
-    (cycleInfo.phase === "ovulation" || cycleInfo.phase === "follicular");
-
-    const canUseAI =
-    !effectiveStable &&
-    (hasSignalRichness ||
-      hasHighPrioritySignal ||
-      hasCycleContext ||
-      hasPositivePeakSignal);
-
-  if (canUseAI) {
-    try {
-      const aiResult = await generateInsightsWithGpt(
-        context,
-        draftInsights,
-        numericBaseline,
-        crossCycleNarrative,
-        user.name,
-        contraceptionBehavior.insightTone,
-        vyanaCtx,
-        {
-          insightMemoryCount: existingMemoryCount,
-          hasCrossCycleNarrative: crossCycleNarrative !== null,
-        },
-      );
-      const candidate = softenDailyInsights(
-        sanitizeInsights(aiResult.insights, draftInsights),
-        context.confidenceScore,
-      );
-      const hasForbidden = Object.values(candidate).some(
-        (v) => typeof v === "string" && containsForbiddenLanguage(v),
-      );
-      if (!hasForbidden) {
-        insights = candidate;
-        aiEnhanced = JSON.stringify(insights) !== JSON.stringify(draftInsights);
-        const aiStatus = aiResult.status;
-        aiDebug =
-          aiEnhanced
-            ? "accepted"
-            : aiStatus === "accepted"
-              ? "unchanged_output"
-              : (aiStatus as Exclude<
-                  InsightGenerationStatus,
-                  "accepted"
-                >);
-      } else {
-        aiDebug = "forbidden_language";
-      }
-    } catch {
-      insights = draftInsights;
-      aiDebug = "api_error";
+  // GPT fires on every request — no gating
+  try {
+    const aiResult = await generateInsightsWithGpt(
+      context,
+      draftInsights,
+      numericBaseline,
+      crossCycleNarrative,
+      user.name,
+      contraceptionBehavior.insightTone,
+      vyanaCtx,
+      {
+        insightMemoryCount: existingMemoryCount,
+        hasCrossCycleNarrative: crossCycleNarrative !== null,
+      },
+    );
+    const candidate = softenDailyInsights(
+      sanitizeInsights(aiResult.insights, draftInsights),
+      context.confidenceScore,
+    );
+    const hasForbidden = Object.values(candidate).some(
+      (v) => typeof v === "string" && containsForbiddenLanguage(v),
+    );
+    if (!hasForbidden) {
+      insights = candidate;
+      aiEnhanced = JSON.stringify(insights) !== JSON.stringify(draftInsights);
+      const aiStatus = aiResult.status;
+      aiDebug = aiEnhanced
+        ? "accepted"
+        : aiStatus === "accepted"
+          ? "unchanged_output"
+          : (aiStatus as Exclude<InsightGenerationStatus, "accepted">);
+    } else {
+      aiDebug = "forbidden_language";
     }
+  } catch {
+    insights = draftInsights;
+    aiDebug = "api_error";
   }
 
   // Memory override — ONLY applied when AI did not run or produced no improvement
@@ -863,7 +846,7 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     }
   }
 
-  // Full payload — written to cache for internal use (anticipation state, context endpoint)
+  // Full payload — written to cache for internal use
   const cachePayload = {
     cycleDay: cycleInfo.currentDay,
     isNewUser,
@@ -879,7 +862,6 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     insights,
     view,
     aiEnhanced,
-    // ── Internal fields (not returned to client, stored for context endpoint / cache reads) ──
     _internal: {
       mode: context.mode,
       aiDebug,
@@ -984,7 +966,7 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     },
   };
 
-  // Client response — only what the insights UI needs
+  // Client response
   const responsePayload = {
     cycleDay: cachePayload.cycleDay,
     isNewUser: cachePayload.isNewUser,
@@ -1029,28 +1011,30 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     create: { userId: req.userId!, date: dayStart, payload: payloadJson },
   });
 
-  recordInsightGeneration(buildMonitorEntry({
-    userId: req.userId!,
-    cycleDay: cycleInfo.currentDay,
-    phase: cycleInfo.phase,
-    cycleMode,
-    aiEnhanced,
-    aiDebug,
-    draft: draftInsights,
-    output: insights,
-    primaryDriver: driverForMemory,
-    primaryCause: primaryInsightCause,
-    driverCount: context.priorityDrivers.length,
-    confidence: context.confidence,
-    confidenceScore: context.confidenceScore,
-    mode: context.mode,
-    pipelineMs: Date.now() - pipelineStart,
-  }));
+  recordInsightGeneration(
+    buildMonitorEntry({
+      userId: req.userId!,
+      cycleDay: cycleInfo.currentDay,
+      phase: cycleInfo.phase,
+      cycleMode,
+      aiEnhanced,
+      aiDebug,
+      draft: draftInsights,
+      output: insights,
+      primaryDriver: driverForMemory,
+      primaryCause: primaryInsightCause,
+      driverCount: context.priorityDrivers.length,
+      confidence: context.confidence,
+      confidenceScore: context.confidenceScore,
+      mode: context.mode,
+      pipelineMs: Date.now() - pipelineStart,
+    }),
+  );
 
   res.json(responsePayload);
 }
 
-// ─── GET /api/insights/context — detailed signals, hormone, cycle, memory data ─
+// ─── GET /api/insights/context ────────────────────────────────────────────────
 
 export async function getInsightsContext(
   req: Request,
@@ -1091,7 +1075,7 @@ export async function getInsightsContext(
   });
 }
 
-// ─── GET /api/insights/forecast — IDENTICAL TO YOUR CURRENT PUSHED VERSION ───
+// ─── GET /api/insights/forecast ───────────────────────────────────────────────
 
 export async function getInsightsForecast(
   req: Request,
@@ -1113,7 +1097,10 @@ export async function getInsightsForecast(
     const cachedTransitionWarmup = cachedUser
       ? buildTransitionWarmup(cachedUser.contraceptionChangedAt ?? null)
       : null;
-    res.json({ ...(cached.forecast as object), transitionWarmup: cachedTransitionWarmup });
+    res.json({
+      ...(cached.forecast as object),
+      transitionWarmup: cachedTransitionWarmup,
+    });
     return;
   }
 
@@ -1130,7 +1117,9 @@ export async function getInsightsForecast(
     crossCycleNarrative,
   } = data;
 
-  const forecastTransitionWarmup = buildTransitionWarmup(user.contraceptionChangedAt ?? null);
+  const forecastTransitionWarmup = buildTransitionWarmup(
+    user.contraceptionChangedAt ?? null,
+  );
 
   const contraceptionType = resolveContraceptionType(user.contraceptiveMethod);
   const contraceptionBehavior = getContraceptionBehavior(contraceptionType);
@@ -1359,8 +1348,9 @@ export async function getInsightsForecast(
     forecastAiEnhanced?: boolean;
   } = { ...draftForecastPayload, forecastAiEnhanced: false };
 
-  // Build VyanaContext for forecast GPT (was missing — forecast missed identity/anticipation layers)
-  const forecastContraceptionType = resolveContraceptionType(user.contraceptiveMethod);
+  const forecastContraceptionType = resolveContraceptionType(
+    user.contraceptiveMethod,
+  );
   const forecastHormoneState = buildHormoneState(
     todayCycle.phase,
     todayCycle.currentDay,
@@ -1369,7 +1359,10 @@ export async function getInsightsForecast(
     forecastContraceptionType,
   );
   const forecastHormoneLanguage = contraceptionBehavior.showHormoneCurves
-    ? buildHormoneLanguage(forecastHormoneState, cyclePrediction.confidence === "reliable" ? 0.8 : 0.5)
+    ? buildHormoneLanguage(
+        forecastHormoneState,
+        cyclePrediction.confidence === "reliable" ? 0.8 : 0.5,
+      )
     : null;
 
   const forecastPrimaryInsightCause = detectPrimaryInsightCause({

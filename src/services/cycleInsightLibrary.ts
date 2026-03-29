@@ -73,7 +73,7 @@ const library: DayInsight[] = [
     physicalExpectation: [
       "Expect the heaviest flow and sharpest cramping of your cycle today.",
       "Day 2 is typically the most physically demanding day of your cycle.",
-      "Bleeding and cramps are at their worst right now — this is the peak.",
+      "Bleeding and cramps are at their worst right now — this is often the most intense part.",
     ],
     mentalExpectation: [
       "Concentration is harder than usual due to very low estrogen today.",
