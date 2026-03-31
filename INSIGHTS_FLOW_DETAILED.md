@@ -31,7 +31,7 @@ There are 4 insight products running on top of shared cycle + log data:
 3. PMS forecast state -> warmup or full symptom forecast (embedded in forecast; warning in daily insights)
 4. `GET /api/health/patterns` -> medical-pattern alerts + watching states
 
-Rule engine is always the source of truth. GPT is a rewrite layer used only for eligible users.
+Rule engine is always the source of truth. GPT is a **rewrite layer** for daily insights on each cache miss when OpenAI is configured; **forecast** GPT is still **gated** (see §9).
 
 ---
 
@@ -66,7 +66,7 @@ sequenceDiagram
     IC->>Engine: buildInsightContext()
     IC->>Engine: generateRuleBasedInsights()
     IC->>Corr: runCorrelationEngine()
-    IC->>AI: generateInsightsWithGpt() [gated]
+    IC->>AI: generateInsightsWithGpt() [when OpenAI client exists]
     IC->>Mem: read memory + apply escalation
     IC->>View: resolve primary + build view payload
     IC->>PMS: buildPmsSymptomForecast()
@@ -261,27 +261,26 @@ Period-start trigger (`POST /api/cycle/period-started`) also recomputes health p
 
 ### Daily insights GPT (`generateInsightsWithGpt`)
 
-Called only when all are true:
+On a **cache miss**, the controller calls `generateInsightsWithGpt` whenever the OpenAI client is configured (`OPENAI_API_KEY`). There is **no** controller-level gate on log count, `mode`, or confidence — **brand-new users (0 logs)** still invoke this path.
 
-- `logsCount >= 3`
-- `context.mode === "personalized"`
-- `context.confidence !== "low"`
-- OpenAI key configured
+Inside the service, if the client is missing, the function returns immediately with `status: "client_missing"` and the deterministic draft.
 
-If GPT fails/parses invalid/weakens output -> fallback to deterministic draft.
+If the API call fails, JSON is invalid, or guards reject output → keep / fall back to deterministic draft (see controller + `insightGptService`).
 
 ### Forecast GPT (`generateForecastWithGpt`)
 
-Same eligibility pattern:
+Called only when **all** are true (see `insightController.getInsightsForecast`):
 
-- enough logs
-- personalized mode
-- not low confidence
-- OpenAI key configured
+- `logsCount >= 7`
+- `context.mode === "personalized"`
+- `context.confidence !== "low"`
+- OpenAI client configured
+
+The forecast **endpoint** can still return a **warmup** payload (no full forecast) when `checkForecastEligibility` fails — in those cases forecast GPT does not run.
 
 ### Chat GPT (`askVyanaWithGpt`)
 
-Independent endpoint path; runs if OpenAI key exists.
+Independent endpoint; runs when OpenAI is configured, otherwise a non-AI fallback message is returned.
 
 ---
 
@@ -290,26 +289,27 @@ Independent endpoint path; runs if OpenAI key exists.
 ### 0 logs
 
 - usually `fallback` mode
-- phase/day library text
+- phase/day grounded reasoning
 - low confidence
-- no GPT rewrite
-- no meaningful trend/interaction claims
+- **Daily insights GPT may still run** on a cache miss if `OPENAI_API_KEY` is set (controller does not gate on log count)
+- limited trend/interaction claims from sparse data
 
 ### 1-2 logs
 
-- may enter personalized mode if strong signal exists
-- still conservative language
-- GPT still off (requires 3+ logs)
+- may enter `personalized` mode if **strong signal** exists (`insightService.modeFor`)
+- confidence often still low
+- daily GPT path same as above when OpenAI is configured
 
 ### 3+ logs
 
-Full pipeline unlocks:
+Rule engine “full” personalization unlocks:
 
 - trend + interaction logic
 - baseline deviation
 - correlation overlays
 - memory escalation and rotation
-- GPT rewrite eligibility
+
+Forecast **GPT** remains gated separately (7 logs + personalized + not low confidence). Forecast **availability** also requires `checkForecastEligibility` (7 logs, 5-day spread, confidence score, contraception not disabling forecast).
 
 ---
 
@@ -327,7 +327,7 @@ So every new log forces fresh recomputation on next fetch.
 
 ## 12) One-Line Mental Model
 
-Vyana first computes a deterministic, explainable, cycle-aware truth from user logs, then conditionally uses GPT to make that truth sound deeply personal without changing the facts.
+Vyana first computes a deterministic, explainable, cycle-aware draft from logs + cycle state; **daily** insights then optionally pass through GPT for tone (when configured). **Forecast** GPT and full forecast payload are stricter and remain eligibility-gated.
 
 ---
 
@@ -343,8 +343,8 @@ Expected behavior:
 - `progress.logsCount = 0`
 - `mode` typically `fallback`
 - `confidence` low
-- `aiEnhanced = false`
-- `insights` come from phase/day library style logic
+- `aiEnhanced` **may be `true`** if GPT ran and changed text vs the draft (OpenAI configured)
+- `insights` start from deterministic rules, then optional GPT rewrite
 - `basedOn.interactionFlags` empty
 - `basedOn.trends` likely empty/insufficient
 - no strong cross-signal claims
@@ -362,7 +362,7 @@ Expected behavior:
 
 - may still be `mode = personalized` (strong signal override)
 - confidence remains low due to data depth
-- `aiEnhanced = false` (GPT gate still closed below 3 logs)
+- `aiEnhanced` may be `true` if GPT ran and altered copy (OpenAI configured)
 - priority drivers include severe physical/stress signals
 - conservative but specific phrasing in insights
 
@@ -380,11 +380,11 @@ Expected behavior:
 - trend + interaction logic active
 - baseline deviations can trigger (`sleep_below_personal_baseline`, `stress_above_personal_baseline`)
 - memory context starts influencing escalation
-- GPT rewrite eligible if confidence not low
+- daily GPT may run whenever OpenAI is configured; output still softened by confidence
 
 Look for in response:
 
-- `aiEnhanced` may be `true`
+- `aiEnhanced` may be `true` or `false` depending on whether GPT changed the draft
 - `memoryContext` present (driver/count/severity)
 - `basedOn.trends` and `basedOn.interactionFlags` populated
 - `crossCycleNarrative` may be present if enough cycle history

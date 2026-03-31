@@ -2,6 +2,8 @@
 
 Base URL: `http://localhost:3000` (or deployed host)
 
+**New to the repo?** Start with [`readme.md`](./readme.md) (onboarding, endpoint index, caching, GPT behavior), then use this file for request/response detail.
+
 All protected endpoints require the header:
 
 ```
@@ -69,6 +71,7 @@ Invalid/expired token returns `401 { "error": "Invalid or expired token" }`.
     "cycleRegularity": null,
     "cycleMode": "natural",
     "fcmToken": null,
+    "contraceptionChangedAt": null,
     "createdAt": "2026-03-28T00:00:00.000Z",
     "updatedAt": "2026-03-28T00:00:00.000Z"
   },
@@ -220,6 +223,7 @@ Invalid/expired token returns `401 { "error": "Invalid or expired token" }`.
   "cycleRegularity": null,
   "cycleMode": "natural",
   "fcmToken": null,
+  "contraceptionChangedAt": null,
   "createdAt": "2026-03-28T00:00:00.000Z",
   "updatedAt": "2026-03-28T00:00:00.000Z"
 }
@@ -229,6 +233,63 @@ Invalid/expired token returns `401 { "error": "Invalid or expired token" }`.
 
 | Status | Message |
 |--------|---------|
+| `404` | `User not found` |
+
+---
+
+### `PUT /api/user/profile`
+
+**Auth:** Required
+
+Partial update: include only fields to change. Changing **`contraceptiveMethod`** runs contraception transition handling (cache invalidation, optional baseline / period-start reset) and may return **`contraceptionTransition`** in the response.
+
+**Request body (all optional)**
+
+| Field | Type | Notes |
+|-------|------|--------|
+| `name` | string | Non-empty after trim |
+| `age` | number | |
+| `height` | number | |
+| `weight` | number | |
+| `cycleLength` | number | 21–45 |
+| `cycleRegularity` | string | `regular`, `irregular`, or `not_sure` |
+| `contraceptiveMethod` | string \| null | Triggers transition when value differs from stored |
+| `lastPeriodStart` | string (ISO / `YYYY-MM-DD`) | |
+
+**Response** `200`
+
+```json
+{
+  "user": { /* same shape as GET /api/user/me */ }
+}
+```
+
+When contraception method changed:
+
+```json
+{
+  "user": { },
+  "contraceptionTransition": {
+    "transitionType": "string",
+    "previousMethod": "string | null",
+    "newMethod": "string | null",
+    "previousCycleMode": "string",
+    "newCycleMode": "string",
+    "contextMessage": "string | null",
+    "baselineReset": true,
+    "periodStartReset": true
+  }
+}
+```
+
+**Errors**
+
+| Status | Message |
+|--------|---------|
+| `400` | `No valid fields to update` |
+| `400` | `Cycle length must be between 21 and 45 days` |
+| `400` | `Invalid lastPeriodStart date` |
+| `400` | `cycleRegularity must be one of: ...` |
 | `404` | `User not found` |
 
 ---

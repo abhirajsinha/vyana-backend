@@ -21,9 +21,9 @@ This document complements `INSIGHTS_SYSTEM.md`, which goes deeper into the insig
 
 Vyana backend is a TypeScript + Express service backed by PostgreSQL (via Prisma). It supports:
 - user onboarding and token-based authentication (email/password and Google ID tokens)
-- cycle-phase computation and cycle calendar generation
+- profile updates, cycle-phase computation, period-start recording, and calendar/home aggregates
 - daily wellness logging
-- deterministic + optional AI-enhanced insights
+- deterministic insights with optional GPT phrasing; separate forecast and health-pattern endpoints
 - AI chat with persisted history
 
 ### 2.1 High-level Context
@@ -177,14 +177,22 @@ Auth:
 
 Protected (require `Authorization: Bearer <access_token>`):
 - `GET /api/user/me`
+- `PUT /api/user/profile`
+- `GET /api/home`
 - `GET /api/cycle/current`
-- `GET /api/cycle/calendar?month=YYYY-MM`
+- `POST /api/cycle/period-started`
+- `GET /api/calendar?month=YYYY-MM`
+- `GET /api/calendar/day-insight`
 - `POST /api/logs`
 - `GET /api/logs?date=YYYY-MM-DD`
 - `GET /api/insights`
+- `GET /api/insights/context`
 - `GET /api/insights/forecast`
+- `GET /api/health/patterns`
 - `POST /api/chat`
 - `GET /api/chat/history`
+
+Canonical tables and examples: `readme.md` and `API.md`.
 
 ### 6.2 Response Strategy
 - Consistent JSON responses.
@@ -240,19 +248,21 @@ Read logs:
    - baseline deviations
    - priority drivers and confidence
 4. Produce deterministic insights.
-5. If AI key configured:
-   - call OpenAI for phrasing in strict JSON shape
-   - validate response fields
+5. If OpenAI client is configured (`OPENAI_API_KEY`):
+   - call `generateInsightsWithGpt` for phrasing in strict JSON shape (controller does not gate on log count)
+   - validate / sanitize response fields
    - fallback to deterministic draft on parse/validation/API errors
 6. Return insights + explainability metadata.
+
+Daily responses may be served from `InsightCache` (keyed by user + UTC day); see `INSIGHTS_FLOW_DETAILED.md`.
 
 ## 7.4 Forecast Flow
 
 1. Build same context used for insights.
-2. Compute tomorrow cycle phase and trend-conditioned outlook.
-3. Add next-phase preview based on days to phase transition.
-4. Derive confidence level from context confidence score.
-5. Return forecast block with transparent confidence messaging.
+2. If `checkForecastEligibility` fails, return warmup / locked payload (and cache it for the UTC day).
+3. Else compute tomorrow outlook, next-phase preview, PMS block, etc.
+4. Optionally call `generateForecastWithGpt` only when `logsCount >= 7`, mode is personalized, and confidence is not `low`.
+5. Return forecast JSON (partially cached per UTC day; `transitionWarmup` recomputed on read when needed).
 
 ## 7.5 Chat Flow
 
@@ -269,13 +279,12 @@ Failure fallback: when AI is not configured, chat returns a configuration guidan
 
 ## 8. Data Model Design
 
-Prisma schema defines four main entities:
+Prisma schema defines core entities (see `prisma/schema.prisma` for the full list, including `InsightCache`, `CycleHistory`, `HealthPatternCache`, etc.):
 
 ### 8.1 `User`
 - identity: optional unique `email`, optional `passwordHash` (email/password users), optional unique `googleId` (Google users)
-- profile data: demographic + cycle baseline
-- owns logs, chat messages, and refresh tokens
-- `cycleLength` defaults to 28 days
+- profile: `name`, `age`, `height`, `weight`, `cycleLength` (default 28), `lastPeriodStart`, optional `contraceptiveMethod`, `cycleRegularity`, derived `cycleMode`, optional `fcmToken`, optional `contraceptionChangedAt` (contraception transition / warmup)
+- owns logs, chat messages, refresh tokens, insight caches, memories, cycle history, health cache
 
 ### 8.2 `DailyLog`
 - flexible daily wellness/behavior/symptom fields
@@ -299,6 +308,9 @@ Prisma schema defines four main entities:
 User (1) ---- (N) DailyLog
 User (1) ---- (N) ChatMessage
 User (1) ---- (N) RefreshToken
+User (1) ---- (N) InsightCache
+User (1) ---- (N) CycleHistory
+... (see schema for InsightMemory, InsightHistory, HealthPatternCache)
 ```
 
 On user deletion, dependent rows cascade delete.
@@ -331,7 +343,7 @@ For deeper rules and semantics, refer to `INSIGHTS_SYSTEM.md`.
 
 ### 10.1 Authentication
 - JWT Bearer auth on protected routes.
-- Access token TTL is 15 minutes.
+- Access token TTL is **1 day** (`ACCESS_TOKEN_TTL` in `src/utils/jwt.ts`).
 - Refresh token validity is 30 days, persisted server-side.
 - Passwords stored as bcrypt hashes; API responses never include `passwordHash`.
 - Google Sign-In: ID tokens validated with `google-auth-library` and `GOOGLE_CLIENT_ID` as audience.
@@ -341,7 +353,7 @@ For deeper rules and semantics, refer to `INSIGHTS_SYSTEM.md`.
 - Controllers query by authenticated user context for row-level isolation.
 
 ### 10.3 Current Security Gaps (Known)
-- No rate limiting or brute-force mitigation on login endpoints.
+- Rate limiting exists on register/login (`authLoginRegisterLimiter`); broader abuse controls still limited.
 - No refresh token rotation on use.
 - No dedicated logout/revoke endpoint in API.
 - `JWT_SECRET` has a permissive dev fallback if env var missing.

@@ -195,14 +195,13 @@ Fallback behavior:
 
 ## 11) AI Interpretation Layer
 
-AI endpoint usage is optional (`OPENAI_API_KEY`).
+AI usage is optional (`OPENAI_API_KEY`).
 
-The model receives:
+**Daily insights:** On each `InsightCache` miss, the controller attempts `generateInsightsWithGpt` when the OpenAI client exists. There is no log-count gate at the controller level; the deterministic draft is always computed first and remains the fallback if the client is missing or the call fails validation.
 
-- full structured context
-- primary + secondary priority drivers
-- priority reason
-- deterministic draft fallback
+**Forecast:** GPT rewrite for forecast text runs only under stricter conditions (see `INSIGHTS_FLOW_DETAILED.md` §9).
+
+The model receives structured context (via `VyanaContext` where built), priority signals, and the deterministic draft.
 
 Prompt constraints enforce:
 
@@ -218,7 +217,7 @@ If parsing/validation fails, deterministic insight output is returned.
 
 ## 12) Forecast Layer (`/api/insights/forecast`)
 
-Forecast is deterministic and grounded in current context.
+The forecast **payload** is built deterministically (tomorrow / next phase / PMS block / eligibility warmup). Selected text fields may be **rewritten by GPT** when eligibility rules pass (see §11 and `INSIGHTS_FLOW_DETAILED.md` §9).
 
 Output includes:
 
