@@ -35,26 +35,36 @@ export async function saveLog(req: Request, res: Response): Promise<void> {
     padsChanged,
   } = req.body;
 
-  const log = await prisma.dailyLog.create({
-    data: {
-      userId: req.userId!,
-      mood,
-      energy,
-      sleep,
-      stress,
-      diet,
-      exercise,
-      activity,
-      symptoms,
-      focus,
-      motivation,
-      pain,
-      social,
-      cravings,
-      fatigue,
-      padsChanged,
-    },
+  const todayStart = new Date();
+  todayStart.setUTCHours(0, 0, 0, 0);
+  const todayEnd = new Date();
+  todayEnd.setUTCHours(23, 59, 59, 999);
+
+  const existingLog = await prisma.dailyLog.findFirst({
+    where: { userId: req.userId!, date: { gte: todayStart, lte: todayEnd } },
   });
+
+  const logData = {
+    mood,
+    energy,
+    sleep,
+    stress,
+    diet,
+    exercise,
+    activity,
+    symptoms,
+    focus,
+    motivation,
+    pain,
+    social,
+    cravings,
+    fatigue,
+    padsChanged,
+  };
+
+  const log = existingLog
+    ? await prisma.dailyLog.update({ where: { id: existingLog.id }, data: logData })
+    : await prisma.dailyLog.create({ data: { userId: req.userId!, ...logData } });
 
   // Invalidate insight and health pattern caches so next fetch recomputes with fresh data
   await prisma.insightCache.deleteMany({

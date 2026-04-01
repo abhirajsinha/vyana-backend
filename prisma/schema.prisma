@@ -131,6 +131,7 @@ model InsightHistory {
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt(sort: Desc)])
+  @@index([userId, driver, cycleDay])
 }
 
 model CycleHistory {

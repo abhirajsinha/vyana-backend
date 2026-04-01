@@ -12,12 +12,14 @@ import healthRoutes from "./routes/health";
 import homeRoutes from "./routes/home";
 import calendarRoutes from "./routes/calendar";
 import { errorHandler, notFound } from "./middleware/errorHandler";
+import { generalApiLimiter } from "./middleware/rateLimit";
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
 
 app.use(cors());
 app.use(express.json());
+app.use("/api", generalApiLimiter);
 
 app.get("/health", (_req, res) => {
   res.json({ ok: true, service: "vyana-backend" });

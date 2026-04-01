@@ -216,8 +216,18 @@ export async function handleContraceptionTransition(params: {
         where: { id: userId },
         data: { lastPeriodStart: new Date(), contraceptionChangedAt: new Date() },
       });
+    } else if (transitionType === "hormonal_to_natural") {
+      // After stopping hormonal contraception, cycles are almost always irregular
+      // for 3-6 months. Force irregularity expectation.
+      await prisma.user.update({
+        where: { id: userId },
+        data: {
+          contraceptionChangedAt: new Date(),
+          cycleRegularity: "not_sure",
+        },
+      });
     } else {
-      // hormonal_to_natural or hormonal_to_hormonal
+      // hormonal_to_hormonal
       await prisma.user.update({
         where: { id: userId },
         data: { contraceptionChangedAt: new Date() },

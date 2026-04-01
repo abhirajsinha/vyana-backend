@@ -65,6 +65,10 @@ export async function updateProfile(req: Request, res: Response): Promise<void> 
       res.status(400).json({ error: "Invalid lastPeriodStart date" });
       return;
     }
+    if (parsed > new Date()) {
+      res.status(400).json({ error: "lastPeriodStart cannot be in the future" });
+      return;
+    }
   }
 
   const validRegularities = ["regular", "irregular", "not_sure"];

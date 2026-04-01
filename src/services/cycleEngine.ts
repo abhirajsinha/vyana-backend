@@ -46,14 +46,19 @@ export function calculateCycleInfoForDate(
 ): CycleInfo {
   const diffMs = toUTCDateOnly(targetDate) - toUTCDateOnly(lastPeriodStart);
   const diffDays = Math.round(diffMs / 86400000);
-  const normalized = ((diffDays % cycleLength) + cycleLength) % cycleLength;
-  const currentDay = normalized + 1;
-  const phase = calculatePhaseFromCycleLength(currentDay, cycleLength, cycleMode);
-  const daysUntilNextPhase = getDaysUntilNextPhase(currentDay, phase, cycleLength, cycleMode);
-  const daysUntilNextPeriod = cycleLength - currentDay + 1;
+
+  // When past the expected cycle length, don't wrap — keep counting up
+  // and hold phase at "luteal" (last phase before expected period).
+  const isOverdue = diffDays >= cycleLength;
+  const currentDay = isOverdue ? diffDays + 1 : ((diffDays % cycleLength) + cycleLength) % cycleLength + 1;
+  const phase = isOverdue ? "luteal" as Phase : calculatePhaseFromCycleLength(currentDay, cycleLength, cycleMode);
+  const daysUntilNextPhase = isOverdue ? 0 : getDaysUntilNextPhase(currentDay, phase, cycleLength, cycleMode);
+  const daysUntilNextPeriod = isOverdue ? 0 : cycleLength - currentDay + 1;
   const nextPeriodDate = new Date(targetDate);
-  nextPeriodDate.setDate(nextPeriodDate.getDate() + daysUntilNextPeriod);
-  const phaseStart = getPhaseStartDay(phase, cycleLength, cycleMode);
+  if (!isOverdue) {
+    nextPeriodDate.setDate(nextPeriodDate.getDate() + daysUntilNextPeriod);
+  }
+  const phaseStart = isOverdue ? currentDay : getPhaseStartDay(phase, cycleLength, cycleMode);
 
   return {
     currentDay,

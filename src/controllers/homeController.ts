@@ -129,29 +129,76 @@ function buildContent(params: {
   cyclePredictionConfidence: string;
   showPhaseInsights: boolean;
   contraceptionNote: string | null;
+  isLearning?: boolean;
+  isExtendedCycle?: boolean;
 }): Omit<HomeScreenContent, "quickLogFields" | "ctaLogPhase" | "isHormonalMode"> {
   const { phase, cycleDay, cycleLength, isPeriodDelayed, daysOverdue,
-    isIrregular, cyclePredictionConfidence, showPhaseInsights, contraceptionNote } = params;
+    isIrregular, cyclePredictionConfidence, showPhaseInsights, contraceptionNote,
+    isLearning, isExtendedCycle } = params;
 
   const dayPhaseLabel = showPhaseInsights
     ? `Day ${cycleDay} · ${phaseLabel(phase)}`
     : `Day ${cycleDay}`;
 
-  // ── DELAYED PERIOD ────────────────────────────────────────────────────────
+  // ── DELAYED PERIOD — tiered messaging ───────────────────────────────────
   if (isPeriodDelayed) {
+    let subtitle: string;
+    let reassurance: string;
+    if (daysOverdue <= 3) {
+      subtitle = isIrregular
+        ? "Late periods are more common with irregular cycles — this doesn't always mean something is wrong."
+        : "Cycles can shift by a few days — that's completely normal.";
+      reassurance = "This can happen — stress, travel, diet can shift things. Keep logging how you feel.";
+    } else if (daysOverdue <= 7) {
+      subtitle = "If you're concerned, a pregnancy test or doctor visit might help.";
+      reassurance = "Most late periods arrive within a week, but it's okay to check in with a doctor if you're worried.";
+    } else if (daysOverdue <= 14) {
+      subtitle = "Your period is significantly late. Consider a pregnancy test or checking in with your doctor.";
+      reassurance = "A delay this long is worth looking into — a doctor can help rule things out.";
+    } else {
+      subtitle = "Your period is more than two weeks late. We'd recommend seeing a doctor.";
+      reassurance = "A delay of this length deserves medical attention. Please consult your healthcare provider.";
+    }
+
     return {
       title: daysOverdue === 1 ? "Your period is a day late" : `${daysOverdue} days late`,
-      subtitle: isIrregular
-        ? "Late periods are more common with irregular cycles — this doesn't always mean something is wrong."
-        : "Cycles can shift by a few days — that's completely normal.",
+      subtitle,
       cardHeadline: "Your body may just need a little more time",
       dayPhaseLabel,
-      reassurance: daysOverdue <= 5
-        ? "Most late periods arrive within a week. Keep logging how you feel."
-        : "If your period is more than 7 days late and you're concerned, it's worth checking in with a doctor.",
+      reassurance,
       ctaText: "Log how you're feeling →",
       phase, cycleDay, cycleLength,
       isPeriodDelayed: true, daysOverdue,
+      cyclePredictionConfidence, isIrregular, contraceptionNote,
+    };
+  }
+
+  // ── EXTENDED CYCLE — irregular user day 50+ ──────────────────────────────
+  if (isExtendedCycle) {
+    return {
+      title: "It's been a while",
+      subtitle: "It's been a while since your last period — has it started?",
+      cardHeadline: "Keep logging how you feel",
+      dayPhaseLabel: `Day ${cycleDay}`,
+      reassurance: "With irregular cycles, longer gaps can happen — but it's worth keeping track.",
+      ctaText: "Log how you're feeling →",
+      phase, cycleDay, cycleLength,
+      isPeriodDelayed: false, daysOverdue: 0,
+      cyclePredictionConfidence, isIrregular, contraceptionNote,
+    };
+  }
+
+  // ── LEARNING STATE — irregular user, < 2 completed cycles ───────────────
+  if (isLearning) {
+    return {
+      title: "We're learning your cycle",
+      subtitle: "Keep logging and predictions will sharpen",
+      cardHeadline: "The more you log, the better we understand your patterns",
+      dayPhaseLabel: `Day ${cycleDay}`,
+      reassurance: "We need a couple of full cycles to build reliable predictions for you.",
+      ctaText: "Log how you're feeling →",
+      phase, cycleDay, cycleLength,
+      isPeriodDelayed: false, daysOverdue: 0,
       cyclePredictionConfidence, isIrregular, contraceptionNote,
     };
   }
@@ -289,6 +336,17 @@ export async function getHomeScreen(req: Request, res: Response): Promise<void> 
   const contraceptionBehavior = getContraceptionBehavior(contraceptionType);
   const isHormonalMode = !contraceptionBehavior.useNaturalCycleEngine;
 
+  // Learning state: irregular users with < 2 completed cycles shouldn't see phase labels
+  const completedCycleCount = await prisma.cycleHistory.count({
+    where: { userId: req.userId!, endDate: { not: null }, cycleLength: { not: null } },
+  });
+  const isLearning =
+    (cycleMode === "irregular" || cyclePrediction.confidence === "irregular") &&
+    completedCycleCount < 2;
+
+  // Extended cycle notice for irregular users on day 50+
+  const isExtendedCycle = cycleMode === "irregular" && rawDiffDays > 45;
+
   const content = buildContent({
     phase: cycleInfo.phase,
     cycleDay: cycleInfo.currentDay,
@@ -297,15 +355,28 @@ export async function getHomeScreen(req: Request, res: Response): Promise<void> 
     daysOverdue,
     isIrregular: cycleMode !== "hormonal" && cyclePrediction.isIrregular,
     cyclePredictionConfidence: cyclePrediction.confidence,
-    showPhaseInsights: contraceptionBehavior.useNaturalCycleEngine,
+    showPhaseInsights: contraceptionBehavior.useNaturalCycleEngine && !isLearning,
     contraceptionNote: contraceptionBehavior.contextMessage || null,
+    isLearning,
+    isExtendedCycle,
   });
 
+  // "Has your period started?" prompt when period is delayed or extended cycle
+  const periodAction = (isPeriodDelayed || isExtendedCycle)
+    ? { show: true, label: "Has your period started?", ctaText: "Log period" }
+    : null;
+
+  // During warmup, show "Day X since switching" instead of phase label
+  const finalContent = transitionWarmup?.active
+    ? { ...content, dayPhaseLabel: `Day ${transitionWarmup.daysSinceTransition + 1} since switching` }
+    : content;
+
   res.json({
-    ...content,
+    ...finalContent,
     ctaLogPhase: cycleInfo.phase,
     quickLogFields: getQuickLogFields(cycleInfo.phase, isPeriodDelayed, isHormonalMode),
     isHormonalMode,
     transitionWarmup,
+    periodAction,
   });
 }

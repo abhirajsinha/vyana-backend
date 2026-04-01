@@ -51,9 +51,13 @@ export function isCycleLengthDays(value: unknown): value is CycleLengthDays {
  */
 export const HORMONAL_CONTRACEPTIVE_METHODS = [
   "pill",
+  "combined_pill",
+  "mini_pill",
   "iud_hormonal",
   "implant",
   "injection",
+  "patch",
+  "ring",
 ] as const;
 
 export type HormonalContraceptiveMethod = (typeof HORMONAL_CONTRACEPTIVE_METHODS)[number];

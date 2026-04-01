@@ -5,6 +5,7 @@ import { hashPassword, MIN_PASSWORD_LENGTH, verifyPassword } from "../utils/pass
 import { toPublicUser } from "../utils/userPublic";
 import { verifyGoogleIdToken } from "../services/googleAuthService";
 import { getCycleMode } from "../services/cycleEngine";
+import { isSuppressingNaturalCycle } from "../services/contraceptionengine";
 import { isCycleLengthDays } from "../types/cycleUser";
 
 async function issueTokens(userId: string) {
@@ -46,7 +47,9 @@ export async function register(req: Request, res: Response): Promise<void> {
     res.status(400).json({ error: `password must be at least ${MIN_PASSWORD_LENGTH} characters` });
     return;
   }
-  if (!name || !age || !height || !weight || !lastPeriodStart) {
+  const isHormonal = typeof contraceptiveMethod === "string" && isSuppressingNaturalCycle(contraceptiveMethod);
+
+  if (!name || !age || !height || !weight || (!lastPeriodStart && !isHormonal)) {
     res.status(400).json({ error: "Missing required fields" });
     return;
   }
@@ -58,6 +61,17 @@ export async function register(req: Request, res: Response): Promise<void> {
   }
   if (!isCycleLengthDays(cycleLength)) {
     res.status(400).json({ error: "Cycle length must be between 21 and 45 days" });
+    return;
+  }
+
+  // For hormonal users, lastPeriodStart is optional — default to today
+  const parsedLastPeriodStart = lastPeriodStart ? new Date(lastPeriodStart) : new Date();
+  if (lastPeriodStart && Number.isNaN(parsedLastPeriodStart.getTime())) {
+    res.status(400).json({ error: "Invalid lastPeriodStart date" });
+    return;
+  }
+  if (parsedLastPeriodStart > new Date()) {
+    res.status(400).json({ error: "lastPeriodStart cannot be in the future" });
     return;
   }
 
@@ -84,7 +98,7 @@ export async function register(req: Request, res: Response): Promise<void> {
       height: Number(height),
       weight: Number(weight),
       cycleLength: Number(cycleLength),
-      lastPeriodStart: new Date(lastPeriodStart),
+      lastPeriodStart: parsedLastPeriodStart,
       contraceptiveMethod:
         typeof contraceptiveMethod === "string" ? contraceptiveMethod : null,
       cycleRegularity:
@@ -143,12 +157,25 @@ export async function googleAuth(req: Request, res: Response): Promise<void> {
     res.status(400).json({ error: "idToken is required" });
     return;
   }
-  if (!age || !height || !weight || !lastPeriodStart) {
+  const isHormonalGoogle = typeof contraceptiveMethod === "string" && isSuppressingNaturalCycle(contraceptiveMethod);
+
+  if (!age || !height || !weight || (!lastPeriodStart && !isHormonalGoogle)) {
     res.status(400).json({ error: "Missing required profile fields" });
     return;
   }
   if (!isCycleLengthDays(cycleLength)) {
     res.status(400).json({ error: "Cycle length must be between 21 and 45 days" });
+    return;
+  }
+
+  // For hormonal users, lastPeriodStart is optional — default to today
+  const parsedLastPeriodStartGoogle = lastPeriodStart ? new Date(lastPeriodStart) : new Date();
+  if (lastPeriodStart && Number.isNaN(parsedLastPeriodStartGoogle.getTime())) {
+    res.status(400).json({ error: "Invalid lastPeriodStart date" });
+    return;
+  }
+  if (parsedLastPeriodStartGoogle > new Date()) {
+    res.status(400).json({ error: "lastPeriodStart cannot be in the future" });
     return;
   }
 
@@ -217,7 +244,7 @@ export async function googleAuth(req: Request, res: Response): Promise<void> {
       height: Number(height),
       weight: Number(weight),
       cycleLength: Number(cycleLength),
-      lastPeriodStart: new Date(lastPeriodStart),
+      lastPeriodStart: parsedLastPeriodStartGoogle,
       contraceptiveMethod:
         typeof contraceptiveMethod === "string" ? contraceptiveMethod : null,
       cycleRegularity:

@@ -278,6 +278,14 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     cycleMode !== "hormonal";
   const isIrregular = cycleMode !== "hormonal" && cyclePrediction.isIrregular;
 
+  // Learning state: irregular users with < 2 completed cycles shouldn't see phase-based insights
+  const isLearning =
+    (cycleMode === "irregular" || cyclePrediction.confidence === "irregular") &&
+    completedCycleCount < 2;
+
+  // Extended cycle notice for irregular users on day 50+
+  const isExtendedCycle = cycleMode === "irregular" && rawDiffDays > 45;
+
   const cycleInfo = calculateCycleInfo(
     user.lastPeriodStart,
     effectiveCycleLength,
@@ -470,14 +478,22 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     };
   }
 
-  // Delayed period — override insight content
+  // Delayed period — tiered override based on days overdue
   if (isPeriodDelayed) {
+    let physicalInsight: string;
+    if (daysOverdue <= 3) {
+      physicalInsight = "Your period is a little late — this can happen with stress, travel, or lifestyle changes.";
+    } else if (daysOverdue <= 7) {
+      physicalInsight = `Your period is ${daysOverdue} days late. If you're concerned, a pregnancy test or doctor visit might help.`;
+    } else if (daysOverdue <= 14) {
+      physicalInsight = `Your period is ${daysOverdue} days late — that's significantly late. Consider a pregnancy test or checking in with your doctor.`;
+    } else {
+      physicalInsight = `Your period is more than two weeks late (${daysOverdue} days). We'd recommend seeing a doctor.`;
+    }
+
     draftInsights = {
       ...draftInsights,
-      physicalInsight:
-        daysOverdue <= 3
-          ? "Your period is a little late — this can happen with stress, travel, or lifestyle changes."
-          : `Your period is ${daysOverdue} days late. If you're concerned, it's worth checking in with a doctor.`,
+      physicalInsight,
       emotionalInsight:
         "It's natural to feel uncertain when your cycle doesn't follow the expected pattern.",
       whyThisIsHappening: isIrregular
@@ -966,6 +982,11 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     },
   };
 
+  // "Has your period started?" prompt when period is delayed or extended cycle
+  const periodAction = (isPeriodDelayed || isExtendedCycle)
+    ? { show: true, label: "Has your period started?", ctaText: "Log period" }
+    : null;
+
   // Client response
   const responsePayload = {
     cycleDay: cachePayload.cycleDay,
@@ -975,10 +996,13 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     isPeriodDelayed: cachePayload.isPeriodDelayed,
     daysOverdue: cachePayload.daysOverdue,
     isIrregular: cachePayload.isIrregular,
+    isLearning,
+    isExtendedCycle,
     insights: cachePayload.insights,
     view: cachePayload.view,
     aiEnhanced: cachePayload.aiEnhanced,
     transitionWarmup,
+    periodAction,
   };
 
   if (driverForMemory && context.mode === "personalized") {

@@ -209,7 +209,16 @@ export async function getCalendar(req: Request, res: Response): Promise<void> {
 
   const contraceptionType = resolveContraceptionType(user.contraceptiveMethod);
   const contraceptionBehavior = getContraceptionBehavior(contraceptionType);
-  const showPhaseInsights = contraceptionBehavior.useNaturalCycleEngine;
+
+  // Learning state: irregular users with < 2 completed cycles shouldn't see phase labels
+  const completedCycleCount = await prisma.cycleHistory.count({
+    where: { userId: req.userId!, endDate: { not: null }, cycleLength: { not: null } },
+  });
+  const isLearning =
+    (cycleMode === "irregular" || cyclePrediction.confidence === "irregular") &&
+    completedCycleCount < 2;
+
+  const showPhaseInsights = contraceptionBehavior.useNaturalCycleEngine && !isLearning;
 
   const now = new Date();
   const todayIso = now.toISOString().split("T")[0]!;

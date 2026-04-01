@@ -42,14 +42,38 @@ export async function periodStarted(req: Request, res: Response): Promise<void> 
     return;
   }
 
+  // Reject future dates
+  if (startDate > new Date()) {
+    res.status(400).json({ error: "Period start date cannot be in the future" });
+    return;
+  }
+
+  // Duplicate guard — prevent logging period started twice on the same day
+  const startOfDay = new Date(startDate);
+  startOfDay.setUTCHours(0, 0, 0, 0);
+  const endOfDay = new Date(startDate);
+  endOfDay.setUTCHours(23, 59, 59, 999);
+  const existingForDay = await prisma.cycleHistory.findFirst({
+    where: { userId: req.userId!, startDate: { gte: startOfDay, lte: endOfDay } },
+  });
+  if (existingForDay) {
+    res.status(409).json({ error: "Period already logged for this date" });
+    return;
+  }
+
+  const cycleMode = getCycleMode(user);
+
   const latestHistory = await prisma.cycleHistory.findFirst({
     where: { userId: req.userId! },
     orderBy: { startDate: "desc" },
   });
 
   if (latestHistory && !latestHistory.endDate && startDate > latestHistory.startDate) {
-    const ms = startDate.getTime() - latestHistory.startDate.getTime();
-    const cycleLen = Math.max(1, Math.round(ms / 86400000));
+    // Hormonal users log withdrawal bleeds, not natural periods.
+    // Don't store a calculated cycleLength — it would pollute prediction averages.
+    const cycleLen = cycleMode === "hormonal"
+      ? null
+      : Math.max(1, Math.round((startDate.getTime() - latestHistory.startDate.getTime()) / 86400000));
     await prisma.cycleHistory.update({
       where: { id: latestHistory.id },
       data: {
@@ -66,7 +90,6 @@ export async function periodStarted(req: Request, res: Response): Promise<void> 
     },
   });
 
-  const cycleMode = getCycleMode(user);
   await prisma.user.update({
     where: { id: req.userId! },
     data: {
