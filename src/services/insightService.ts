@@ -882,3 +882,159 @@ export function generateRuleBasedInsights(ctx: InsightContext): DailyInsights {
     ).tomorrowPreview,
   };
 }
+
+// ─── Zero-data / low-data language tier system ──────────────────────────────
+
+/**
+ * Rewrites assertive insight text into suggestive/phase-educational language
+ * for users with zero logged data. We know their cycle day and phase but
+ * nothing about how they actually feel.
+ */
+function rewriteForZeroData(insights: DailyInsights, phase: Phase, cycleDay: number): DailyInsights {
+  const soften = (text: string): string =>
+    text
+      // State assertions → suggestions
+      .replace(/\bYou feel\b/gi, "You may feel")
+      .replace(/\bYou are feeling\b/gi, "You might be feeling")
+      .replace(/\bEnergy is\b/gi, "Energy can feel")
+      .replace(/\bFocus is\b/gi, "Focus might be")
+      .replace(/\bMood is\b/gi, "Mood may be")
+      .replace(/\bYour body is doing\b/gi, "Your body may be going through")
+      .replace(/\bYou might feel low energy today\b/gi, "Energy can still feel lower toward the end of your period")
+      .replace(/\bYou might feel more stable today\b/gi, "Things may start to feel more stable around this time")
+      .replace(/\bYou might feel more active today\b/gi, "Many people start to feel more active around this time")
+      .replace(/\bYou might feel confident today\b/gi, "Confidence and energy tend to build around this time")
+      .replace(/\bYou might feel more sensitive today\b/gi, "Sensitivity can increase around this part of the cycle")
+      .replace(/\bYou might feel confident and energised\b/gi, "This is often a higher-energy window in the cycle")
+      .replace(/\bYou might feel balanced today\b/gi, "Things may start to feel more balanced around this time")
+      .replace(/\bYou may feel drained today\b/gi, "It's common to feel more drained around this time")
+      .replace(/\bYou may feel more calm today\b/gi, "Many people feel calmer around this time")
+      .replace(/\bYou might feel more reflective today\b/gi, "This part of the cycle can bring a more reflective mood")
+      // Remove "today" specificity — we don't know about today
+      .replace(/\btoday\b/gi, "around this time")
+      .replace(/\bright now\b/gi, "during this phase")
+      // Technical → accessible
+      .replace(/\bhormone floor\b/gi, "lowest hormone levels")
+      .replace(/\bhormone floor recedes\b/gi, "hormone levels begin stabilizing")
+      .replace(/\bYour hormone floor\b/gi, "Hormone levels around this time")
+      .trim();
+
+  return {
+    physicalInsight: soften(insights.physicalInsight),
+    mentalInsight: soften(insights.mentalInsight),
+    emotionalInsight: soften(insights.emotionalInsight),
+    whyThisIsHappening: soften(insights.whyThisIsHappening),
+    solution: soften(insights.solution),
+    recommendation: soften(insights.recommendation),
+    tomorrowPreview: soften(insights.tomorrowPreview),
+  };
+}
+
+/**
+ * Softens insight language based on how much data we have.
+ * - 0 logs: full suggestive rewrite (Tier 1)
+ * - 1-4 logs: light softening via low-confidence treatment (Tier 2)
+ * - 5+ logs: return as-is — already personalized (Tier 3)
+ */
+export function softenForConfidenceTier(
+  insights: DailyInsights,
+  logsCount: number,
+  phase: Phase,
+  cycleDay: number,
+): DailyInsights {
+  // Tier 3: 5+ logs — return as-is (already personalized)
+  if (logsCount >= 5) return insights;
+
+  // Tier 2: 1-4 logs — light softening (replace "is" with "may be" style)
+  if (logsCount >= 1) {
+    const lightSoften = (text: string): string =>
+      text
+        .replace(/\bYou feel\b/gi, "Based on your recent log, you may feel")
+        .replace(/\bEnergy is\b/gi, "Energy may be")
+        .replace(/\bFocus is\b/gi, "Focus may be")
+        .replace(/\bYour sleep has been\b/gi, "Your latest log suggests sleep has been")
+        .replace(/\bStress has been\b/gi, "Your recent entry suggests stress has been")
+        .replace(/\bYour pattern shows\b/gi, "Your recent log suggests")
+        .replace(/\bOver the last few days\b/gi, "Based on your recent log");
+    return {
+      physicalInsight: lightSoften(insights.physicalInsight),
+      mentalInsight: lightSoften(insights.mentalInsight),
+      emotionalInsight: lightSoften(insights.emotionalInsight),
+      whyThisIsHappening: lightSoften(insights.whyThisIsHappening),
+      solution: lightSoften(insights.solution),
+      recommendation: lightSoften(insights.recommendation),
+      tomorrowPreview: lightSoften(insights.tomorrowPreview),
+    };
+  }
+
+  // Tier 1: 0 logs — full suggestive rewrite
+  return rewriteForZeroData(insights, phase, cycleDay);
+}
+
+// ─── Momentum protection ────────────────────────────────────────────────────
+
+const POSITIVE_MOOD = new Set(["good", "positive", "happy", "great", "calm"]);
+const NEGATIVE_MOOD = new Set(["bad", "low", "sad", "terrible", "awful"]);
+const LOW_STRESS = new Set(["low", "calm", "mild"]);
+const HIGH_STRESS = new Set(["high", "elevated", "severe"]);
+
+/**
+ * Detects if a user has a positive streak broken by a single bad day.
+ * Returns a narrative override if momentum break is detected.
+ */
+export function detectMomentumBreak(
+  recentLogs: Pick<DailyLog, "mood" | "stress" | "sleep" | "energy">[]
+): { isMomentumBreak: boolean; streakDays: number } {
+  if (recentLogs.length < 5) return { isMomentumBreak: false, streakDays: 0 };
+
+  const today = recentLogs[0];
+  const previous = recentLogs.slice(1, 5);
+
+  // Check if today is a negative day
+  const todayMood = today?.mood?.trim().toLowerCase() ?? "";
+  const todayStress = today?.stress?.trim().toLowerCase() ?? "";
+  const todayNegative =
+    NEGATIVE_MOOD.has(todayMood) ||
+    HIGH_STRESS.has(todayStress) ||
+    (typeof today?.sleep === "number" && today.sleep < 5);
+
+  if (!todayNegative) return { isMomentumBreak: false, streakDays: 0 };
+
+  // Check if previous 4+ days were positive
+  let streakDays = 0;
+  for (const log of previous) {
+    const mood = log.mood?.trim().toLowerCase() ?? "";
+    const stress = log.stress?.trim().toLowerCase() ?? "";
+    const isPositive =
+      (POSITIVE_MOOD.has(mood) || mood === "neutral") &&
+      (LOW_STRESS.has(stress) || stress === "moderate") &&
+      (typeof log.sleep !== "number" || log.sleep >= 6);
+
+    if (isPositive) {
+      streakDays++;
+    } else {
+      break;
+    }
+  }
+
+  return {
+    isMomentumBreak: streakDays >= 4,
+    streakDays,
+  };
+}
+
+/**
+ * Applies momentum-aware framing to insights when a positive streak
+ * is broken by a single bad day.
+ */
+export function applyMomentumBreakNarrative(
+  insights: DailyInsights,
+  streakDays: number,
+): DailyInsights {
+  return {
+    ...insights,
+    physicalInsight: `Today feels rougher than your recent ${streakDays}-day streak — that's a real contrast, and your body is noticing it.`,
+    emotionalInsight: `One harder day doesn't erase the good stretch you've had — it just feels sharper because you've been doing well.`,
+    whyThisIsHappening: `After ${streakDays} solid days, a dip like this stands out more. It doesn't mean the pattern is breaking — it's just one off day.`,
+  };
+}

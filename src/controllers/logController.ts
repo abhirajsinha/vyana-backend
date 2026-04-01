@@ -14,6 +14,33 @@ import {
   resolveContraceptionType,
 } from "../services/contraceptionengine";
 
+// ─── Input validation constants ─────────────────────────────────────────────
+
+const VALID_MOOD = new Set(["great", "good", "okay", "low", "bad", "terrible", "happy", "sad", "anxious", "calm", "irritable", "neutral", "positive", "negative", "stressed"]);
+const VALID_ENERGY = new Set(["low", "medium", "high", "very_low", "very_high"]);
+const VALID_STRESS = new Set(["low", "moderate", "high", "calm", "mild", "elevated", "severe"]);
+
+function validateLogFields(body: Record<string, unknown>): string | null {
+  if (body.sleep !== undefined) {
+    const s = Number(body.sleep);
+    if (!Number.isFinite(s) || s < 0 || s > 24) return "sleep must be between 0 and 24";
+  }
+  if (body.padsChanged !== undefined) {
+    const p = Number(body.padsChanged);
+    if (!Number.isFinite(p) || p < 0 || p > 50) return "padsChanged must be between 0 and 50";
+  }
+  if (body.mood !== undefined && typeof body.mood === "string") {
+    if (!VALID_MOOD.has(body.mood.trim().toLowerCase())) return `Invalid mood value: ${body.mood}`;
+  }
+  if (body.energy !== undefined && typeof body.energy === "string") {
+    if (!VALID_ENERGY.has(body.energy.trim().toLowerCase())) return `Invalid energy value: ${body.energy}`;
+  }
+  if (body.stress !== undefined && typeof body.stress === "string") {
+    if (!VALID_STRESS.has(body.stress.trim().toLowerCase())) return `Invalid stress value: ${body.stress}`;
+  }
+  return null;
+}
+
 // ─── saveLog — IDENTICAL TO YOUR CURRENT VERSION ─────────────────────────────
 
 export async function saveLog(req: Request, res: Response): Promise<void> {
@@ -34,6 +61,12 @@ export async function saveLog(req: Request, res: Response): Promise<void> {
     fatigue,
     padsChanged,
   } = req.body;
+
+  const validationError = validateLogFields(req.body);
+  if (validationError) {
+    res.status(400).json({ error: validationError });
+    return;
+  }
 
   const todayStart = new Date();
   todayStart.setUTCHours(0, 0, 0, 0);
@@ -99,6 +132,120 @@ export async function getLogs(req: Request, res: Response): Promise<void> {
   });
 
   res.json(logs);
+}
+
+// ─── editLog — PUT /api/logs/:id ────────────────────────────────────────────
+
+export async function editLog(req: Request, res: Response): Promise<void> {
+  const id = req.params.id as string;
+  if (!id) {
+    res.status(400).json({ error: "Log ID is required" });
+    return;
+  }
+
+  const existing = await prisma.dailyLog.findUnique({ where: { id } });
+  if (!existing) {
+    res.status(404).json({ error: "Log not found" });
+    return;
+  }
+  if (existing.userId !== req.userId) {
+    res.status(403).json({ error: "Not authorized to edit this log" });
+    return;
+  }
+
+  const {
+    mood, energy, sleep, stress, diet, exercise, activity,
+    symptoms, focus, motivation, pain, social, cravings, fatigue, padsChanged,
+  } = req.body;
+
+  const editValidationError = validateLogFields(req.body);
+  if (editValidationError) {
+    res.status(400).json({ error: editValidationError });
+    return;
+  }
+
+  const updateData: Record<string, unknown> = {};
+  if (mood !== undefined) updateData.mood = mood;
+  if (energy !== undefined) updateData.energy = energy;
+  if (sleep !== undefined) updateData.sleep = sleep;
+  if (stress !== undefined) updateData.stress = stress;
+  if (diet !== undefined) updateData.diet = diet;
+  if (exercise !== undefined) updateData.exercise = exercise;
+  if (activity !== undefined) updateData.activity = activity;
+  if (symptoms !== undefined) updateData.symptoms = symptoms;
+  if (focus !== undefined) updateData.focus = focus;
+  if (motivation !== undefined) updateData.motivation = motivation;
+  if (pain !== undefined) updateData.pain = pain;
+  if (social !== undefined) updateData.social = social;
+  if (cravings !== undefined) updateData.cravings = cravings;
+  if (fatigue !== undefined) updateData.fatigue = fatigue;
+  if (padsChanged !== undefined) updateData.padsChanged = padsChanged;
+
+  if (Object.keys(updateData).length === 0) {
+    res.status(400).json({ error: "No fields to update" });
+    return;
+  }
+
+  const updated = await prisma.dailyLog.update({
+    where: { id },
+    data: updateData,
+  });
+
+  // Invalidate caches so next fetch recomputes
+  await prisma.insightCache.deleteMany({ where: { userId: req.userId! } });
+  await prisma.healthPatternCache.deleteMany({ where: { userId: req.userId! } }).catch(() => {});
+
+  res.json({ success: true, log: updated });
+}
+
+// ─── quickCheckIn — POST /api/logs/quick-check-in ───────────────────────────
+
+export async function quickCheckIn(req: Request, res: Response): Promise<void> {
+  const { mood, energy, sleep, stress, pain, fatigue } = req.body;
+
+  // Validate at least one field is provided
+  if (
+    mood === undefined && energy === undefined && sleep === undefined &&
+    stress === undefined && pain === undefined && fatigue === undefined
+  ) {
+    res.status(400).json({ error: "At least one field is required" });
+    return;
+  }
+
+  // Validate ranges
+  const quickValidationError = validateLogFields(req.body);
+  if (quickValidationError) {
+    res.status(400).json({ error: quickValidationError });
+    return;
+  }
+
+  const todayStart = new Date();
+  todayStart.setUTCHours(0, 0, 0, 0);
+  const todayEnd = new Date();
+  todayEnd.setUTCHours(23, 59, 59, 999);
+
+  const existingLog = await prisma.dailyLog.findFirst({
+    where: { userId: req.userId!, date: { gte: todayStart, lte: todayEnd } },
+  });
+
+  const logData: Record<string, unknown> = {};
+  const fieldsLogged: string[] = [];
+  if (mood !== undefined) { logData.mood = mood; fieldsLogged.push("mood"); }
+  if (energy !== undefined) { logData.energy = energy; fieldsLogged.push("energy"); }
+  if (sleep !== undefined) { logData.sleep = Number(sleep); fieldsLogged.push("sleep"); }
+  if (stress !== undefined) { logData.stress = stress; fieldsLogged.push("stress"); }
+  if (pain !== undefined) { logData.pain = pain; fieldsLogged.push("pain"); }
+  if (fatigue !== undefined) { logData.fatigue = fatigue; fieldsLogged.push("fatigue"); }
+
+  const log = existingLog
+    ? await prisma.dailyLog.update({ where: { id: existingLog.id }, data: logData })
+    : await prisma.dailyLog.create({ data: { userId: req.userId!, ...logData } });
+
+  // Invalidate caches
+  await prisma.insightCache.deleteMany({ where: { userId: req.userId! } });
+  await prisma.healthPatternCache.deleteMany({ where: { userId: req.userId! } }).catch(() => {});
+
+  res.status(201).json({ success: true, fieldsLogged, log });
 }
 
 // ─── Quick log field definitions ─────────────────────────────────────────────

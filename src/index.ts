@@ -11,14 +11,17 @@ import chatRoutes from "./routes/chat";
 import healthRoutes from "./routes/health";
 import homeRoutes from "./routes/home";
 import calendarRoutes from "./routes/calendar";
+import adminRoutes from "./routes/admin";
 import { errorHandler, notFound } from "./middleware/errorHandler";
 import { generalApiLimiter } from "./middleware/rateLimit";
+import { requestLogger } from "./middleware/requestLogger";
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
 
 app.use(cors());
 app.use(express.json());
+app.use(requestLogger);
 app.use("/api", generalApiLimiter);
 
 app.get("/health", (_req, res) => {
@@ -34,6 +37,7 @@ app.use("/api/chat", chatRoutes);
 app.use("/api/health", healthRoutes);
 app.use("/api/home", homeRoutes);
 app.use("/api/calendar", calendarRoutes);
+app.use("/api/admin", adminRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

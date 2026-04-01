@@ -21,8 +21,8 @@ export async function chat(req: Request, res: Response): Promise<void> {
     res.status(400).json({ error: "message is required" });
     return;
   }
-  if (message.length > 5000) {
-    res.status(400).json({ error: "Message must not exceed 5000 characters" });
+  if (message.length > 2000) {
+    res.status(400).json({ error: "Message must not exceed 2000 characters" });
     return;
   }
 

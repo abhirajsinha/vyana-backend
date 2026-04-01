@@ -98,6 +98,28 @@ export async function periodStarted(req: Request, res: Response): Promise<void> 
     },
   });
 
+  // Clear stale insight cache so next fetch recomputes with new period start
+  await prisma.insightCache.deleteMany({ where: { userId: req.userId! } });
+
+  // Log prediction accuracy: compare predicted period date vs actual
+  if (user.lastPeriodStart && user.cycleLength && cycleMode !== "hormonal") {
+    const predictedDate = new Date(user.lastPeriodStart.getTime() + user.cycleLength * 86400000);
+    const actualDate = startDate;
+    const diffDays = Math.round((actualDate.getTime() - predictedDate.getTime()) / 86400000);
+    console.log(JSON.stringify({
+      type: "prediction_accuracy",
+      userId: req.userId,
+      predictedDate: predictedDate.toISOString().split("T")[0],
+      actualDate: actualDate.toISOString().split("T")[0],
+      errorDays: diffDays,
+      cycleLength: user.cycleLength,
+      timestamp: new Date().toISOString(),
+    }));
+  }
+
+  // Compute fresh cycle info for the response
+  const freshCycleInfo = calculateCycleInfo(startDate, user.cycleLength, cycleMode);
+
   // Trigger health pattern detection when user has 2+ completed cycles (fire-and-forget)
   const completedCycles = await prisma.cycleHistory.count({
     where: { userId: req.userId!, endDate: { not: null }, cycleLength: { not: null } },
@@ -141,7 +163,76 @@ export async function periodStarted(req: Request, res: Response): Promise<void> 
   res.status(201).json({
     success: true,
     startDate: startDate.toISOString(),
+    cycleDay: freshCycleInfo.currentDay,
+    phase: freshCycleInfo.phase,
     cycleMode,
     healthPatternCheck: healthPatternResult,
+  });
+}
+
+// ─── DELETE /api/cycle/period-started/:id — undo period logging ─────────────
+
+export async function undoPeriodStarted(req: Request, res: Response): Promise<void> {
+  const id = req.params.id as string;
+  if (!id) {
+    res.status(400).json({ error: "Cycle history ID is required" });
+    return;
+  }
+
+  const entry = await prisma.cycleHistory.findUnique({ where: { id } });
+  if (!entry) {
+    res.status(404).json({ error: "Cycle history entry not found" });
+    return;
+  }
+  if (entry.userId !== req.userId) {
+    res.status(403).json({ error: "Not authorized" });
+    return;
+  }
+
+  // Find the previous cycle to restore lastPeriodStart
+  const previousCycle = await prisma.cycleHistory.findFirst({
+    where: { userId: req.userId!, id: { not: id } },
+    orderBy: { startDate: "desc" },
+  });
+
+  // If this entry closed the previous cycle, reopen it
+  if (previousCycle && previousCycle.endDate) {
+    const prevEndMs = previousCycle.endDate.getTime();
+    const entryStartMs = entry.startDate.getTime();
+    // If the previous cycle was closed by this entry (endDate matches startDate within 1 day)
+    if (Math.abs(prevEndMs - entryStartMs) < 86400000 * 2) {
+      await prisma.cycleHistory.update({
+        where: { id: previousCycle.id },
+        data: { endDate: null, cycleLength: null },
+      });
+    }
+  }
+
+  // Delete the entry
+  await prisma.cycleHistory.delete({ where: { id } });
+
+  // Restore lastPeriodStart to the previous cycle's startDate (or leave if none)
+  const restoreDate = previousCycle?.startDate ?? entry.startDate;
+  const cycleMode = getCycleMode(
+    await prisma.user.findUniqueOrThrow({ where: { id: req.userId! } }),
+  );
+
+  await prisma.user.update({
+    where: { id: req.userId! },
+    data: { lastPeriodStart: restoreDate, cycleMode },
+  });
+
+  // Clear caches
+  await prisma.insightCache.deleteMany({ where: { userId: req.userId! } });
+  await prisma.healthPatternCache.deleteMany({ where: { userId: req.userId! } }).catch(() => {});
+
+  const freshCycleInfo = calculateCycleInfo(restoreDate, 28, cycleMode);
+
+  res.json({
+    success: true,
+    restoredLastPeriodStart: restoreDate.toISOString(),
+    cycleDay: freshCycleInfo.currentDay,
+    phase: freshCycleInfo.phase,
+    cycleMode,
   });
 }

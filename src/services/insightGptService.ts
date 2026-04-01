@@ -1,4 +1,4 @@
-import { client, OPENAI_MODEL } from "./openaiClient";
+import { client, OPENAI_MODEL, isCircuitOpen, recordGptSuccess, recordGptFailure } from "./openaiClient";
 import { DailyInsights, InsightContext, PHASE_TONE_PROMPTS } from "./insightService";
 import { type Phase, type CycleMode } from "./cycleEngine";
 import type { NumericBaseline, CrossCycleNarrative } from "./insightData";
@@ -966,6 +966,7 @@ export async function generateInsightsWithGpt(
   } = { insightMemoryCount: 0, hasCrossCycleNarrative: false },
 ): Promise<{ insights: DailyInsights; status: InsightGenerationStatus }> {
   if (!client) return { insights: draft, status: "client_missing" };
+  if (isCircuitOpen()) return { insights: draft, status: "api_error" };
 
   const contextBlock = vyanaCtx
     ? serializeVyanaContext(vyanaCtx)
@@ -1024,6 +1025,17 @@ export async function generateInsightsWithGpt(
       : insightTone === "symptom-based"
         ? "Focus only on what she is logging. No cycle-phase or hormone language."
         : "Use cycle-phase context where appropriate. Hormone context in whyThisIsHappening only.";
+
+  const zeroDataInstruction =
+    ctx.mode === "fallback" && ctx.recentLogsCount === 0
+      ? `\nZERO-DATA USER (CRITICAL):
+This user has logged ZERO days. You have NO behavioral data.
+DO NOT assert her current state. DO NOT say "you feel", "energy is lower", "focus is lower".
+Instead: describe what this PHASE typically brings, framed as tendencies, not facts.
+Use: "can feel", "may notice", "tends to", "many people find", "it's common to"
+Each insight field must describe a DIFFERENT aspect — do not repeat "energy is low" across multiple fields.
+Keep whyThisIsHappening tied to the specific day number, not generic hormone explanation.`
+      : "";
 
   const phaseVoiceInstruction =
     ctx.phase === "menstrual"
@@ -1121,6 +1133,7 @@ DO NOT use: ${toneRule.avoid}`;
 
   const userPrompt = `
 TONE: ${toneInstruction}
+${zeroDataInstruction}
 ${phaseVoiceInstruction}${phaseToneInstruction}${signalPositiveOverride}
 ${historicalClaimsBlockInstruction}
 ${primaryDriverInstruction}
@@ -1168,6 +1181,7 @@ Return strict JSON only.
 `.trim();
 
   try {
+    const gptStart = Date.now();
     const response = await client.chat.completions.create({
       model: OPENAI_MODEL,
       temperature: 0.3,
@@ -1177,6 +1191,9 @@ Return strict JSON only.
         { role: "user", content: userPrompt },
       ],
     });
+    const gptMs = Date.now() - gptStart;
+    recordGptSuccess();
+    console.log(JSON.stringify({ type: "gpt_call", fn: "rewriteInsights", durationMs: gptMs, status: "success", timestamp: new Date().toISOString() }));
     return safeParseInsightsDetailed(response.choices[0]?.message?.content, draft, {
       confidence: ctx.confidence,
       priorityDriversCount: ctx.priorityDrivers.length,
@@ -1193,6 +1210,8 @@ Return strict JSON only.
       hasHistoricalEvidence: hasHistoricalEvidenceForPrompt,
     });
   } catch {
+    recordGptFailure();
+    console.log(JSON.stringify({ type: "gpt_call", fn: "rewriteInsights", status: "error", timestamp: new Date().toISOString() }));
     return { insights: draft, status: "api_error" };
   }
 }
@@ -1279,6 +1298,7 @@ export async function generateForecastWithGpt(
   vyanaCtx?: VyanaContext,
 ): Promise<ForecastPayload> {
   if (!client) return draft;
+  if (isCircuitOpen()) return draft;
 
   const contextBlock = vyanaCtx
     ? serializeVyanaContext(vyanaCtx)
@@ -1315,6 +1335,7 @@ Return strict JSON only. Same schema.
 `.trim();
 
   try {
+    const gptStart = Date.now();
     const response = await client.chat.completions.create({
       model: OPENAI_MODEL,
       temperature: 0.25,
@@ -1328,10 +1349,15 @@ Return strict JSON only. Same schema.
         { role: "user", content: userPrompt },
       ],
     });
+    const gptMs = Date.now() - gptStart;
+    recordGptSuccess();
+    console.log(JSON.stringify({ type: "gpt_call", fn: "generateForecast", durationMs: gptMs, status: "success", timestamp: new Date().toISOString() }));
     const raw = response.choices[0]?.message?.content;
     if (!raw) return draft;
     return sanitizeForecast(JSON.parse(raw) as ForecastPayload, draft);
   } catch {
+    recordGptFailure();
+    console.log(JSON.stringify({ type: "gpt_call", fn: "generateForecast", status: "error", timestamp: new Date().toISOString() }));
     return draft;
   }
 }

@@ -35,3 +35,21 @@ export const generalApiLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: "Too many requests, please slow down." },
 });
+
+/** Insight generation rate limiter — 10 requests per minute. */
+export const insightLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many insight requests, please wait." },
+});
+
+/** Log submission rate limiter — 30 requests per minute. */
+export const logLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many log requests, please slow down." },
+});

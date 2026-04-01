@@ -53,7 +53,17 @@ export function detectPrimaryInsightCause(input: {
   trends: string[];
   sleepDelta: number | null;
   priorityDrivers?: string[];
+  recentLogs?: DailyLog[];
 }): Exclude<PrimaryInsightCause, "stable"> {
+  const last3 = (input.recentLogs ?? []).slice(0, 3);
+
+  // Single-day spike protection: require 2+ of last 3 days with poor sleep
+  // before declaring sleep_disruption. Prevents one bad night flipping the narrative.
+  const poorSleepDays = last3.filter(
+    (l) => typeof l.sleep === "number" && l.sleep < 6,
+  ).length;
+  const hasSustainedSleepIssue = last3.length < 2 || poorSleepDays >= 2;
+
   const sleepBelow = input.baselineDeviation.includes(
     "sleep_below_personal_baseline",
   );
@@ -68,9 +78,16 @@ export function detectPrimaryInsightCause(input: {
     sleepBelow &&
     sleepDeclining;
 
-  if (strongSleepDrop || moderateSleepDrop) {
+  if ((strongSleepDrop || moderateSleepDrop) && hasSustainedSleepIssue) {
     return "sleep_disruption";
   }
+
+  // Single-day spike protection for stress: require 2+ of last 3 days elevated
+  const HIGH_STRESS = new Set(["high", "elevated", "severe"]);
+  const highStressDays = last3.filter(
+    (l) => HIGH_STRESS.has(l.stress?.trim().toLowerCase() ?? ""),
+  ).length;
+  const hasSustainedStress = last3.length < 2 || highStressDays >= 2;
 
   const stressAbove = input.baselineDeviation.includes(
     "stress_above_personal_baseline",
@@ -83,7 +100,7 @@ export function detectPrimaryInsightCause(input: {
     drivers.includes("stress_mood_strain") ||
     drivers.includes("mood_stress_coupling");
 
-  if ((stressAbove && stressRising) || (stressRising && hasStressDriver)) {
+  if (((stressAbove && stressRising) || (stressRising && hasStressDriver)) && hasSustainedStress) {
     return "stress_led";
   }
 

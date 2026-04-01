@@ -1,6 +1,15 @@
-# CLAUDE.md — Vyana Backend (Phase 1)
+# CLAUDE.md — Vyana Backend: Master Operating Manual
 
-> **Purpose**: This file is the single source of truth for any Claude Code session working on Vyana's backend. Read it fully before writing any code. Follow every protocol. Skip nothing.
+> **Read this entire file before writing any code.**
+> This is the single source of truth for all Claude Code sessions on Vyana's backend.
+> 
+> **Supporting documents (read when referenced):**
+> - `EDGE_CASES_MASTER.md` — 232 edge cases across 17 lifecycle stages
+> - `EDGE_CASES_ADVANCED.md` — trust breakers, recovery, system stress, learning integrity
+> - `INSIGHT_LANGUAGE_FIX.md` — zero-data vs personalized language tier system
+> - `SPRINT_LAUNCH.md` — 20-task execution plan with Claude Code prompts
+>
+> **Execution rule:** One task at a time → verify → commit → next task. Never batch.
 
 ---
 
@@ -8,7 +17,7 @@
 
 Vyana is a menstrual health companion app. Phase 1 delivers:
 - **Period tracking** with adaptive cycle prediction
-- **Daily logging** (mood, energy, sleep, stress, symptoms, flow, etc.)
+- **Daily logging** (mood, energy, sleep, stress, symptoms, flow)
 - **AI-generated daily insights** — personalized to logged data, not generic phase text
 - **Forecasting** — tomorrow preview, next-phase preview, PMS symptom forecast
 - **Health pattern detection** — PMDD, PCOS indicators, endometriosis, iron deficiency
@@ -16,9 +25,9 @@ Vyana is a menstrual health companion app. Phase 1 delivers:
 - **Calendar** — full month view with per-day insight cards
 - **Home screen** — phase-aware content with quick-log fields
 - **Contraception-aware engine** — hormonal vs natural cycle mode switching
-- **Contraception transition handling** — mid-cycle method changes with cache/baseline reset
+- **Contraception transition handling** — mid-cycle method changes with full reset
 
-The design principle: **"This app knows me."** Every insight must feel specific to the individual user. Generic phase-based text is the fallback, not the goal.
+Design principle: **"This app knows me."** Every insight must feel specific to the individual user.
 
 ---
 
@@ -34,12 +43,11 @@ The design principle: **"This app knows me."** Every insight must feel specific 
 | Auth | JWT (access + refresh tokens) + Google OAuth |
 
 **Key files:**
-- `prisma/schema.prisma` — database schema (source of truth)
-- `src/index.ts` — Express app entry point
-- `src/services/cycleEngine.ts` — phase calculation, cycle mode detection
-- `src/services/insightService.ts` — rule-based insight generation + context building
-- `src/services/insightGptService.ts` — GPT rewriting of insights
-- `src/services/vyanaContext.ts` — multi-layer VyanaContext builder (identity, anticipation, delight, surprise, emotional memory)
+- `prisma/schema.prisma` — database schema
+- `src/services/cycleEngine.ts` — phase calculation, cycle mode
+- `src/services/insightService.ts` — rule-based insights + context building
+- `src/services/insightGptService.ts` — GPT rewriting + guard pipeline
+- `src/services/vyanaContext.ts` — multi-layer context (identity, anticipation, delight, surprise, emotional memory)
 - `src/services/contraceptionengine.ts` — contraception type resolution + behavioral rules
 - `src/services/contraceptionTransition.ts` — mid-cycle method change handling
 - `src/services/correlationEngine.ts` — cross-signal pattern detection
@@ -48,73 +56,326 @@ The design principle: **"This app knows me."** Every insight must feel specific 
 
 ---
 
-## 3. ARCHITECTURE — HOW INSIGHTS FLOW
+## 3. THE INSIGHT LANGUAGE PRINCIPLE
 
-```
-User opens app → GET /api/insights
-  │
-  ├─ Check InsightCache (same UTC day?) → return cached if fresh
-  │
-  ├─ getUserInsightData() → parallel fetch: User + last 90 days of DailyLogs
-  │    ├─ recentLogs = first 7
-  │    ├─ baselineLogs = remaining
-  │    ├─ numericBaseline = weighted averages + deltas
-  │    └─ crossCycleNarrative = same-day-window comparison across past 6 cycles
-  │
-  ├─ Cycle calculation
-  │    ├─ getCyclePredictionContext() → avg length from CycleHistory
-  │    ├─ calculateCycleInfo() → current day, phase, days until next phase/period
-  │    ├─ getCycleMode() → natural | hormonal | irregular
-  │    └─ Delayed period detection
-  │
-  ├─ buildInsightContext() → signals, trends, drivers, confidence
-  │    ├─ Stable state detection (isStableInsightState)
-  │    ├─ Primary cause detection (sleep_disruption | stress_led | cycle | stable)
-  │    └─ Priority driver ranking (13 possible drivers, scored)
-  │
-  ├─ generateRuleBasedInsights() → deterministic draft (7 fields)
-  │
-  ├─ Correlation engine → cross-signal patterns (7 patterns)
-  │
-  ├─ Narrative overlays
-  │    ├─ Hormonal language injection (natural cycle only)
-  │    ├─ Hormonal language stripping (hormonal contraception)
-  │    ├─ Irregular cycle softening
-  │    ├─ Delayed period override
-  │    ├─ Cross-cycle narrative injection
-  │    ├─ Sleep disruption narrative (when sleep is primary cause)
-  │    ├─ Stress-led narrative
-  │    └─ Stable state narrative
-  │
-  ├─ buildVyanaContextForInsights() → multi-layer context for GPT
-  │    ├─ Core layer: high-weight factual signals
-  │    ├─ Narrative layer: identity + trends
-  │    ├─ Enhancement layer: surprise OR anticipation (max 1)
-  │    └─ Emotional layer: emotional memory OR delight (max 1)
-  │
-  ├─ generateInsightsWithGpt() → GPT rewrites draft → guard pipeline
-  │    ├─ Length guard (max 2.5x draft)
-  │    ├─ Sentence guard (max 3 per field)
-  │    ├─ Strength regression guard
-  │    ├─ Forbidden language check
-  │    ├─ Vague language fix
-  │    ├─ Unearned identity/memory/historical claim removal
-  │    ├─ Phase-specific discipline (menstrual, ovulation, etc.)
-  │    └─ Confidence-based tone sharpening/softening
-  │
-  ├─ Memory fallback overrides (when GPT didn't improve)
-  │
-  ├─ View layer → buildInsightView() → primary + supporting + action
-  │
-  ├─ Cache write → InsightCache
-  ├─ InsightHistory write
-  ├─ InsightMemory upsert
-  └─ Monitor log
-```
+**This is the most important design rule in the system.**
+
+The voice changes based on how much data we have:
+
+| Data Level | Voice | Example |
+|---|---|---|
+| **0 logs** | Suggestive, phase-educational | "Energy can still feel lower toward the end of your period" |
+| **1-4 logs** | References actual data, no trend claims | "Your latest log shows lower energy" |
+| **5+ logs** | Assertive, evidence-based, personal | "Your sleep has dropped from 7h to 5h — that's what's driving how you feel" |
+
+**NEVER assert a user's current state without data to support it.**
+
+For zero-data users:
+- ✅ "This phase tends to bring lower energy"
+- ❌ "Energy is noticeably lower today"
+- ✅ "Focus might not be at its peak yet"
+- ❌ "Focus is lower today"
+- ✅ "Many people notice emotional sensitivity easing around this time"
+- ❌ "Small things feel easier today"
+
+See `INSIGHT_LANGUAGE_FIX.md` for full implementation spec.
 
 ---
 
-## 4. SCREENS & ENDPOINTS (Phase 1)
+## 4. THE THREE CRITICAL USER SCENARIOS
+
+Every code change must be tested against these three scenarios.
+
+### SCENARIO A: Regular user, period doesn't come
+
+User told us 28-day cycle. Today is day 29, 30, 31+ — she hasn't logged a new period.
+
+**Current bug:** Cycle day wraps via modulo. Day 29 → shows "Day 1 · Period". User isn't menstruating.
+
+**Required behavior:**
+- `cycleDay` should NOT wrap. Day 31 of a 28-day cycle = `cycleDay: 31`
+- `phase` should stay `"luteal"` (last phase before expected period)
+- `isPeriodDelayed: true` with tiered messaging:
+  - 1-3 days: "This can happen — stress, travel, diet can shift things"
+  - 4-7 days: "If you're concerned, a pregnancy test or doctor visit might help"
+  - 8-14 days: "Your period is significantly late. Consider seeing a doctor."
+  - 15+ days: "Your period is more than two weeks late. We'd recommend seeing a doctor."
+- Include `periodAction: { show: true, label: "Has your period started?" }`
+
+### SCENARIO B: Irregular period user
+
+User selects `cycleRegularity: "irregular"`. Cycles range 21-45 days.
+
+**Required behavior:**
+- Delayed period detection DISABLED (can't say "late" when you don't know "expected")
+- Phase labels suppressed or marked as estimated when < 2 completed cycles
+- Extended cycle notice when day 45+: "It's been a while since your last period"
+- Anticipation layer suppressed (no forward predictions for irregular users)
+- Language softened: "around this time" instead of "today"
+
+### SCENARIO C: Hormonal contraception user
+
+User selects `contraceptiveMethod: "pill"` (or `iud_hormonal`, `implant`, `injection`, `patch`, `ring`, `mini_pill`) — at registration OR mid-cycle.
+
+**Required behavior:**
+- ALL phase/hormone language suppressed across ALL screens
+- Home: "Your day, your patterns" — no phase labels, no fertility info
+- Calendar: `phase: null`, no phase colors, no ovulation/period markers
+- Insights: pattern-based tone, 60+ regex hormone language stripped
+- Quick log: mood, energy, fatigue, pain — same every day (no phase-specific fields)
+- `periodStarted`: creates CycleHistory with `cycleLength: null` (withdrawal bleed, not biological)
+- Mid-cycle switch: full cache clear, baseline reset, 14-day warmup messaging
+
+---
+
+## 5. KNOWN BUGS — CURRENT STATE
+
+### P0 — Must fix (breaks user trust)
+
+| # | Bug | File | Status |
+|---|---|---|---|
+| 1 | Cycle day wraps via modulo past cycleLength | `cycleEngine.ts` | ❌ Open |
+| 2 | InsightCache not cleared on periodStarted | `cycleController.ts` | ❌ Open |
+| 3 | Hormonal user periodStarted creates invalid CycleHistory with cycleLength | `cycleController.ts` | ❌ Open |
+| 4 | No future date validation on lastPeriodStart | `authController.ts`, `userController.ts` | ❌ Open |
+| 5 | No duplicate log prevention | `logController.ts` | ❌ Open |
+| 6 | Error handler leaks stack traces in production | `errorHandler.ts` | ❌ Open |
+| 7 | Chat message has no length limit | `chatController.ts` | ❌ Open |
+| 8 | Zero-data insights use assertive language (sounds like we know her state) | `insightService.ts`, `insightGptService.ts` | ❌ Open |
+
+### P1 — Should fix (degrades experience)
+
+| # | Bug | File |
+|---|---|---|
+| 9 | No tiered delayed period messaging (1-3 / 4-7 / 8-14 / 15+ days) | `insightController.ts`, `homeController.ts` |
+| 10 | Single-day spike flips entire insight narrative | `insightCause.ts` |
+| 11 | One bad day erases positive streak (no momentum protection) | `insightService.ts` |
+| 12 | Home screen is phase-only, doesn't reflect actual logged signals | `homeController.ts` |
+| 13 | No log edit endpoint | `logController.ts` |
+| 14 | No period-started undo endpoint | `cycleController.ts` |
+| 15 | No rate limiting on insights/logs/home/calendar | route files |
+| 16 | No GPT timeout or circuit breaker | `insightGptService.ts` |
+| 17 | No input validation on sleep/pads/age ranges | `logController.ts`, `authController.ts` |
+
+---
+
+## 6. EXECUTION PLAN — 20 TASKS
+
+**Pre-sprint check:**
+```bash
+npx tsc --noEmit
+npx prisma validate
+npx prisma generate
+```
+
+### PHASE 1: P0 BUG FIXES (Tasks 1-8) — Days 1-4
+
+**Task 1: Fix cycle day modulo wrapping**
+- File: `src/services/cycleEngine.ts` → `calculateCycleInfoForDate()`
+- Fix: When `diffDays >= cycleLength`, don't wrap. `currentDay = diffDays + 1`, `phase = "luteal"`
+- Verify: Day 31 of 28-day cycle → `cycleDay: 31`, `phase: "luteal"`, `isPeriodDelayed: true`
+- Ref: EDGE_CASES_MASTER #88-90
+
+**Task 2: Clear InsightCache on periodStarted**
+- File: `src/controllers/cycleController.ts` → `periodStarted()`
+- Fix: Add `await prisma.insightCache.deleteMany({ where: { userId: req.userId! } })` after user update
+- Also: Return fresh cycleInfo in response (cycleDay: 1, phase: "menstrual")
+- Verify: Log period → GET /api/insights → shows day 1 menstrual, not stale cache
+- Ref: EDGE_CASES_MASTER #76
+
+**Task 3: Fix hormonal user periodStarted**
+- File: `src/controllers/cycleController.ts` → `periodStarted()`
+- Fix: When `cycleMode === "hormonal"`, create CycleHistory with `cycleLength: null`, skip closing previous cycle with calculated length
+- Verify: Hormonal user logs period → CycleHistory.cycleLength is null
+- Ref: EDGE_CASES_MASTER #85, #134
+
+**Task 4: Validate lastPeriodStart not in future**
+- Files: `src/controllers/authController.ts` (register + googleAuth), `src/controllers/userController.ts` (updateProfile)
+- Fix: Reject if `parsedDate > new Date()` or `isNaN(parsedDate.getTime())`
+- Verify: Register with future date → 400 error
+
+**Task 5: Prevent duplicate logs**
+- File: `src/controllers/logController.ts` → `saveLog()`
+- Fix: Check for existing log today. If exists, UPDATE (merge fields). If not, CREATE.
+- Verify: POST /api/logs twice same day → one DailyLog entry
+
+**Task 6: Error handler production safety**
+- File: `src/middleware/errorHandler.ts`
+- Fix: If `NODE_ENV === "production"`, return "Internal server error" — never err.message
+- Verify: Production mode error → generic message only
+
+**Task 7: Chat message length limit**
+- File: `src/controllers/chatController.ts` → `chat()`
+- Fix: Reject messages > 2000 characters with 400
+- Verify: 5000-char message → 400 error
+
+**Task 8: Zero-data insight language tier system**
+- Files: `src/services/insightService.ts`, `src/services/insightGptService.ts`, `src/controllers/insightController.ts`
+- Fix: Implement `softenForConfidenceTier()` — see `INSIGHT_LANGUAGE_FIX.md` for full spec
+  - 0 logs: suggestive voice ("Energy can still feel lower")
+  - 1-4 logs: references actual data, no trend claims
+  - 5+ logs: assertive, evidence-based (current behavior — no change)
+- Also: Add zero-data instruction block to GPT system prompt when logsCount === 0
+- Verify: Zero-log user GET /api/insights → no "Energy is lower today", no "Focus is lower today"
+- Ref: INSIGHT_LANGUAGE_FIX.md (read fully before implementing)
+
+**After Tasks 1-8: Checkpoint verification**
+```bash
+npx tsc --noEmit
+npx prisma validate
+```
+Test all three scenarios (A, B, C) manually.
+
+---
+
+### PHASE 2: RECOVERY ENDPOINTS (Tasks 9-11) — Days 5-6
+
+**Task 9: Log edit endpoint**
+- Files: `src/controllers/logController.ts`, `src/routes/logs.ts`
+- Add: `PUT /api/logs/:id` — find log, verify ownership, update provided fields, invalidate caches
+- Verify: Create log → edit it → GET /api/insights → reflects updated data
+- Ref: EDGE_CASES_ADVANCED R1
+
+**Task 10: Period-started undo endpoint**
+- Files: `src/controllers/cycleController.ts`, `src/routes/cycle.ts`
+- Add: `DELETE /api/cycle/period-started/:id` — delete entry, reopen previous cycle, restore lastPeriodStart, clear caches
+- Verify: Log period → undo → lastPeriodStart restored to previous cycle's startDate
+- Ref: EDGE_CASES_ADVANCED R2
+
+**Task 11: Quick check-in endpoint**
+- Files: `src/controllers/logController.ts`, `src/routes/logs.ts`
+- Add: `POST /api/logs/quick-check-in` — accepts partial fields, upserts today's log, validates ranges
+- Verify: Send `{ mood: "good", sleep: 7 }` → creates/updates log → returns fieldsLogged
+- Ref: Previous conversation about engagement strategy
+
+---
+
+### PHASE 3: TRUST PROTECTION (Tasks 12-14) — Days 7-9
+
+**Task 12: Single-day spike protection**
+- File: `src/services/insightCause.ts` → `detectPrimaryInsightCause()`
+- Fix: Require 2+ of last 3 days with poor sleep before declaring "sleep_disruption". Same for stress_led.
+- Verify: User with 5 good days + 1 bad night → primary cause is "cycle" not "sleep_disruption"
+- Ref: EDGE_CASES_ADVANCED T8
+
+**Task 13: Momentum protection**
+- File: `src/services/insightService.ts`
+- Add: `detectMomentumBreak()` — when 4+ positive days are followed by 1 negative day, frame as "today is rougher than your recent streak" instead of full negative narrative
+- Verify: 5 good days then 1 stressed day → insight says "rougher than recent streak" not "stress has been building"
+- Ref: EDGE_CASES_ADVANCED T15
+
+**Task 14: Signal-aware home screen**
+- File: `src/controllers/homeController.ts`
+- Fix: When user has 3+ recent logs, home headline should reflect actual signal state, not just phase defaults. If phase says "low energy" but logs show positive signals → home should reflect the positive reality.
+- Verify: Menstrual user with mood: "good", energy: "high" → home doesn't say "You might feel low energy"
+- Ref: EDGE_CASES_ADVANCED T2, T13, T16, T21
+
+---
+
+### PHASE 4: OBSERVABILITY (Task 15) — Day 10
+
+**Task 15: Production monitoring baseline**
+- New file: `src/middleware/requestLogger.ts` — log method, path, status, duration, userId
+- Update: `src/services/insightGptService.ts` — log GPT call duration, success/failure
+- Update: `src/controllers/insightController.ts` — log cache hit/miss
+- Update: `src/controllers/cycleController.ts` → `periodStarted()` — log prediction accuracy (predicted vs actual period date)
+- Verify: Server logs show structured JSON for each request
+- Ref: EDGE_CASES_ADVANCED S3
+
+---
+
+### PHASE 5: DEFENSIVE HARDENING (Tasks 16-17) — Days 11-12
+
+**Task 16: Input validation**
+- Files: `src/controllers/logController.ts`, `src/controllers/authController.ts`
+- Fix: Validate sleep (0-24), padsChanged (0-50), age (10-100), height (50-300), weight (20-500). Whitelist valid mood/stress/energy values.
+- Verify: sleep: -5 → 400 error. sleep: 25 → 400 error. mood: "hacked" → 400 error.
+- Ref: EDGE_CASES_MASTER #59-63
+
+**Task 17: Rate limiting + GPT timeout + circuit breaker**
+- Files: `src/middleware/rateLimit.ts`, route files, `src/services/insightGptService.ts`
+- Fix: Add insightLimiter (10/min), logLimiter (30/min), generalLimiter (60/min). Add 8s timeout on OpenAI calls. Add circuit breaker (5 failures → 5min cooldown). Add authLoginRegisterLimiter to Google auth route.
+- Verify: Rapid insight requests → 429 after limit. GPT timeout → draft served within 8s.
+- Ref: EDGE_CASES_MASTER #221-222, ADVANCED S1, S3, S4
+
+---
+
+### PHASE 6: NOTIFICATION BACKEND (Tasks 18-20) — Days 13-14
+
+**Task 18: Notification templates + scheduler**
+- New files: `src/services/notificationTemplates.ts`, `src/services/notificationScheduler.ts`
+- Phase-aware templates: menstrual ("How's your flow?"), follicular ("How's your energy?"), luteal ("How are you holding up?"), delayed ("Has your period started?")
+- Scheduler: query users due for notification (fcmToken not null, last sent 20+ hours ago)
+- Verify: `getNotificationForUser(phase, cycleDay)` returns correct template per phase
+
+**Task 19: Notification sending service**
+- New file: `src/services/notificationService.ts`
+- FCM integration for sending push notifications
+- New endpoint: `PUT /api/user/fcm-token` — update user's FCM token
+- Update: `src/routes/user.ts` to add route
+- Verify: Valid FCM token → notification sent successfully
+
+**Task 20: Notification cron + schema update**
+- New file: `src/cron/notificationCron.ts`
+- Schema: Add `lastNotificationSentAt DateTime?` to User model
+- Migration: `npx prisma migrate dev --name add_notification_fields`
+- Admin endpoint: `POST /api/admin/send-notifications` (API key protected)
+- Verify: Cron runs → users receive phase-appropriate notifications
+
+---
+
+## 7. VERIFICATION PROTOCOL
+
+**After EVERY task:**
+```bash
+npx tsc --noEmit          # must pass
+npx prisma validate       # must pass (if schema changed)
+```
+
+**After each phase (every 2-3 days):**
+Test all three scenarios:
+
+**Scenario A:** User with lastPeriodStart 32 days ago, cycleLength 28
+- GET /api/home → `isPeriodDelayed: true`, cycleDay > 28, NOT "Day 4 · menstrual"
+- GET /api/insights → late period messaging
+
+**Scenario B:** User with `cycleRegularity: "irregular"`, 0 completed cycles
+- GET /api/home → `isIrregular: true`, softened language
+- GET /api/insights → suggestive voice (Tier 1)
+
+**Scenario C:** User with `contraceptiveMethod: "pill"`
+- GET /api/home → "Your day, your patterns"
+- GET /api/insights → no estrogen/progesterone/ovulation/follicular/luteal language
+- POST /api/cycle/period-started → CycleHistory.cycleLength is null
+
+**Scenario D (NEW):** Zero-log natural user, cycle day 5
+- GET /api/insights → "Energy can still feel lower" NOT "Energy is noticeably lower today"
+- No field repeats the same idea (energy not mentioned in both physical and mental)
+- No technical hormone terms in user-facing fields
+
+**After all 20 tasks:**
+```bash
+npx ts-node src/testRunner/runTestCases.ts --source generated --batch 50 --out test-results-final.json
+npx ts-node src/testRunner/validateResults.ts --in test-results-final.json
+```
+Expected: 100% no-crash, >99% phase correctness, 100% no forbidden language.
+
+---
+
+## 8. FILE CHANGE RULES
+
+1. **Never modify migration SQL files** — they are immutable history
+2. **Always `npx prisma validate` after schema changes**
+3. **Always `npx tsc --noEmit` after any TypeScript change**
+4. **When changing insightService.ts or insightGptService.ts**, run 50+ test cases
+5. **When changing contraceptionengine.ts or contraceptionTransition.ts**, verify hormonal AND natural paths
+6. **When adding a new endpoint**, add to routes AND update this document
+7. **When adding a new Prisma model**, add appropriate indexes
+8. **Read INSIGHT_LANGUAGE_FIX.md before touching any insight text generation**
+
+---
+
+## 9. ENDPOINTS (Phase 1)
 
 | Screen | Endpoint | Controller |
 |---|---|---|
@@ -122,482 +383,56 @@ User opens app → GET /api/insights
 | Calendar (month) | `GET /api/calendar?month=YYYY-MM` | calendarController.ts |
 | Calendar (day tap) | `GET /api/calendar/day-insight?date=YYYY-MM-DD` | calendarController.ts |
 | Daily Insights | `GET /api/insights` | insightController.ts |
-| Insight Context (debug) | `GET /api/insights/context` | insightController.ts |
+| Insight Context | `GET /api/insights/context` | insightController.ts |
 | Forecast | `GET /api/insights/forecast` | insightController.ts |
 | Quick Log Config | `GET /api/logs/quick-log-config` | logController.ts |
 | Save Log | `POST /api/logs` | logController.ts |
 | Get Logs | `GET /api/logs` | logController.ts |
+| Quick Check-In | `POST /api/logs/quick-check-in` | logController.ts (Task 11) |
+| Edit Log | `PUT /api/logs/:id` | logController.ts (Task 9) |
 | Current Cycle | `GET /api/cycle/current` | cycleController.ts |
 | Period Started | `POST /api/cycle/period-started` | cycleController.ts |
+| Undo Period | `DELETE /api/cycle/period-started/:id` | cycleController.ts (Task 10) |
 | Health Patterns | `GET /api/health/patterns` | healthController.ts |
 | Chat | `POST /api/chat` | chatController.ts |
 | Chat History | `GET /api/chat/history` | chatController.ts |
 | Get Profile | `GET /api/user/me` | userController.ts |
 | Update Profile | `PUT /api/user/profile` | userController.ts |
+| Update FCM Token | `PUT /api/user/fcm-token` | notificationController.ts (Task 19) |
 | Register | `POST /api/auth/register` | authController.ts |
 | Login | `POST /api/auth/login` | authController.ts |
 | Google Auth | `POST /api/auth/google` | authController.ts |
 | Refresh Token | `POST /api/auth/refresh` | authController.ts |
+| Send Notifications | `POST /api/admin/send-notifications` | notificationController.ts (Task 20) |
 
 ---
 
-## 5. THE THREE CRITICAL USER SCENARIOS
+## 10. SUPPORTING DOCUMENTS
 
-These are the three hardest user scenarios in Phase 1. Every Claude Code session working on cycle/insight logic MUST understand these deeply.
-
----
-
-### SCENARIO A: REGULAR USER — PERIOD DOESN'T COME ON EXPECTED DAY
-
-**What the user experiences:** She told us her cycle is 28 days. Today is day 29, 30, 31... and she hasn't logged a new period.
-
-**How the code currently handles it:**
-
-```
-// In insightController.ts, homeController.ts, calendarController.ts:
-const rawDiffDays = utcDayDiff(now, user.lastPeriodStart);
-const daysOverdue = Math.max(0, rawDiffDays - effectiveCycleLength);
-const isPeriodDelayed =
-  daysOverdue > 0 &&
-  cyclePrediction.confidence !== "irregular" &&
-  cycleMode !== "hormonal";
-```
-
-When `isPeriodDelayed` is true:
-
-| Screen | What changes |
-|---|---|
-| **Home** | Title: "Your period is X days late" / "X days late". Subtitle: reassurance based on irregular vs regular. CTA: "Log how you're feeling" |
-| **Insights** | `physicalInsight` overridden: ≤3 days gentle, >3 days mentions doctor. `emotionalInsight` overridden with uncertainty validation. `whyThisIsHappening` overridden with explanation. `tomorrowPreview` overridden with "keep logging" message. |
-| **Calendar** | Days past expected period: `isPeriodDelayed: true`. Today's insight card shows late period messaging. |
-| **Forecast** | Not directly affected (forecasts use effectiveCycleLength). |
-
-**BUG — CYCLE DAY WRAPPING (MUST FIX):**
-
-The phase calculation uses modulo arithmetic:
-```typescript
-// cycleEngine.ts calculateCycleInfoForDate()
-const normalized = ((diffDays % cycleLength) + cycleLength) % cycleLength;
-const currentDay = normalized + 1;
-```
-
-On day 29 of a 28-day cycle, `currentDay` wraps to **1**. On day 30, it wraps to **2**. The `isPeriodDelayed` flag is set correctly, but:
-- `phase` returns `"menstrual"` (day 1-5 = menstrual) — WRONG, she is NOT menstruating
-- `cycleDay` returns `1` — confusing when combined with `isPeriodDelayed: true`
-- Calendar shows "Day 1 · Period" while also showing "Your period is 2 days late"
-
-**REQUIRED FIX:**
-File: `src/services/cycleEngine.ts` → `calculateCycleInfoForDate()`
-When `diffDays >= cycleLength`, don't wrap. Keep `currentDay = diffDays + 1` and `phase = "luteal"` (last known phase before expected period).
-Verify: User on day 31 of 28-day cycle → `cycleDay: 31`, `phase: "luteal"`, `isPeriodDelayed: true`
-
-**GAP — NO ESCALATION FOR VERY LATE PERIODS:**
-
-Current behavior: same messaging whether 1 day late or 30 days late.
-
-**REQUIRED FIX:**
-File: `src/controllers/insightController.ts` (delayed period override block), `src/controllers/homeController.ts` (buildContent delayed block)
-Add tiered messaging:
-- 1-3 days late: "This can happen — stress, travel, diet can shift things"
-- 4-7 days late: "If you're concerned, a pregnancy test or doctor visit might help"
-- 8-14 days late: "Your period is significantly late. Consider a pregnancy test or checking in with your doctor."
-- 15+ days late: "Your period is more than two weeks late. We'd recommend seeing a doctor."
-Verify: User 15 days late → messaging mentions doctor, not just "stress can cause this"
-
-**GAP — NO "PERIOD ARRIVED" PROMPT:**
-
-When period is late, no prominent "Has your period started?" action. User has to navigate to period-started themselves.
-
-**REQUIRED FIX:**
-File: `src/controllers/homeController.ts`, `src/controllers/insightController.ts`
-When `isPeriodDelayed: true`, response includes:
-```json
-{ "periodAction": { "show": true, "label": "Has your period started?", "ctaText": "Log period" } }
-```
-
----
-
-### SCENARIO B: USER SELECTS IRREGULAR PERIOD
-
-**What the user experiences:** During registration or profile update, she selects `cycleRegularity: "irregular"`. Her cycles might range from 21-45 days.
-
-**How the code currently handles it:**
-
-```typescript
-// cycleEngine.ts getCycleMode()
-if (user.cycleRegularity === "irregular") return "irregular";
-```
-
-When `cycleMode === "irregular"`:
-
-| Feature | Behavior |
-|---|---|
-| Phase calculation | Still runs using `effectiveCycleLength` (avg of past cycles or user-reported) |
-| Confidence | `detectCycleIrregularity()` returns `"variable"` or `"irregular"` |
-| Delayed period | DISABLED — `isPeriodDelayed` always false when confidence is `"irregular"` |
-| Insight language | Softened: "this phase" → "this part of your cycle", "today" → "around this time" |
-| Home subtitle | `isIrregular: true` → "Your cycle tends to vary — this is an estimate" |
-| Calendar | Phases shown with `cyclePredictionConfidence: "irregular"` |
-| Hormone state | `confidence: "approximated"` with caveat |
-| Anticipation | Completely suppressed (returns null) |
-
-**BUG — PHASE PREDICTIONS STILL SHOWN FOR IRREGULAR USERS:**
-
-Even with `cycleRegularity: "irregular"`, phases are calculated and displayed. For a user whose cycles range 21-45 days, "Day 14 · Ovulation" could be completely wrong — her ovulation might be on day 7 or day 31.
-
-**REQUIRED FIX (Conservative approach):**
-File: All controllers that display phase labels
-When `cyclePrediction.confidence === "irregular"`, suppress specific phase labels:
-- Instead of "Day 14 · Ovulation", show "Day 14"
-- Instead of phase-specific home content, show pattern-based content (same path as hormonal users)
-- Calendar: show cycle days but no phase colors
-Verify: Irregular user → no "Ovulation" or "Follicular phase" labels shown
-
-**GAP — NO "LEARNING" STATE FOR IRREGULAR USERS WITH 0-1 CYCLES:**
-
-Irregular user with 0 completed cycles sees phase predictions based on self-reported length with no data backing.
-
-**REQUIRED FIX:**
-File: All controllers
-Add `isLearning` flag: `(cycleMode === "irregular" || confidence === "irregular") && completedCycleCount < 2`
-When `isLearning`:
-- Home: "We're learning your cycle — keep logging and predictions will sharpen"
-- Insights: Pattern-based (like hormonal path) instead of phase-based
-- Calendar: Cycle days shown, no phase colors or labels
-- Forecast: Locked with "Log 2 full cycles and we'll build your forecast"
-Verify: Irregular user, 0 cycles → "learning" messaging, no phase labels
-
-**GAP — NO EXTENDED CYCLE NOTICE FOR IRREGULAR USERS:**
-
-Delayed period detection is disabled for irregular users. But an irregular user on day 50+ gets NO notice at all.
-
-**REQUIRED FIX:**
-File: `src/controllers/homeController.ts`, `src/controllers/insightController.ts`
-Add: `const isExtendedCycle = cycleMode === "irregular" && rawDiffDays > 45;`
-When true: "It's been a while since your last period — has it started?" with period action prompt.
-Verify: Irregular user, day 50 → sees extended cycle notice
-
----
-
-### SCENARIO C: CONTRACEPTIVE METHOD — AT REGISTRATION OR MID-CYCLE
-
-**Sub-scenario C1: User registers WITH hormonal contraception**
-
-User selects `contraceptiveMethod: "pill"` (or `iud_hormonal`, `implant`, `injection`, `patch`, `ring`, `mini_pill`).
-
-`getCycleMode()` returns `"hormonal"`. Every endpoint checks `getContraceptionBehavior()`:
-- `useNaturalCycleEngine: false`
-- `showOvulationPrediction: false`
-- `showHormoneCurves: false`
-- `showPmsForecast: false`
-- `showPeriodForecast: false`
-
-**What changes across ALL screens:**
-
-| Screen | Natural user | Hormonal user |
+| Document | What it covers | When to read |
 |---|---|---|
-| Home title | "On your period" / "Energy rising" | "Your day, your patterns" |
-| Home subtitle | Fertility info | contextMessage explaining why phase predictions don't apply |
-| Phase label | "Day 14 · Ovulation" | "Day 14" (no phase) |
-| Quick log fields | Phase-specific (flow for menstrual, etc.) | Pattern-based: mood, energy, fatigue, pain — same every day |
-| Calendar phases | Color-coded | `phase: null`, no colors, `phaseTimeline: null` |
-| Insights tone | "cycle-based" with hormone context | "pattern-based" — all hormone language stripped (60+ regex) |
-| Forecast | Phase-based with PMS | `forecastMode: "pattern"`, no phase/PMS/period forecast |
-
-**BUG — `lastPeriodStart` REQUIRED BUT MEANINGLESS FOR HORMONAL USERS:**
-
-Registration requires `lastPeriodStart` even for users on pill for years who don't have natural periods.
-
-**REQUIRED FIX:**
-File: `src/controllers/authController.ts`
-Make `lastPeriodStart` optional for hormonal users. Default to today if not provided.
-Verify: Register with `contraceptiveMethod: "pill"`, no `lastPeriodStart` → succeeds
-
-**BUG — HORMONAL USER `periodStarted` CREATES INVALID CYCLE DATA:**
-
-`POST /api/cycle/period-started` doesn't check `cycleMode`. Hormonal user logs withdrawal bleed → CycleHistory entry with calculated cycleLength → pollutes `getCyclePredictionContext()`.
-
-**REQUIRED FIX:**
-File: `src/controllers/cycleController.ts` → `periodStarted()`
-When `cycleMode === "hormonal"`: create CycleHistory with `cycleLength: null`, skip closing previous cycle with calculated length. Still update `lastPeriodStart` so day counter resets.
-Verify: Hormonal user logs period → CycleHistory has `cycleLength: null`, prediction engine unaffected
+| `EDGE_CASES_MASTER.md` | 232 edge cases: registration, logging, cycles, insights, contraception, calendar, forecast, chat, auth, timing, concurrency, GPT, long-term usage | Before any logic change |
+| `EDGE_CASES_ADVANCED.md` | Trust breakers (21 scenarios), recovery (13), system stress (14), learning integrity (16) | Before any insight/UX change |
+| `INSIGHT_LANGUAGE_FIX.md` | Three-tier language system, zero-data rules, implementation spec, testing checklist | Before touching any insight text |
+| `SPRINT_LAUNCH.md` | Full Claude Code prompts for all 20 tasks | During execution |
 
 ---
 
-**Sub-scenario C2: User switches to hormonal contraception MID-CYCLE**
+## 11. POST-LAUNCH BACKLOG (v1.1)
 
-She was tracking naturally (day 15), changes to "pill" via profile update.
+Prioritize based on real user data:
 
-`handleContraceptionTransition()` fires:
-1. Clears ALL caches (InsightCache, HealthPatternCache)
-2. Marks current CycleHistory as transitional (`cycleLength: null`)
-3. Resets InsightMemory + InsightHistory
-4. Sets `lastPeriodStart` to today
-5. Sets `contraceptionChangedAt` to now
-6. 14-day warmup begins
-
-**GAP — CYCLE DAY CONFUSION AFTER SWITCH:**
-
-Switching on day 15 resets `lastPeriodStart` to today → tomorrow shows "Day 2". But she hasn't started a new period.
-
-**REQUIRED FIX:**
-File: `src/controllers/homeController.ts`
-During warmup: show "Day X since switching" not "Day X · [phase]"
-Verify: User switches to pill → home shows "Day 2 since switching"
-
----
-
-**Sub-scenario C3: User switches FROM hormonal to natural**
-
-She stops the pill. Natural cycle may take 1-6 months to regulate.
-
-Code handles: same full reset + 14-day warmup + contextMessage explaining transition.
-
-**GAP — NO POST-HORMONAL IRREGULARITY EXPECTATION:**
-
-After stopping hormonal contraception, cycles are almost always irregular for 3-6 months. App should force irregularity expectation.
-
-**REQUIRED FIX:**
-File: `src/services/contraceptionTransition.ts`
-On `hormonal_to_natural` transition: set `cycleRegularity: "not_sure"`
-Verify: User stops pill → `cycleRegularity` becomes `"not_sure"`, phase predictions hedged
-
----
-
-**Sub-scenario C4: Copper IUD — non-hormonal exception**
-
-`iud_copper` → `useNaturalCycleEngine: true`. All natural cycle features run. Only difference: heavier flow messaging. Correctly handled, no gaps.
-
----
-
-## 6. ALL EDGE CASES CHECKLIST
-
-### Registration / Onboarding
-- [ ] Hormonal contraception → all phase/hormone language suppressed
-- [ ] `cycleRegularity: "irregular"` → `cycleMode: "irregular"`, softened language
-- [ ] Copper IUD → natural cycle engine runs
-- [ ] `lastPeriodStart` in the future → **BUG: no validation. Must reject.**
-- [ ] `lastPeriodStart` not provided for hormonal user → **BUG: required but meaningless.**
-- [ ] `cycleLength` outside 21-45 → rejected
-- [ ] Email already exists → 409
-
-### Logging
-- [ ] First log → "fallback" mode, no trends
-- [ ] 1-2 logs → no interaction flags
-- [ ] 3+ logs → "personalized" mode
-- [ ] 7+ logs → forecast unlocks
-- [ ] Duplicate log → **BUG: no uniqueness constraint**
-- [ ] Heavy bleeding (pads >= 7) → `bleeding_heavy` driver
-- [ ] Log invalidates caches
-
-### Regular User Cycle
-- [ ] Period started → closes CycleHistory, creates new, updates lastPeriodStart
-- [ ] Period started twice same day → **BUG: duplicate, no guard**
-- [ ] 1-3 days late → gentle reassurance
-- [ ] 4-7 days late → pregnancy test/doctor suggestion
-- [ ] 8-14 days late → stronger doctor recommendation
-- [ ] 15+ days late → firm doctor recommendation
-- [ ] Cycle day wraps via modulo → **BUG: shows "Day 1 · Period" when period is late**
-- [ ] "Has your period started?" prompt → **GAP: not implemented**
-
-### Irregular User Cycle
-- [ ] 0 completed cycles → **GAP: shows phase predictions with no data**
-- [ ] 2+ cycles → phases with "estimated" caveat
-- [ ] Day 50+ → **GAP: no "it's been a while" notice**
-- [ ] Phase labels → **GAP: still shown despite being unreliable**
-- [ ] Anticipation suppressed → HANDLED
-- [ ] Hormone confidence downgraded → HANDLED
-
-### Hormonal User
-- [ ] `periodStarted` → **BUG: creates invalid CycleHistory with calculated length**
-- [ ] Day counter during warmup → **GAP: confusing without "since switching" label**
-- [ ] Quick log fields → HANDLED (pattern-based)
-- [ ] Calendar phases → HANDLED (`phase: null`)
-- [ ] Hormone language stripped → HANDLED (60+ regex)
-- [ ] Forecast → HANDLED (pattern/symptom mode)
-
-### Contraception Transitions
-- [ ] Natural → hormonal → full reset, pattern mode
-- [ ] Hormonal → natural → full reset, **GAP: should force irregularity**
-- [ ] Hormonal → hormonal → full reset, stays pattern-based
-- [ ] Natural → natural → caches cleared, no baseline reset
-- [ ] 14-day warmup → HANDLED
-- [ ] All caches cleared → HANDLED
-- [ ] Memory/history reset → HANDLED
-- [ ] CycleHistory marked transitional → HANDLED
-
-### Insights
-- [ ] Zero logs → fallback only, NO data fabrication
-- [ ] Chat zero logs → CRITICAL: no invented metrics
-- [ ] Sleep primary cause → blame sleep not hormones
-- [ ] Stress primary cause → blame stress not sleep
-- [ ] Stable state → calm messaging, no false alarms
-- [ ] Peak positive → enabling, not cautionary
-- [ ] Forbidden language → rejected
-- [ ] Sentence/length guards → enforced
-
-### Chat
-- [ ] Casual → lightweight path
-- [ ] Health → full pipeline
-- [ ] Zero logs + health question → no fabrication
-- [ ] Message length → **BUG: no limit**
-
-### Forecast
-- [ ] < 7 logs → locked
-- [ ] Span < 5 days → locked
-- [ ] Confidence < 0.4 → locked
-- [ ] Hormonal `forecastMode: "disabled"` → unavailable
-
----
-
-## 7. BUGS TO FIX — PRIORITIZED
-
-### P0 — MUST FIX (breaks user trust)
-
-1. **Cycle day wraps via modulo** — shows "Day 1 · Period" when period is late
-   - File: `src/services/cycleEngine.ts` → `calculateCycleInfoForDate()`
-   - Verify: Day 31 of 28-day cycle → `cycleDay: 31`, `phase: "luteal"`
-
-2. **Hormonal user `periodStarted` creates invalid CycleHistory**
-   - File: `src/controllers/cycleController.ts` → `periodStarted()`
-   - Verify: Hormonal user → CycleHistory `cycleLength: null`
-
-3. **Error middleware leaks stack traces**
-   - File: `src/middleware/errorHandler.ts`
-   - Verify: `NODE_ENV=production` → generic error only
-
-4. **No `lastPeriodStart` future validation**
-   - Files: `authController.ts`, `userController.ts`
-   - Verify: Future date → 400
-
-5. **No duplicate log prevention**
-   - File: `logController.ts`
-   - Verify: Rapid double POST → one log
-
-6. **Chat no length limit**
-   - File: `chatController.ts`
-   - Verify: 5000 chars → 400
-
-7. **`HORMONAL_CONTRACEPTIVE_METHODS` incomplete**
-   - File: `src/types/cycleUser.ts`
-   - Verify: `isHormonalContraceptiveMethod("combined_pill")` → true
-
-### P1 — SHOULD FIX (degrades experience)
-
-8. **No tiered delayed period messaging**
-9. **No "Has your period started?" prompt**
-10. **Irregular user with 0 cycles sees phase predictions**
-11. **No extended cycle notice for irregular users (day 50+)**
-12. **Hormonal → natural transition doesn't force irregularity**
-13. **No rate limiting on most endpoints**
-14. **Missing `@@index` on InsightHistory for emotional memory query**
-15. **Google auth no rate limiter**
-
-### P2 — NICE TO HAVE
-
-16. **`lastPeriodStart` required for hormonal users at registration**
-17. **Day counter confusing after hormonal switch**
-18. **No log update endpoint**
-19. **`user.cycleLength` never updated from observed cycles**
-20. **Period started no duplicate guard**
-21. **`InsightMonitorLog` table not in schema**
-
----
-
-## 8. VERIFICATION PROTOCOL
-
-After EVERY code change:
-
-### 8a. Compile
-```bash
-npx tsc --noEmit
-```
-
-### 8b. Prisma
-```bash
-npx prisma validate
-```
-
-### 8c. Three-scenario spot check
-
-**Scenario A:** User 4 days late → `isPeriodDelayed: true`, `cycleDay` > 28, `phase: "luteal"`, messaging mentions doctor/pregnancy test
-
-**Scenario B:** Irregular user, 0 cycles → no phase labels, "learning" messaging
-
-**Scenario C:** Hormonal user → `phase: null` everywhere, no hormone language, `periodStarted` creates `cycleLength: null`
-
-### 8d. Test suite
-```bash
-npx ts-node src/testRunner/runTestCases.ts --source generated --batch 50 --out test-results-quick.json
-npx ts-node src/testRunner/validateResults.ts --in test-results-quick.json
-```
-
----
-
-## 9. QUALITY GATES
-
-- **No fabrication**: Zero-log users never get invented metrics
-- **No misleading phases**: Irregular users don't see specific phase labels without data. Overdue users don't see "Day 1 · Period" when not menstruating.
-- **Cause attribution**: Sleep crash → blame sleep. Stress → blame stress. Never wrong attribution.
-- **Complete hormonal suppression**: Zero phase/hormone language for hormonal users
-- **Clean transitions**: Method switches clear ALL stale data
-- **Tiered delayed period**: Escalating messaging from reassurance to doctor recommendation
-- **Withdrawal bleed handling**: Hormonal period logging doesn't pollute predictions
-
----
-
-## 10. FILE CHANGE RULES
-
-1. Never modify migration SQL files
-2. Always `npx prisma validate` after schema changes
-3. Always `npx tsc --noEmit` after TypeScript changes
-4. When changing insight/cycle logic, run 50+ test cases
-5. When changing contraception logic, verify hormonal AND natural paths
-6. New endpoints → update routes AND this document
-7. New Prisma models → add appropriate indexes
-
----
-
-## 11. COMPETITORS TO BEAT
-
-| App | Strength | Vyana advantage |
+| Priority | Task | Trigger |
 |---|---|---|
-| **Flo** | Large userbase, period prediction | Flo shows same generic phase text to everyone. Vyana adapts to YOUR data. |
-| **Clue** | Clean design, science-backed | Clue doesn't connect signals (sleep × stress). Clue treats hormonal users same as natural. |
-| **Natural Cycles** | FDA-cleared fertility prediction | Fertility-focused. Vyana is wellness-focused. No contraception transition handling. |
-
-**Vyana differentiators:** Cross-signal correlation, cross-cycle memory, emotional memory, contraception intelligence, health pattern detection, confidence-calibrated language, tiered delayed period handling, post-hormonal transition intelligence.
-
----
-
-## 12. TESTING GAPS
-
-Add to test generator:
-1. Delayed period at 1, 5, 10, 20 days → tiered messaging
-2. Cycle day 29, 30, 35 of 28-day cycle → no wrapping, phase stays luteal
-3. Hormonal user periodStarted → CycleHistory.cycleLength null
-4. Irregular user 0 cycles → phase labels suppressed
-5. Irregular user day 50 → extended cycle notice
-6. Contraception transitions (all 4 types)
-7. Hormonal user + 7 logs → no hormone language
-8. Copper IUD → natural cycle runs
-9. Post-hormonal transition → irregularity forced
-10. Chat zero logs → no fabrication
-11. Forecast: 7 logs same day → locked
-
----
-
-## 13. DEPLOYMENT CHECKLIST
-
-- [ ] `NODE_ENV=production`
-- [ ] Error handler safe
-- [ ] Rate limiters active
-- [ ] PgBouncer configured
-- [ ] Backend colocated with Supabase region
-- [ ] `OPENAI_API_KEY` set
-- [ ] `JWT_SECRET` strong
-- [ ] Cycle day wrapping fixed
-- [ ] Hormonal periodStarted fixed
-- [ ] Delayed period tiered messaging
-- [ ] 500-case suite > 95% all metrics
-- [ ] All three scenarios verified
+| 1 | Phase transition bridging language | Users confused by sudden tone shifts |
+| 2 | Inactivity detection + graduated messaging | DAU/MAU dropping |
+| 3 | Cross-cycle narrative staleness detection | Users with 3+ months of data |
+| 4 | Prediction accuracy feedback loop | Period predictions consistently off |
+| 5 | Insight thumbs up/down | Need qualitative feedback |
+| 6 | Outlier detection on logged values | Users reporting wrong insights from bad data |
+| 7 | Cycle length trend detection | Users whose cycles are lengthening/shortening |
+| 8 | Chronic stress elevation detection | Sustained stress not acknowledged |
+| 9 | Apple Health / Google Health Connect | Auto-import sleep data |
+| 10 | iOS/Android home screen widget | Passive engagement |
+| 11 | Prisma transactions on periodStarted | Data consistency under failure |
+| 12 | Welcome-back flow for inactive users | Users returning after weeks/months |

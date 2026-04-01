@@ -347,7 +347,7 @@ export async function getHomeScreen(req: Request, res: Response): Promise<void> 
   // Extended cycle notice for irregular users on day 50+
   const isExtendedCycle = cycleMode === "irregular" && rawDiffDays > 45;
 
-  const content = buildContent({
+  let content = buildContent({
     phase: cycleInfo.phase,
     cycleDay: cycleInfo.currentDay,
     cycleLength: effectiveCycleLength,
@@ -360,6 +360,40 @@ export async function getHomeScreen(req: Request, res: Response): Promise<void> 
     isLearning,
     isExtendedCycle,
   });
+
+  // Signal-aware home: when user has 3+ recent logs and signals are positive,
+  // override phase-default headlines that contradict actual logged state
+  if (!isPeriodDelayed && !isExtendedCycle && !isLearning && !isHormonalMode) {
+    const recentLogs = await prisma.dailyLog.findMany({
+      where: { userId: req.userId! },
+      orderBy: { date: "desc" },
+      take: 3,
+    });
+    if (recentLogs.length >= 3) {
+      const POSITIVE_MOODS = new Set(["good", "positive", "happy", "great", "calm"]);
+      const HIGH_ENERGY = new Set(["high", "medium"]);
+      const positiveMood = recentLogs.every(
+        (l) => POSITIVE_MOODS.has(l.mood?.trim().toLowerCase() ?? ""),
+      );
+      const goodEnergy = recentLogs.every(
+        (l) => HIGH_ENERGY.has(l.energy?.trim().toLowerCase() ?? ""),
+      );
+      // If phase says negative things but logs are positive, override
+      if (positiveMood && goodEnergy) {
+        const phaseNegative =
+          content.cardHeadline.toLowerCase().includes("low energy") ||
+          content.cardHeadline.toLowerCase().includes("drained") ||
+          content.cardHeadline.toLowerCase().includes("sensitive");
+        if (phaseNegative) {
+          content = {
+            ...content,
+            cardHeadline: "Your logs show you're feeling good — keep it up",
+            reassurance: "Your recent data looks positive. Trust what you're feeling.",
+          };
+        }
+      }
+    }
+  }
 
   // "Has your period started?" prompt when period is delayed or extended cycle
   const periodAction = (isPeriodDelayed || isExtendedCycle)

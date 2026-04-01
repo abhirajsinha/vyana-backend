@@ -28,6 +28,7 @@ model User {
   cycleRegularity String?
   cycleMode      String         @default("natural")
   fcmToken        String?
+  lastNotificationSentAt DateTime?
   contraceptionChangedAt DateTime?
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt

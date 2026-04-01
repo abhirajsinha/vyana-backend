@@ -54,6 +54,22 @@ export async function register(req: Request, res: Response): Promise<void> {
     return;
   }
 
+  const numAge = Number(age);
+  const numHeight = Number(height);
+  const numWeight = Number(weight);
+  if (!Number.isFinite(numAge) || numAge < 10 || numAge > 100) {
+    res.status(400).json({ error: "age must be between 10 and 100" });
+    return;
+  }
+  if (!Number.isFinite(numHeight) || numHeight < 50 || numHeight > 300) {
+    res.status(400).json({ error: "height must be between 50 and 300 cm" });
+    return;
+  }
+  if (!Number.isFinite(numWeight) || numWeight < 20 || numWeight > 500) {
+    res.status(400).json({ error: "weight must be between 20 and 500 kg" });
+    return;
+  }
+
   const normalizedEmail = email.trim().toLowerCase();
   if (!isValidEmail(normalizedEmail)) {
     res.status(400).json({ error: "Invalid email" });
@@ -163,6 +179,23 @@ export async function googleAuth(req: Request, res: Response): Promise<void> {
     res.status(400).json({ error: "Missing required profile fields" });
     return;
   }
+
+  const gNumAge = Number(age);
+  const gNumHeight = Number(height);
+  const gNumWeight = Number(weight);
+  if (!Number.isFinite(gNumAge) || gNumAge < 10 || gNumAge > 100) {
+    res.status(400).json({ error: "age must be between 10 and 100" });
+    return;
+  }
+  if (!Number.isFinite(gNumHeight) || gNumHeight < 50 || gNumHeight > 300) {
+    res.status(400).json({ error: "height must be between 50 and 300 cm" });
+    return;
+  }
+  if (!Number.isFinite(gNumWeight) || gNumWeight < 20 || gNumWeight > 500) {
+    res.status(400).json({ error: "weight must be between 20 and 500 kg" });
+    return;
+  }
+
   if (!isCycleLengthDays(cycleLength)) {
     res.status(400).json({ error: "Cycle length must be between 21 and 45 days" });
     return;

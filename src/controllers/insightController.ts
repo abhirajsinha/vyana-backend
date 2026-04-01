@@ -17,6 +17,9 @@ import {
   buildInsightContext,
   generateRuleBasedInsights,
   insightContextAsStableBaseline,
+  softenForConfidenceTier,
+  detectMomentumBreak,
+  applyMomentumBreakNarrative,
 } from "../services/insightService";
 import {
   buildVyanaContextForInsights,
@@ -209,6 +212,7 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     where: { userId_date: { userId: req.userId!, date: dayStart } },
   });
   if (cached?.payload && isInsightsPayloadCached(cached.payload)) {
+    console.log(JSON.stringify({ type: "insight_cache", hit: true, userId: req.userId, timestamp: new Date().toISOString() }));
     const full = cached.payload as Record<string, unknown>;
     // transitionWarmup is time-sensitive (14-day window) — compute fresh, don't cache it
     const cachedUser = await prisma.user.findUnique({
@@ -233,6 +237,7 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     });
     return;
   }
+  console.log(JSON.stringify({ type: "insight_cache", hit: false, userId: req.userId, timestamp: new Date().toISOString() }));
 
   const data = await getUserInsightData(req.userId!);
   if (!data) {
@@ -365,6 +370,7 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
         trends: context.trends,
         sleepDelta: numericBaseline.sleepDelta,
         priorityDrivers: context.priorityDrivers,
+        recentLogs,
       });
 
   const ruleBasedInsights = generateRuleBasedInsights(context);
@@ -374,6 +380,14 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     variantIndex,
   );
   let draftInsights = { ...ruleBasedInsights, tomorrowPreview };
+
+  // Soften language for zero-data / low-data users before GPT sees the draft
+  draftInsights = softenForConfidenceTier(
+    draftInsights,
+    recentLogs.length,
+    cycleInfo.phase,
+    cycleInfo.currentDay,
+  );
 
   if (
     hormoneLanguage &&
@@ -728,6 +742,13 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
   } catch {
     insights = draftInsights;
     aiDebug = "api_error";
+  }
+
+  // Momentum protection — when a positive streak is broken by one bad day,
+  // frame it as "rougher than your recent streak" instead of full negative narrative
+  const momentumCheck = detectMomentumBreak(recentLogs);
+  if (momentumCheck.isMomentumBreak && context.mode === "personalized") {
+    insights = applyMomentumBreakNarrative(insights, momentumCheck.streakDays);
   }
 
   // Memory override — ONLY applied when AI did not run or produced no improvement
@@ -1394,6 +1415,7 @@ export async function getInsightsForecast(
     trends: context.trends,
     sleepDelta: numericBaseline.sleepDelta,
     priorityDrivers: context.priorityDrivers,
+    recentLogs,
   });
 
   const forecastVyanaCtx = buildVyanaContextForInsights({
