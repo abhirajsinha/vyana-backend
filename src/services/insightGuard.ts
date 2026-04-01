@@ -209,10 +209,19 @@ function applyConsistencyGuard(insights: DailyInsightsShape): DailyInsightsShape
         }
         if (NEGATIVE_SIGNALS.test(result[key]) && !IMPROVING_SIGNALS.test(result[key])) {
           result[key] = result[key]
-            .replace(/\bharder\b/gi, "a bit uneven")
+            // Phrase-level replacements first (longer patterns before shorter)
+            .replace(/\bharder than they should\b/gi, "not quite settled yet")
+            .replace(/\bharder than usual\b/gi, "still settling")
+            .replace(/\bharder than\b/gi, "not as easy as")
+            .replace(/\bworse than usual\b/gi, "still stabilizing")
+            .replace(/\bworse than\b/gi, "not as steady as")
+            .replace(/\bget worse\b/gi, "still be adjusting")
+            .replace(/\bfeel worse\b/gi, "still be settling")
+            // Standalone word replacements (only if no "than" follows)
+            .replace(/\bharder\b(?!\s+than)/gi, "not as easy")
+            .replace(/\bworse\b(?!\s+than)/gi, "not as steady")
             .replace(/\bdraining\b/gi, "still settling")
             .replace(/\bexhausting\b/gi, "still settling")
-            .replace(/\bworse\b/gi, "a bit uneven")
             .replace(/\bheavy\b/gi, "still adjusting")
             .replace(/\bheavier\b/gi, "still adjusting");
         }
@@ -286,13 +295,10 @@ function applyHallucinationFilter(text: string, phase: Phase, logsCount: number)
 function applyTomorrowSoftener(text: string, logsCount: number): string {
   if (logsCount > 0) return text;
   return text
-    .replace(/\bwill likely\b/gi, "may")
     .replace(/\bwill\b(?!\s+not)/gi, "may")
-    .replace(/\byou'll likely\b/gi, "you may")
     .replace(/\byou'll\b/gi, "you may")
     .replace(/\bhit(?:s|ting)?\b/gi, "reach")
-    .replace(/\benergy and confidence hit\b/gi, "energy and confidence can reach")
-    .replace(/\bmay likely\b/gi, "may");
+    .replace(/\benergy and confidence hit\b/gi, "energy and confidence can reach");
 }
 
 // ─── 9. CAPITALIZE FIX ──────────────────────────────────────────────────────
