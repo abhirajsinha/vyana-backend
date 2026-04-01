@@ -81,11 +81,14 @@ import {
   isStableInsightState,
   type PrimaryInsightCause,
 } from "../services/insightCause";
+import { applyAllGuards } from "../services/insightGuard";
 import {
   buildMonitorEntry,
   recordInsightGeneration,
 } from "../services/insightMonitor";
 import { buildTransitionWarmup } from "../services/transitionWarmup";
+
+const GUARD_VERSION = 1; // bump to invalidate all insight caches
 
 function isInsightsPayloadCached(payload: unknown): boolean {
   return (
@@ -93,7 +96,9 @@ function isInsightsPayloadCached(payload: unknown): boolean {
     payload !== null &&
     "cycleDay" in payload &&
     "insights" in payload &&
-    "view" in payload
+    "view" in payload &&
+    "guardVersion" in payload &&
+    (payload as Record<string, unknown>).guardVersion === GUARD_VERSION
   );
 }
 
@@ -852,6 +857,19 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
 
   insights = cleanupInsightText(insights);
 
+  // ── Post-generation guard layer ──────────────────────────────────────────
+  // Deterministic enforcement: catches zero-data overconfidence, direction
+  // errors, contradictions, peak exaggeration, and hallucinations that GPT
+  // prompt instructions failed to prevent.
+  const guardResult = applyAllGuards({
+    insights,
+    cycleDay: cycleInfo.currentDay,
+    cycleLength: effectiveCycleLength,
+    phase: cycleInfo.phase,
+    logsCount,
+  });
+  insights = guardResult.insights;
+
   const view = buildInsightView(context, insights, { primaryKeyOverride });
 
   let pmsWarning = null;
@@ -885,6 +903,7 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
 
   // Full payload — written to cache for internal use
   const cachePayload = {
+    guardVersion: GUARD_VERSION,
     cycleDay: cycleInfo.currentDay,
     isNewUser,
     progress: {
@@ -1055,6 +1074,20 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     update: { payload: payloadJson },
     create: { userId: req.userId!, date: dayStart, payload: payloadJson },
   });
+
+  if (guardResult.guardsApplied.length > 0) {
+    console.log(
+      JSON.stringify({
+        type: "insight_guard",
+        userId: req.userId,
+        cycleDay: cycleInfo.currentDay,
+        phase: cycleInfo.phase,
+        logsCount,
+        guardsApplied: guardResult.guardsApplied,
+        timestamp: new Date().toISOString(),
+      }),
+    );
+  }
 
   recordInsightGeneration(
     buildMonitorEntry({
