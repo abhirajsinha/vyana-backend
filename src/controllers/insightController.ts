@@ -39,6 +39,7 @@ import {
 } from "../services/insightData";
 import {
   buildInsightView,
+  buildInsightBasis,
   resolvePrimaryInsightKey,
   shouldSuppressPrimary,
   pickNovelPrimaryKey,
@@ -227,6 +228,15 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     const cachedTransitionWarmup = cachedUser
       ? buildTransitionWarmup(cachedUser.contraceptionChangedAt ?? null)
       : null;
+    // Recompute insightBasis from cached progress data (lightweight — no DB call)
+    const cachedLogsCount = (full.progress as { logsCount?: number })?.logsCount ?? 0;
+    const cachedInsightBasis = buildInsightBasis(
+      cachedLogsCount,
+      // completedCycleCount not cached — fetch it
+      await prisma.cycleHistory.count({
+        where: { userId: req.userId!, endDate: { not: null }, cycleLength: { not: null } },
+      }),
+    );
     res.json({
       cycleDay: full.cycleDay,
       isNewUser: full.isNewUser,
@@ -237,6 +247,7 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
       isIrregular: full.isIrregular,
       insights: full.insights,
       view: full.view,
+      insightBasis: cachedInsightBasis,
       aiEnhanced: full.aiEnhanced,
       transitionWarmup: cachedTransitionWarmup,
     });
@@ -1019,6 +1030,7 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     : null;
 
   // Client response
+  const insightBasis = buildInsightBasis(logsCount, completedCycleCount);
   const responsePayload = {
     cycleDay: cachePayload.cycleDay,
     isNewUser: cachePayload.isNewUser,
@@ -1031,6 +1043,7 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     isExtendedCycle,
     insights: cachePayload.insights,
     view: cachePayload.view,
+    insightBasis,
     aiEnhanced: cachePayload.aiEnhanced,
     transitionWarmup,
     periodAction,

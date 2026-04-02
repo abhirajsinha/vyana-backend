@@ -453,7 +453,7 @@ export function applyAllGuards(input: InsightGuardInput): InsightGuardResult {
 
   const direction = getPhaseDirection(cycleDay, cycleLength);
   const isZeroData = logsCount === 0;
-  const isLowData = logsCount > 0 && logsCount < 3;
+  const isLowData = logsCount > 0 && logsCount < 5;
 
   // Process each field through the pipeline
   const keys: (keyof DailyInsightsShape)[] = [

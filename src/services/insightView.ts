@@ -23,9 +23,11 @@ export function resolvePrimaryInsightKey(ctx: InsightContext): BodyKey {
 export function getConfidenceLabel(ctx: InsightContext): string {
   if (ctx.recentLogsCount === 0) return "Phase-based guidance";
   if (ctx.recentLogsCount < 3) return "Early insights";
+  if (ctx.recentLogsCount < 5) return "Emerging patterns";
+  if (ctx.recentLogsCount < 6) return "Building your patterns";
   if (ctx.confidence === "low") return "Limited data";
   if (ctx.confidence === "medium") return "Emerging patterns";
-  return "High confidence insights";
+  return "Personalized insights";
 }
 
 export function shouldShowExplanation(ctx: InsightContext): boolean {
@@ -106,4 +108,104 @@ export function buildInsightView(
     view.explanation = undefined;
   }
   return view;
+}
+
+// ─── Insight basis — tells the user what insights are based on ────────────────
+
+export interface InsightBasisNextUnlock {
+  logsNeeded: number | null;
+  cyclesNeeded: number | null;
+  what: string;
+}
+
+export interface InsightBasis {
+  source:
+    | "phase_only"
+    | "early_signals"
+    | "emerging_patterns"
+    | "personal_patterns"
+    | "baseline_intelligence"
+    | "cross_cycle_identity";
+  description: string;
+  nextUnlock: InsightBasisNextUnlock | null;
+}
+
+export function buildInsightBasis(
+  logsCount: number,
+  completedCycles: number,
+): InsightBasis {
+  // Stage 6: 14+ logs + 2+ cycles → fully unlocked
+  if (logsCount >= 14 && completedCycles >= 2) {
+    return {
+      source: "cross_cycle_identity",
+      description: `Based on ${logsCount} days of logs across ${completedCycles} completed cycles`,
+      nextUnlock: null,
+    };
+  }
+
+  // Stage 5: 14+ logs + <2 cycles → baseline active, waiting for cycles
+  if (logsCount >= 14) {
+    const cyclesNeeded = 2 - completedCycles;
+    return {
+      source: "baseline_intelligence",
+      description: `Based on ${logsCount} days of logs with personal baseline comparison`,
+      nextUnlock: {
+        logsNeeded: null,
+        cyclesNeeded,
+        what: "Cross-cycle intelligence — patterns across your cycles",
+      },
+    };
+  }
+
+  // Stage 4: 6-13 logs → personalized, waiting for baseline
+  if (logsCount >= 6) {
+    return {
+      source: "personal_patterns",
+      description: `Based on ${logsCount} days of your personal data`,
+      nextUnlock: {
+        logsNeeded: 14 - logsCount,
+        cyclesNeeded: null,
+        what: "Baseline comparison — we'll compare against your personal normal",
+      },
+    };
+  }
+
+  // Stage 3: 5 logs → emerging patterns (interaction flags just unlocked)
+  if (logsCount === 5) {
+    return {
+      source: "emerging_patterns",
+      description: "Based on your recent patterns across 5 days of logs",
+      nextUnlock: {
+        logsNeeded: 1,
+        cyclesNeeded: null,
+        what: "Full personalized insights",
+      },
+    };
+  }
+
+  // Stage 2: 1-4 logs → early signals
+  if (logsCount >= 1) {
+    return {
+      source: "early_signals",
+      description: logsCount === 1
+        ? "Based on your cycle phase and 1 day of logs"
+        : `Based on your cycle phase and ${logsCount} days of logs`,
+      nextUnlock: {
+        logsNeeded: 5 - logsCount,
+        cyclesNeeded: null,
+        what: "Pattern detection and signal connections",
+      },
+    };
+  }
+
+  // Stage 1: 0 logs → phase only
+  return {
+    source: "phase_only",
+    description: "Based on your cycle phase — log your first day to start personalizing",
+    nextUnlock: {
+      logsNeeded: 1,
+      cyclesNeeded: null,
+      what: "Early signal detection",
+    },
+  };
 }

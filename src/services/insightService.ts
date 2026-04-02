@@ -293,9 +293,11 @@ function buildSignals(logs: DailyLog[]): SignalState {
   if (moodState === "low" || stressState === "elevated") emotionalState = "loaded";
   else if (moodState === "positive") emotionalState = "uplifted";
 
-  // Avoid "pattern/coupling" type claims for brand new users.
-  // Interactions can be re-enabled once we have enough days to justify them.
-  if (logs.length >= 3) {
+  // Interaction flags claim causal relationships between signals
+  // ("sleep and stress are feeding into each other"). This requires
+  // enough data points to be defensible — 5 logs across multiple days.
+  // At 3 logs, correlation ≠ causation; at 5+, the pattern is reliable.
+  if (logs.length >= 5) {
     if (stressState === "elevated" && sleepState === "poor") {
       interactionFlags.push("sleep_stress_amplification");
     }
@@ -942,8 +944,10 @@ export function softenForConfidenceTier(
   phase: Phase,
   cycleDay: number,
 ): DailyInsights {
-  // Tier 3: 5+ logs — return as-is (already personalized)
-  if (logsCount >= 5) return insights;
+  // Tier 3: 6+ logs — return as-is (personalized with enough data)
+  // At 5 logs we have trends but no baseline comparison yet,
+  // so "Based on your recent logs..." hedging is still appropriate.
+  if (logsCount >= 6) return insights;
 
   // Tier 2: 1-4 logs — light softening (replace "is" with "may be" style)
   if (logsCount >= 1) {
