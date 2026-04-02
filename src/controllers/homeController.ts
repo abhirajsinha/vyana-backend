@@ -320,7 +320,14 @@ export async function getHomeScreen(req: Request, res: Response): Promise<void> 
   const transitionWarmup = buildTransitionWarmup(user.contraceptionChangedAt ?? null);
 
   const cycleMode = getCycleMode(user);
-  const cyclePrediction = await getCyclePredictionContext(req.userId!, user.cycleLength);
+
+  // ── Parallel: cycle prediction + cycle count ──────────────────────────────
+  const [cyclePrediction, completedCycleCount] = await Promise.all([
+    getCyclePredictionContext(req.userId!, user.cycleLength),
+    prisma.cycleHistory.count({
+      where: { userId: req.userId!, endDate: { not: null }, cycleLength: { not: null } },
+    }),
+  ]);
   const effectiveCycleLength = cyclePrediction.avgLength || user.cycleLength;
   const cycleInfo = calculateCycleInfo(user.lastPeriodStart, effectiveCycleLength, cycleMode);
 
@@ -335,11 +342,6 @@ export async function getHomeScreen(req: Request, res: Response): Promise<void> 
   const contraceptionType = resolveContraceptionType(user.contraceptiveMethod);
   const contraceptionBehavior = getContraceptionBehavior(contraceptionType);
   const isHormonalMode = !contraceptionBehavior.useNaturalCycleEngine;
-
-  // Learning state: irregular users with < 2 completed cycles shouldn't see phase labels
-  const completedCycleCount = await prisma.cycleHistory.count({
-    where: { userId: req.userId!, endDate: { not: null }, cycleLength: { not: null } },
-  });
   const isLearning =
     (cycleMode === "irregular" || cyclePrediction.confidence === "irregular") &&
     completedCycleCount < 2;

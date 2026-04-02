@@ -35,18 +35,15 @@ export async function recordInsightMemoryOccurrence(params: {
   const { userId, driver, now = new Date() } = params;
   const dayKey = utcDayKey(now);
 
-  const existing = await prisma.insightMemory.findUnique({
+  // Upsert: create if missing, otherwise no-op read (saves a round-trip vs find+create)
+  const existing = await prisma.insightMemory.upsert({
     where: { userId_driver: { userId, driver } },
+    create: { userId, driver, firstSeen: now, lastSeen: now, count: 1 },
+    update: {},
     select: { count: true, lastSeen: true },
   });
 
-  if (!existing) {
-    await prisma.insightMemory.create({
-      data: { userId, driver, firstSeen: now, lastSeen: now, count: 1 },
-    });
-    return;
-  }
-
+  // Compute correct count based on recency logic
   const daysSinceLastSeen = existing.lastSeen
     ? (now.getTime() - existing.lastSeen.getTime()) / (1000 * 60 * 60 * 24)
     : 0;
@@ -57,6 +54,9 @@ export async function recordInsightMemoryOccurrence(params: {
   if (daysSinceLastSeen > 2) newCount = 1;
   else if (isSameDay) newCount = existing.count;
   else newCount = existing.count + 1;
+
+  // Skip update if nothing changed (new row already has count=1, lastSeen=now)
+  if (newCount === existing.count && isSameDay) return;
 
   await prisma.insightMemory.update({
     where: { userId_driver: { userId, driver } },

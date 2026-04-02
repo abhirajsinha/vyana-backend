@@ -32,7 +32,7 @@ The insights system is designed to be:
 
 Primary flow:
 
-`Logs -> Signals -> Trends -> Context -> Priority Resolution -> Insights -> AI Interpretation (optional)`
+`Logs -> Signals -> Trends -> Context -> Priority Resolution -> Insights -> Confidence Tier Softening -> AI Interpretation (optional) -> Post-Generation Guards -> View`
 
 Forecast flow:
 
@@ -50,6 +50,21 @@ Forecast flow:
   - rewrites/interprets insight output into polished language
   - must return strict JSON format
   - falls back to deterministic output on any failure
+
+### Post-Generation Guard Layer
+
+After GPT rewriting (or when GPT is skipped), a deterministic guard pipeline (`insightGuard.ts`) enforces quality:
+
+1. **Zero-data assertion guard** — "Energy is lower" → "Energy can feel lower" (0 logs only)
+2. **Direction guard** — blocks negative assertions during improving phases (0 logs only)
+3. **Intensity limiter** — caps extremes like "everything feels", "completely drained" (< 3 logs)
+4. **Hallucination filter** — removes fabricated claims like "pelvic awareness" (0 logs only)
+5. **Technical language guard** — "hormone floor" → "lowest hormone levels" (< 3 logs)
+6. **Tomorrow softener** — "will" → "may" in tomorrowPreview (0 logs only)
+7. **Capitalization fix** — repairs broken caps from regex replacements (always)
+8. **Consistency validator** — resolves contradictions between fields (< 3 logs only)
+
+High-data users (5+ logs) pass through with minimal interference.
 
 ---
 
@@ -166,12 +181,25 @@ Each response includes:
 - `whyThisIsHappening`
 - `solution`
 - `recommendation` (kept for compatibility; mirrors solution strategy)
+- `tomorrowPreview`
 
 Behavior highlights:
 
 - low confidence softens claims
 - high variability shapes both explanations and suggestions
 - baseline deviation can override generic advice
+
+### 9.5) Confidence Tier Language System
+
+The voice changes based on data availability:
+
+| Data Level | Voice | Example |
+|---|---|---|
+| **0 logs** | Suggestive, phase-educational | "Energy can still feel lower toward the end of your period" |
+| **1-4 logs** | References actual data, no trend claims | "Your latest log shows lower energy" |
+| **5+ logs** | Assertive, evidence-based, personal | "Your sleep has dropped from 7h to 5h — that's what's driving how you feel" |
+
+Implemented via `softenForConfidenceTier()` (pre-GPT) and `applyAllGuards()` (post-GPT).
 
 ---
 
@@ -190,6 +218,8 @@ Fallback behavior:
 - insights still generated using phase-based reasoning
 - confidence usually low
 - guidance nudges users to keep logging
+
+Zero-data users receive suggestive language only — no assertive state claims. The insightGuard layer catches any assertions that slip through GPT.
 
 ---
 
@@ -212,6 +242,22 @@ Prompt constraints enforce:
 - fallback-aware language when `mode = fallback`
 
 If parsing/validation fails, deterministic insight output is returned.
+
+Post-GPT, the insight guard layer (`applyAllGuards`) provides deterministic enforcement. GPT prompt instructions fail silently ~30% of the time; the guard catches zero-data overconfidence, direction errors, hallucinations, and contradictions.
+
+---
+
+### 11.5) Primary Cause Detection
+
+`insightCause.ts` determines whether the user's current state is primarily driven by:
+- **sleep_disruption** — sustained poor sleep (2+ of last 3 days < 6h)
+- **stress_led** — sustained high stress (2+ of last 3 days elevated)
+- **stable** — all recent logs show consistent, non-distressed patterns
+- **cycle** — default when no other cause dominates
+
+Single-day spike protection: one bad night doesn't flip the entire narrative. Requires 2+ of the last 3 days to confirm a pattern.
+
+Momentum protection: when 4+ positive days are followed by 1 negative day, the narrative frames it as "rougher than your recent streak" rather than full negative.
 
 ---
 
@@ -302,8 +348,10 @@ Current system maturity:
 
 Recommended next upgrades:
 
-1. cross-cycle memory layer (recurring pattern detection)
+1. cross-cycle memory layer — implemented (insightMemory + correlationEngine)
 2. multi-day predictive modeling (2-5 day outlook)
 3. adaptive priority weights per user sensitivity
-4. richer UX around onboarding progress and confidence
+4. richer UX around onboarding progress — implemented (3-tier language + guard layer)
+5. insight thumbs up/down feedback loop
+6. phase transition bridging language
 

@@ -48,7 +48,7 @@ Invalid/expired token returns `401 { "error": "Invalid or expired token" }`.
 | `age` | number | Yes | |
 | `height` | number | Yes | |
 | `weight` | number | Yes | |
-| `lastPeriodStart` | string (ISO date) | Yes | |
+| `lastPeriodStart` | string (ISO date) | Yes | Required for natural cycle users. Hormonal users default to today if omitted. |
 | `cycleLength` | number | No | Default `28`. Must be 21–45 |
 | `contraceptiveMethod` | string | No | |
 | `cycleRegularity` | string | No | |
@@ -92,6 +92,10 @@ Invalid/expired token returns `401 { "error": "Invalid or expired token" }`.
 | `400` | `Missing required fields` |
 | `400` | `Invalid email` |
 | `400` | `Cycle length must be between 21 and 45 days` |
+| `400` | `age must be between 10 and 100` |
+| `400` | `height must be between 50 and 300 cm` |
+| `400` | `weight must be between 20 and 500 kg` |
+| `400` | `lastPeriodStart cannot be in the future` |
 | `409` | `An account with this email already exists` |
 
 ---
@@ -165,6 +169,10 @@ Invalid/expired token returns `401 { "error": "Invalid or expired token" }`.
 | `400` | `idToken is required` |
 | `400` | `Missing required profile fields` |
 | `400` | `Cycle length must be between 21 and 45 days` |
+| `400` | `age must be between 10 and 100` |
+| `400` | `height must be between 50 and 300 cm` |
+| `400` | `weight must be between 20 and 500 kg` |
+| `400` | `lastPeriodStart cannot be in the future` |
 | `400` | `Google email must be verified` |
 | `400` | `Invalid email from Google token` |
 | `401` | `Invalid Google token` |
@@ -294,6 +302,34 @@ When contraception method changed:
 
 ---
 
+### `PUT /api/user/fcm-token`
+
+**Auth:** Required
+
+Update the user's FCM push notification token.
+
+**Request Body**
+
+| Field | Type | Required |
+|-------|------|----------|
+| `fcmToken` | string | Yes |
+
+**Response** `200`
+
+```json
+{
+  "success": true
+}
+```
+
+**Errors**
+
+| Status | Message |
+|--------|---------|
+| `400` | `fcmToken is required` |
+
+---
+
 ## Cycle
 
 ### `GET /api/cycle/current`
@@ -344,6 +380,8 @@ When contraception method changed:
 {
   "success": true,
   "startDate": "2026-03-28T00:00:00.000Z",
+  "cycleDay": 1,
+  "phase": "menstrual",
   "cycleMode": "natural",
   "healthPatternCheck": null
 }
@@ -355,6 +393,8 @@ When health alerts exist:
 {
   "success": true,
   "startDate": "2026-03-28T00:00:00.000Z",
+  "cycleDay": 1,
+  "phase": "menstrual",
   "cycleMode": "natural",
   "healthPatternCheck": {
     "hasAlerts": true,
@@ -370,7 +410,37 @@ When health alerts exist:
 |--------|---------|
 | `400` | `date is required (YYYY-MM-DD or ISO)` |
 | `400` | `Invalid date` |
+| `400` | `Period start date cannot be in the future` |
 | `404` | `User not found` |
+| `409` | `Period already logged for this date` |
+
+---
+
+### `DELETE /api/cycle/period-started/:id`
+
+**Auth:** Required
+
+Undoes a period-started entry. Deletes the CycleHistory entry, reopens the previous cycle, restores `lastPeriodStart`, and clears caches.
+
+**Response** `200`
+
+```json
+{
+  "success": true,
+  "restoredLastPeriodStart": "2026-03-01T00:00:00.000Z",
+  "cycleDay": 28,
+  "phase": "luteal",
+  "cycleMode": "natural"
+}
+```
+
+**Errors**
+
+| Status | Message |
+|--------|---------|
+| `400` | `Cycle history ID is required` |
+| `403` | `Not authorized` |
+| `404` | `Cycle history entry not found` |
 
 ---
 
@@ -429,6 +499,18 @@ When health alerts exist:
 }
 ```
 
+If a log already exists for today, it is updated (upsert behavior).
+
+**Errors**
+
+| Status | Message |
+|--------|---------|
+| `400` | `sleep must be between 0 and 24` |
+| `400` | `padsChanged must be between 0 and 50` |
+| `400` | `Invalid mood value: <value>` |
+| `400` | `Invalid energy value: <value>` |
+| `400` | `Invalid stress value: <value>` |
+
 ---
 
 ### `GET /api/logs`
@@ -458,6 +540,76 @@ When health alerts exist:
   }
 ]
 ```
+
+---
+
+### `PUT /api/logs/:id`
+
+**Auth:** Required
+
+Edit an existing log. Only provided fields are updated.
+
+**Request Body** — same fields as POST /api/logs, all optional.
+
+**Response** `200`
+
+```json
+{
+  "success": true,
+  "log": { /* updated DailyLog */ }
+}
+```
+
+**Errors**
+
+| Status | Message |
+|--------|---------|
+| `400` | `Log ID is required` |
+| `400` | `No fields to update` |
+| `400` | `sleep must be between 0 and 24` |
+| `400` | `padsChanged must be between 0 and 50` |
+| `400` | `Invalid mood/energy/stress value` |
+| `403` | `Not authorized to edit this log` |
+| `404` | `Log not found` |
+
+---
+
+### `POST /api/logs/quick-check-in`
+
+**Auth:** Required
+
+Partial log upsert — accepts any subset of mood, energy, sleep, stress, pain, fatigue.
+
+**Request Body**
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `mood` | string | No | |
+| `energy` | string | No | |
+| `sleep` | number | No | 0-24 |
+| `stress` | string | No | |
+| `pain` | string | No | |
+| `fatigue` | string | No | |
+
+At least one field must be provided.
+
+**Response** `201`
+
+```json
+{
+  "success": true,
+  "fieldsLogged": ["mood", "sleep"],
+  "log": { /* created/updated DailyLog */ }
+}
+```
+
+**Errors**
+
+| Status | Message |
+|--------|---------|
+| `400` | `At least one field is required` |
+| `400` | `sleep must be between 0 and 24` |
+| `400` | `Invalid mood/energy/stress value` |
 
 ---
 
@@ -744,6 +896,7 @@ Returns detailed context data for today's insights (cycle, hormones, signals, me
 | Status | Message |
 |--------|---------|
 | `400` | `message is required` |
+| `400` | `Message too long (max 2000 characters)` |
 | `404` | `User not found` |
 
 ---
@@ -988,6 +1141,47 @@ When no alerts:
 
 ---
 
+## Admin
+
+### `POST /api/admin/send-notifications`
+
+**Auth:** API key via `X-API-Key` header (must match `ADMIN_API_KEY` env var)
+
+Triggers a batch of phase-aware push notifications to all eligible users.
+
+**Response** `200`
+
+```json
+{
+  "sent": 15,
+  "failed": 2,
+  "total": 17
+}
+```
+
+**Errors**
+
+| Status | Message |
+|--------|---------|
+| `401` | `Unauthorized` |
+
+---
+
+## Rate Limiting
+
+| Scope | Limit | Window |
+|-------|-------|--------|
+| General API (`/api/*`) | 120 req | 1 min |
+| Auth login/register | 30 req | 15 min |
+| Google auth | 20 req | 15 min |
+| Insights (`/api/insights`, `/api/insights/forecast`) | 10 req | 1 min |
+| Log operations (POST/PUT) | 30 req | 1 min |
+| Chat | 60 req | 1 min |
+
+Exceeding a limit returns `429` with `{ "error": "Too many requests, please slow down." }`.
+
+---
+
 ## Global Error Responses
 
 | Status | When | Body |
@@ -995,4 +1189,5 @@ When no alerts:
 | `401` | Missing auth header | `{ "error": "Missing auth token" }` |
 | `401` | Invalid/expired token | `{ "error": "Invalid or expired token" }` |
 | `404` | Unknown route | `{ "error": "Route not found" }` |
-| `500` | Unhandled server error | `{ "error": "<message>" }` |
+| `429` | Rate limit exceeded | `{ "error": "Too many requests, please slow down." }` |
+| `500` | Unhandled server error | `{ "error": "Internal server error" }` |

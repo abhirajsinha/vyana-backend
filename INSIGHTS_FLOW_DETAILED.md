@@ -19,6 +19,9 @@ It reflects the current code in:
 - `src/controllers/healthController.ts`
 - `src/services/cycleEngine.ts`
 - `src/services/insightData.ts`
+- `src/services/insightGuard.ts`
+- `src/services/insightCause.ts`
+- `src/services/insightMonitor.ts`
 
 ---
 
@@ -53,6 +56,7 @@ sequenceDiagram
   participant AI as aiService (GPT)
   participant Mem as insightMemory
   participant PMS as pmsEngine
+  participant Guard as insightGuard
   participant View as insightView
 
   App->>IC: GET /api/insights (JWT)
@@ -67,6 +71,8 @@ sequenceDiagram
     IC->>Engine: generateRuleBasedInsights()
     IC->>Corr: runCorrelationEngine()
     IC->>AI: generateInsightsWithGpt() [when OpenAI client exists]
+    IC->>IC: softenDailyInsights() + cleanupInsightText()
+    IC->>Guard: applyAllGuards() [8 deterministic guards]
     IC->>Mem: read memory + apply escalation
     IC->>View: resolve primary + build view payload
     IC->>PMS: buildPmsSymptomForecast()
@@ -166,6 +172,20 @@ Inside `getInsights`:
    - `v2` condensed card structure
    - `basedOn` reasoning metadata
    - `cycleContext`, `numericSummary`, `memoryContext`, optional `pmsWarning`
+
+### 5.5 Post-Generation Guard Layer
+
+After GPT rewriting and text cleanup, `applyAllGuards()` runs 8 deterministic guards:
+- Zero-data assertion softening
+- Direction enforcement (no negatives during improving phases)
+- Intensity limiting
+- Hallucination filtering
+- Technical language conversion
+- Tomorrow softening
+- Capitalization repair
+- Cross-field consistency validation
+
+The guard runs in <1ms, has no async calls, and never makes text worse. High-data users (5+ logs) pass through with minimal changes.
 
 ---
 
@@ -267,6 +287,8 @@ Inside the service, if the client is missing, the function returns immediately w
 
 If the API call fails, JSON is invalid, or guards reject output → keep / fall back to deterministic draft (see controller + `insightGptService`).
 
+**Circuit breaker:** After 5 consecutive GPT failures, the circuit opens for 5 minutes. During cooldown, all insight requests serve the deterministic draft. The circuit auto-recovers after cooldown. All GPT calls have an 8-second timeout.
+
 ### Forecast GPT (`generateForecastWithGpt`)
 
 Called only when **all** are true (see `insightController.getInsightsForecast`):
@@ -323,11 +345,29 @@ Forecast **GPT** remains gated separately (7 logs + personalized + not low confi
 
 So every new log forces fresh recomputation on next fetch.
 
+Additionally, `periodStarted` clears InsightCache, and `editLog` (PUT /api/logs/:id) and `quickCheckIn` (POST /api/logs/quick-check-in) also invalidate both caches.
+
 ---
 
 ## 12) One-Line Mental Model
 
-Vyana first computes a deterministic, explainable, cycle-aware draft from logs + cycle state; **daily** insights then optionally pass through GPT for tone (when configured). **Forecast** GPT and full forecast payload are stricter and remain eligibility-gated.
+Vyana first computes a deterministic, explainable, cycle-aware draft from logs + cycle state; **daily** insights then optionally pass through GPT for tone (when configured), followed by a **deterministic guard layer** that catches zero-data overconfidence and hallucinations. **Forecast** GPT and full forecast payload are stricter and remain eligibility-gated.
+
+---
+
+### Scenario L: Zero-Data User Guard Verification
+
+Endpoint: `GET /api/insights` (user with 0 logs)
+
+Expected behavior:
+- All insight text uses suggestive framing ("can", "may", "tends to", "often")
+- No assertive state claims ("Energy is lower", "Focus is harder")
+- No hallucinated physical claims ("pelvic awareness", "tingling")
+- No technical jargon ("hormone floor", "LH surge", "cervical mucus")
+- tomorrowPreview uses "may" not "will"
+- No contradictions between fields
+
+The insightGuard layer enforces this even when GPT ignores prompt instructions.
 
 ---
 

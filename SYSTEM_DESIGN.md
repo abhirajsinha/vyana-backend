@@ -60,9 +60,9 @@ External dependency:
 
 ### 3.2 Non-Goals (current scope)
 - No OAuth authorization-code redirect flow (clients use Google ID tokens + server verification).
-- No background jobs/schedulers yet (notifications/check-ins planned).
 - No multi-region deployment, sharding, or read replicas yet.
-- No advanced observability stack (tracing/metrics pipelines not yet implemented).
+- No automated test suite framework (custom test runners exist for insightGuard).
+- No refresh token rotation on use.
 
 ---
 
@@ -104,8 +104,10 @@ Single deployable API service:
 
 ### 5.1 Entry and Middleware
 - `src/index.ts`: bootstraps server, middleware, routes, and global handlers.
-- `src/middleware/auth.ts`: validates Bearer JWT and populates `req.userId`.
-- `src/middleware/errorHandler.ts`: catch-all JSON 404/500 behavior.
+- `src/middleware/auth.ts`: JWT validation
+- `src/middleware/errorHandler.ts`: catch-all JSON 404/500 (production-safe: never leaks stack traces)
+- `src/middleware/rateLimit.ts`: per-scope rate limiting (general, auth, insights, logs, chat)
+- `src/middleware/requestLogger.ts`: structured JSON request logging (method, path, status, duration, userId)
 - `src/types/express.d.ts`: request type augmentation for `userId`.
 
 ### 5.2 Auth and Identity
@@ -125,31 +127,43 @@ Single deployable API service:
 - `src/services/googleAuthService.ts` — verifies Google ID tokens against `GOOGLE_CLIENT_ID`
 
 ### 5.3 User and Logs
-- `src/controllers/userController.ts`: `GET /me`
-- `src/controllers/logController.ts`
-  - create daily log
-  - query recent logs (optional date filter, latest 30)
+- `src/controllers/userController.ts`: `GET /me`, `PUT /profile` (with contraception transition handling)
+- `src/controllers/logController.ts`:
+  - `POST /api/logs` — create/upsert daily log with input validation
+  - `GET /api/logs` — query recent logs (optional date filter, latest 30)
+  - `PUT /api/logs/:id` — edit existing log with ownership verification
+  - `POST /api/logs/quick-check-in` — partial field upsert for quick logging
 
 ### 5.4 Cycle Engine
 - `src/controllers/cycleController.ts`: current cycle + monthly calendar endpoints
+  - `DELETE /api/cycle/period-started/:id` — undo period logging, restore previous cycle
 - `src/services/cycleEngine.ts`:
   - cycle day normalization
   - phase resolution (`menstrual`, `follicular`, `ovulation`, `luteal`)
   - phase-tailored suggestions for UI logging
+  - Cycle day no longer wraps via modulo past cycleLength (delayed period support)
+  - `isPeriodDelayed` detection with tiered messaging (1-3, 4-7, 8-14, 15+ days)
+  - Hormonal users: `CycleHistory.cycleLength = null` (withdrawal bleeds, not biological cycles)
 
 ### 5.5 Insights and Forecast
 - `src/controllers/insightController.ts`
-  - collects recent + baseline logs
-  - computes baseline scope (`phase/global/none`)
-  - builds context, generates deterministic insights
-  - optionally rewrites via OpenAI
-  - exposes forecast endpoint with confidence block
-- `src/services/insightService.ts`
-  - signal normalization and weighted scoring
-  - trend + variability extraction
-  - interaction detection
-  - priority driver resolution
-  - deterministic narrative + recommendations
+  - Full pipeline: context → rule-based → softenForConfidenceTier → GPT rewrite → softenDailyInsights → cleanupInsightText → applyAllGuards → buildInsightView → cache
+  - Cache hit/miss logging
+  - Momentum break detection
+  - Signal-aware narrative overrides
+- `src/services/insightService.ts` — signal processing, rule-based insights, 3-tier confidence language (0 logs suggestive, 1-4 reference-based, 5+ assertive)
+- `src/services/insightGptService.ts` — GPT rewrite with 8s timeout, circuit breaker, duration logging
+- `src/services/insightGuard.ts` — 8-guard post-generation enforcement layer (zero-data assertions, direction, intensity, hallucination, technical language, tomorrow softener, capitalization, consistency)
+- `src/services/insightCause.ts` — primary cause detection (sleep_disruption, stress_led, stable, cycle) with single-day spike protection
+- `src/services/insightMonitor.ts` — production shadow monitoring for GPT quality signals
+- `src/services/vyanaContext.ts` — 4-layer priority signal composition for GPT prompts
+
+### 5.7 Notifications
+- `src/controllers/notificationController.ts`: `PUT /api/user/fcm-token`, `POST /api/admin/send-notifications`
+- `src/services/notificationTemplates.ts`: phase-aware notification templates (menstrual, follicular, ovulation, luteal, delayed period)
+- `src/services/notificationScheduler.ts`: queries users due for notification (20h+ since last)
+- `src/services/notificationService.ts`: FCM integration, invalid token cleanup
+- `src/cron/notificationCron.ts`: hourly notification batch runner
 
 ### 5.6 Chat
 - `src/controllers/chatController.ts`
@@ -191,6 +205,13 @@ Protected (require `Authorization: Bearer <access_token>`):
 - `GET /api/health/patterns`
 - `POST /api/chat`
 - `GET /api/chat/history`
+- `PUT /api/user/fcm-token`
+- `PUT /api/logs/:id`
+- `POST /api/logs/quick-check-in`
+- `DELETE /api/cycle/period-started/:id`
+
+Admin (API key protected):
+- `POST /api/admin/send-notifications`
 
 Canonical tables and examples: `readme.md` and `API.md`.
 
@@ -232,6 +253,8 @@ Create log:
 2. Payload is written to `DailyLog` with `userId` from token.
 3. API returns created log.
 
+If a log already exists for today, it is updated (upsert). Input validation enforces ranges: sleep (0-24), padsChanged (0-50), and whitelisted mood/stress/energy values. Log edits (PUT) verify ownership. All write operations invalidate InsightCache and HealthPatternCache.
+
 Read logs:
 1. Optional date query creates daily UTC range filter.
 2. API fetches latest 30 logs ordered by date desc.
@@ -239,22 +262,19 @@ Read logs:
 
 ## 7.3 Insights Generation Flow
 
-1. Fetch user profile, recent logs (5), baseline logs (30).
-2. Determine current phase and phase-matched baseline availability.
-3. Build insight context:
-   - normalized signals
-   - trends and variability
-   - interaction flags
-   - baseline deviations
-   - priority drivers and confidence
-4. Produce deterministic insights.
-5. If OpenAI client is configured (`OPENAI_API_KEY`):
-   - call `generateInsightsWithGpt` for phrasing in strict JSON shape (controller does not gate on log count)
-   - validate / sanitize response fields
-   - fallback to deterministic draft on parse/validation/API errors
-6. Return insights + explainability metadata.
-
-Daily responses may be served from `InsightCache` (keyed by user + UTC day); see `INSIGHTS_FLOW_DETAILED.md`.
+1. Check InsightCache for today (log cache hit/miss).
+2. Fetch user profile, recent logs (7), baseline logs (90-day window).
+3. Build cycle info, resolve cycle mode, prediction confidence.
+4. Build insight context (signals, trends, interactions, deviations, priority drivers).
+5. Generate rule-based insights (deterministic draft).
+6. Apply confidence tier softening (0 logs → suggestive, 1-4 → reference-based, 5+ → assertive).
+7. Detect primary insight cause (sleep_disruption / stress_led / stable / cycle) with spike protection.
+8. Check for momentum break (positive streak disrupted by single bad day).
+9. If OpenAI configured: GPT rewrite with 8s timeout, circuit breaker (5 failures → 5min cooldown).
+10. Apply post-GPT softening + cleanup.
+11. Apply insightGuard (8 deterministic guards — zero-data, direction, intensity, hallucination, technical, tomorrow, capitalization, consistency).
+12. Build view, apply narrative overrides (sleep/stress/stable/momentum).
+13. Cache result, log guard activity, record monitor entry.
 
 ## 7.4 Forecast Flow
 
@@ -329,11 +349,15 @@ Core stages:
 5. priority driver resolution
 6. deterministic narrative generation
 7. optional constrained AI rewrite
+8. post-generation guard layer (8 deterministic guards)
+9. confidence-tier language enforcement
+10. primary cause detection with spike protection
 
 Key properties:
 - explainable `basedOn` metadata returned to clients
 - explicit confidence and onboarding progress for low-data users
 - strict fallback guarantees when AI is unavailable/invalid
+- Post-generation guard layer ensures zero-data users never see assertive state claims, even when GPT ignores prompt instructions (~30% failure rate)
 
 For deeper rules and semantics, refer to `INSIGHTS_SYSTEM.md`.
 
@@ -347,24 +371,41 @@ For deeper rules and semantics, refer to `INSIGHTS_SYSTEM.md`.
 - Refresh token validity is 30 days, persisted server-side.
 - Passwords stored as bcrypt hashes; API responses never include `passwordHash`.
 - Google Sign-In: ID tokens validated with `google-auth-library` and `GOOGLE_CLIENT_ID` as audience.
+- Production error handler never leaks stack traces or internal error messages.
 
 ### 10.2 Authorization
 - User scoping is enforced by `req.userId` in all data access paths.
 - Controllers query by authenticated user context for row-level isolation.
 
 ### 10.3 Current Security Gaps (Known)
-- Rate limiting exists on register/login (`authLoginRegisterLimiter`); broader abuse controls still limited.
 - No refresh token rotation on use.
 - No dedicated logout/revoke endpoint in API.
 - `JWT_SECRET` has a permissive dev fallback if env var missing.
 - Google + email account linking for the same address is not supported (conflict returns `409`).
 
 ### 10.4 Recommended Upgrades
-- rate limiting and abuse controls (especially `/api/auth/login` and `/api/auth/google`)
 - optional passkey or OTP as additional factors
 - implement token rotation + token family invalidation
 - enforce strict env validation at startup
 - add structured audit logging for auth events
+
+### 10.5 Rate Limiting (Implemented)
+| Scope | Limit | Window |
+|-------|-------|--------|
+| General API | 120 req | 1 min |
+| Auth login/register | 30 req | 15 min |
+| Google auth | 20 req | 15 min |
+| Insights | 10 req | 1 min |
+| Log writes | 30 req | 1 min |
+| Chat | 60 req | 1 min |
+
+### 10.6 Input Validation (Implemented)
+- sleep: 0-24, padsChanged: 0-50
+- age: 10-100, height: 50-300cm, weight: 20-500kg
+- Whitelist validation for mood, energy, stress values
+- Chat message length: max 2000 characters
+- Future date rejection on lastPeriodStart and period-started
+- Duplicate period guard (same-day detection)
 
 ---
 
@@ -374,6 +415,8 @@ For deeper rules and semantics, refer to `INSIGHTS_SYSTEM.md`.
 - AI-dependent features never block core response generation.
 - Deterministic insights are always available when logs exist.
 - Chat has a clear non-AI fallback message.
+- GPT circuit breaker: 5 consecutive failures → 5-minute cooldown, auto-recovery.
+- 8-second timeout on all OpenAI calls.
 
 ### 11.2 Error Handling
 - Synchronous route misses return `404`.
@@ -385,6 +428,14 @@ For deeper rules and semantics, refer to `INSIGHTS_SYSTEM.md`.
 - Trend calculations mark insufficient signal explicitly.
 - Forecast confidence messaging adapts to data quality.
 
+### 11.4 Observability
+- Structured JSON request logging (method, path, status, duration, userId)
+- GPT call duration and success/failure logging
+- Insight cache hit/miss logging
+- Period prediction accuracy logging (predicted vs actual date, error in days)
+- Post-generation guard activity logging
+- Insight monitor: GPT quality signals, guard rejection rate, pipeline timing
+
 ---
 
 ## 12. Performance and Scaling
@@ -393,6 +444,8 @@ For deeper rules and semantics, refer to `INSIGHTS_SYSTEM.md`.
 - Typical request paths are light-to-moderate DB reads.
 - Insight endpoints perform multiple queries and in-memory analysis over small windows (5-30 logs).
 - Chat and AI-enhanced insights depend on external OpenAI latency.
+- InsightCache provides day-level TTL per user, avoiding repeat GPT calls.
+- PgBouncer pooled connection (port 6543) for production.
 
 ### 12.2 Scaling Approach
 - Horizontal scale API instances behind load balancer (stateless app layer).
@@ -405,9 +458,7 @@ For deeper rules and semantics, refer to `INSIGHTS_SYSTEM.md`.
 - Prisma client per-process concurrency must be monitored under burst traffic.
 
 ### 12.4 Optimizations to Consider
-- introduce request timeouts + circuit-breaker around AI calls
 - cache cycle calculations per request/user where useful
-- use DB connection pooling + production Prisma tuning
 - optionally queue chat persistence if write latency becomes visible
 
 ---
@@ -421,6 +472,9 @@ Required/expected variables:
 - `JWT_SECRET`
 - `PORT`
 - `GOOGLE_CLIENT_ID` (required for `POST /api/auth/google`; OAuth client ID whose tokens the app sends)
+- `FIREBASE_SERVICE_ACCOUNT` (JSON string, for push notifications)
+- `ADMIN_API_KEY` (for admin endpoints)
+- `NODE_ENV` (controls error detail exposure: production vs development)
 - optional: `OPENAI_API_KEY`, `OPENAI_MODEL`
 
 ### 13.2 Build and Run
@@ -444,7 +498,8 @@ Required/expected variables:
 ## 14. Testing Strategy (Current and Target)
 
 ### 14.1 Current State
-- No automated test suite is configured (`npm test` placeholder).
+- Custom test runner for insightGuard: 179 tests (128 core + 51 edge cases)
+- Covers all 28 cycle days × zero data, exact bad outputs from quality feedback, phase transitions, variable cycle lengths, high-data passthrough
 
 ### 14.2 Recommended Test Pyramid
 - Unit tests:
@@ -468,11 +523,13 @@ Required/expected variables:
 
 ## 15. Extension Roadmap
 
+Done (Short-term):
+- ✅ notification service integration (FCM) — implemented
+- ✅ rate limits and auth event monitoring — implemented
+
 Short-term:
-- notification service integration (FCM)
-- scheduled check-ins via cron/worker
 - logout + refresh revoke endpoint
-- rate limits and auth event monitoring
+- scheduled check-ins via cron/worker (notification cron exists, check-in scheduling planned)
 
 Medium-term:
 - richer user baseline modeling across cycles
@@ -505,4 +562,4 @@ Long-term:
 
 ## 17. Summary
 
-Vyana backend is a modular monolithic API optimized for rapid product iteration with deterministic health insight quality and optional AI enhancement. The core architecture is sound for current scope: clear route/controller/service layering, user-scoped data access, email/password and Google-backed authentication, explainable insights, and practical fallback behavior. The highest-impact next improvements are rate limiting and token lifecycle hardening, test coverage, and production-grade observability.
+Vyana backend is a modular monolithic API optimized for rapid product iteration with deterministic health insight quality and optional AI enhancement. The core architecture is sound for current scope: clear route/controller/service layering, user-scoped data access, email/password and Google-backed authentication, explainable insights, and practical fallback behavior. The highest-impact next improvements are token lifecycle hardening (rotation, revoke), broader automated test coverage, and advanced observability (distributed tracing, alerting dashboards).

@@ -263,20 +263,20 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
 
   const contraceptionType = resolveContraceptionType(user.contraceptiveMethod);
   const contraceptionBehavior = getContraceptionBehavior(contraceptionType);
-
-  const completedCycleCount = await prisma.cycleHistory.count({
-    where: {
-      userId: req.userId!,
-      endDate: { not: null },
-      cycleLength: { not: null },
-    },
-  });
-
   const cycleMode = getCycleMode(user);
-  const cyclePrediction = await getCyclePredictionContext(
-    req.userId!,
-    user.cycleLength,
-  );
+
+  // ── Parallel: cycle count + prediction context + previous drivers ────────
+  const [completedCycleCount, cyclePrediction, previousCycleDrivers] = await Promise.all([
+    prisma.cycleHistory.count({
+      where: {
+        userId: req.userId!,
+        endDate: { not: null },
+        cycleLength: { not: null },
+      },
+    }),
+    getCyclePredictionContext(req.userId!, user.cycleLength),
+    getPreviousCycleDriverHistory(req.userId!),
+  ]);
   const effectiveCycleLength = cyclePrediction.avgLength || user.cycleLength;
 
   // ── Detect delayed period ──────────────────────────────────────────────────
@@ -523,11 +523,6 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     };
   }
 
-  const previousCycleDrivers =
-    context.mode === "personalized"
-      ? await getPreviousCycleDriverHistory(req.userId!)
-      : [];
-
   const correlation = runCorrelationEngine(
     context,
     recentLogs,
@@ -649,22 +644,18 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     logsCount < 3 ? 3 : logsCount < 7 ? 7 : logsCount < 14 ? 14 : 30;
 
   const driverForMemory = context.priorityDrivers[0] || null;
-  const memory =
+
+  // ── Parallel: memory count + emotional memory ─────────────────────────────
+  const [memory, emotionalMemoryInput] = await Promise.all([
     driverForMemory && context.mode === "personalized"
-      ? await getInsightMemoryCount({
-          userId: req.userId!,
-          driver: driverForMemory,
-        })
-      : { count: 0, lastSeen: null };
+      ? getInsightMemoryCount({ userId: req.userId!, driver: driverForMemory })
+      : Promise.resolve({ count: 0, lastSeen: null }),
+    fetchEmotionalMemoryInput(req.userId!, driverForMemory, cycleInfo.currentDay),
+  ]);
   const existingMemoryCount = memory.count;
   const memoryContext = driverForMemory
     ? buildMemoryContext(driverForMemory, existingMemoryCount)
     : null;
-  const emotionalMemoryInput = await fetchEmotionalMemoryInput(
-    req.userId!,
-    driverForMemory,
-    cycleInfo.currentDay,
-  );
   const anticipationFrequencyState = getAnticipationState(cached);
   const vyanaCtx = buildVyanaContextForInsights({
     ctx: context,
@@ -1045,27 +1036,7 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     periodAction,
   };
 
-  if (driverForMemory && context.mode === "personalized") {
-    await recordInsightMemoryOccurrence({
-      userId: req.userId!,
-      driver: driverForMemory,
-      now,
-    });
-  }
-
-  if (context.mode === "personalized") {
-    const resolvedPrimaryKey = primaryKeyOverride ?? currentPrimaryKey;
-    await prisma.insightHistory.create({
-      data: {
-        userId: req.userId!,
-        primaryKey: resolvedPrimaryKey,
-        driver: driverForMemory,
-        cycleDay: cycleInfo.currentDay,
-        phase: cycleInfo.phase,
-      },
-    });
-  }
-
+  // ── Cache write (awaited — needed for subsequent requests) ─────────────────
   const payloadJson = JSON.parse(
     JSON.stringify(cachePayload),
   ) as Prisma.InputJsonValue;
@@ -1074,6 +1045,38 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     update: { payload: payloadJson },
     create: { userId: req.userId!, date: dayStart, payload: payloadJson },
   });
+
+  // ── Respond immediately, then fire-and-forget background writes ──────────
+  res.json(responsePayload);
+
+  // Fire-and-forget: memory + history writes (don't block response)
+  const backgroundWrites: Promise<unknown>[] = [];
+  if (driverForMemory && context.mode === "personalized") {
+    backgroundWrites.push(
+      recordInsightMemoryOccurrence({
+        userId: req.userId!,
+        driver: driverForMemory,
+        now,
+      }),
+    );
+  }
+  if (context.mode === "personalized") {
+    const resolvedPrimaryKey = primaryKeyOverride ?? currentPrimaryKey;
+    backgroundWrites.push(
+      prisma.insightHistory.create({
+        data: {
+          userId: req.userId!,
+          primaryKey: resolvedPrimaryKey,
+          driver: driverForMemory,
+          cycleDay: cycleInfo.currentDay,
+          phase: cycleInfo.phase,
+        },
+      }),
+    );
+  }
+  Promise.all(backgroundWrites).catch((err) =>
+    console.error(JSON.stringify({ type: "background_write_error", error: String(err), timestamp: new Date().toISOString() })),
+  );
 
   if (guardResult.guardsApplied.length > 0) {
     console.log(
@@ -1108,8 +1111,6 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
       pipelineMs: Date.now() - pipelineStart,
     }),
   );
-
-  res.json(responsePayload);
 }
 
 // ─── GET /api/insights/context ────────────────────────────────────────────────
@@ -1164,16 +1165,16 @@ export async function getInsightsForecast(
     Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
   );
 
-  const cached = await prisma.insightCache.findUnique({
-    where: { userId_date: { userId: req.userId!, date: dayStart } },
-  });
+  // ── Parallel: cache + user data (both needed regardless of cache hit) ────
+  const [cached, data] = await Promise.all([
+    prisma.insightCache.findUnique({
+      where: { userId_date: { userId: req.userId!, date: dayStart } },
+    }),
+    getUserInsightData(req.userId!),
+  ]);
   if (cached?.forecast) {
-    const cachedUser = await prisma.user.findUnique({
-      where: { id: req.userId! },
-      select: { contraceptionChangedAt: true },
-    });
-    const cachedTransitionWarmup = cachedUser
-      ? buildTransitionWarmup(cachedUser.contraceptionChangedAt ?? null)
+    const cachedTransitionWarmup = data?.user?.contraceptionChangedAt
+      ? buildTransitionWarmup(data.user.contraceptionChangedAt)
       : null;
     res.json({
       ...(cached.forecast as object),
@@ -1181,8 +1182,6 @@ export async function getInsightsForecast(
     });
     return;
   }
-
-  const data = await getUserInsightData(req.userId!);
   if (!data) {
     res.status(404).json({ error: "User not found" });
     return;
@@ -1202,19 +1201,19 @@ export async function getInsightsForecast(
   const contraceptionType = resolveContraceptionType(user.contraceptiveMethod);
   const contraceptionBehavior = getContraceptionBehavior(contraceptionType);
 
-  const completedCycleCount = await prisma.cycleHistory.count({
-    where: {
-      userId: req.userId!,
-      endDate: { not: null },
-      cycleLength: { not: null },
-    },
-  });
-
   const cycleMode = getCycleMode(user);
-  const cyclePrediction = await getCyclePredictionContext(
-    req.userId!,
-    user.cycleLength,
-  );
+
+  // ── Parallel: cycle count + prediction context ────────────────────────────
+  const [completedCycleCount, cyclePrediction] = await Promise.all([
+    prisma.cycleHistory.count({
+      where: {
+        userId: req.userId!,
+        endDate: { not: null },
+        cycleLength: { not: null },
+      },
+    }),
+    getCyclePredictionContext(req.userId!, user.cycleLength),
+  ]);
   const effectiveCycleLength = cyclePrediction.avgLength || user.cycleLength;
   const todayCycle = calculateCycleInfo(
     user.lastPeriodStart,
