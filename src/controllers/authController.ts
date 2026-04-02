@@ -91,40 +91,45 @@ export async function register(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  const existing = await prisma.user.findUnique({ where: { email: normalizedEmail } });
-  if (existing) {
-    res.status(409).json({ error: "An account with this email already exists" });
-    return;
-  }
+  try {
+    const existing = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+    if (existing) {
+      res.status(409).json({ error: "An account with this email already exists" });
+      return;
+    }
 
-  const passwordHash = await hashPassword(password);
-  const cycleMode = getCycleMode({
-    contraceptiveMethod:
-      typeof contraceptiveMethod === "string" ? contraceptiveMethod : null,
-    cycleRegularity:
-      typeof cycleRegularity === "string" ? cycleRegularity : null,
-  });
-
-  const user = await prisma.user.create({
-    data: {
-      email: normalizedEmail,
-      passwordHash,
-      name,
-      age: Number(age),
-      height: Number(height),
-      weight: Number(weight),
-      cycleLength: Number(cycleLength),
-      lastPeriodStart: parsedLastPeriodStart,
+    const passwordHash = await hashPassword(password);
+    const cycleMode = getCycleMode({
       contraceptiveMethod:
         typeof contraceptiveMethod === "string" ? contraceptiveMethod : null,
       cycleRegularity:
         typeof cycleRegularity === "string" ? cycleRegularity : null,
-      cycleMode,
-    },
-  });
+    });
 
-  const tokens = await issueTokens(user.id);
-  res.status(201).json({ user: toPublicUser(user), tokens });
+    const user = await prisma.user.create({
+      data: {
+        email: normalizedEmail,
+        passwordHash,
+        name,
+        age: Number(age),
+        height: Number(height),
+        weight: Number(weight),
+        cycleLength: Number(cycleLength),
+        lastPeriodStart: parsedLastPeriodStart,
+        contraceptiveMethod:
+          typeof contraceptiveMethod === "string" ? contraceptiveMethod : null,
+        cycleRegularity:
+          typeof cycleRegularity === "string" ? cycleRegularity : null,
+        cycleMode,
+      },
+    });
+
+    const tokens = await issueTokens(user.id);
+    res.status(201).json({ user: toPublicUser(user), tokens });
+  } catch (err) {
+    console.error("[register] error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
 }
 
 export async function login(req: Request, res: Response): Promise<void> {
