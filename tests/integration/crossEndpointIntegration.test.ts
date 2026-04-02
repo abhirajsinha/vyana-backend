@@ -176,7 +176,7 @@ describe("Cross-endpoint integration: cycleDay/phase agreement", () => {
       await cleanupUser(id).catch(() => {});
     }
     await prisma.$disconnect();
-  });
+  }, 60_000);
 
   for (const config of configs) {
     describe(config.label, () => {
