@@ -75,6 +75,9 @@ const ZERO_DATA_ASSERTION_PATTERNS: Array<[RegExp, string]> = [
   [/\bnoticeably\b/g, ""],
   [/\bdefinitely\b/g, ""],
   [/\bclearly\b/g, ""],
+  // FIX 2: "today" → "around this time" for zero-data users
+  // GPT often regenerates "today" even after pre-GPT softening stripped it
+  [/\btoday\b/gi, "around this time"],
 ];
 
 function applyZeroDataGuard(text: string): string {
@@ -207,6 +210,9 @@ function applyConsistencyGuard(insights: DailyInsightsShape): DailyInsightsShape
           // Same field has both — keep it, it's probably intentional nuance
           continue;
         }
+        // FIX 1: Phrase-level replacements that don't break grammar
+        // OLD: \bharder\b → "a bit uneven" (broke "harder than" → "a bit uneven than")
+        // NEW: Match full phrases first, then standalone words with negative lookahead
         if (NEGATIVE_SIGNALS.test(result[key]) && !IMPROVING_SIGNALS.test(result[key])) {
           result[key] = result[key]
             // Phrase-level replacements first (longer patterns before shorter)
@@ -291,12 +297,14 @@ function applyHallucinationFilter(text: string, phase: Phase, logsCount: number)
 }
 
 // ─── 8. TOMORROW PREVIEW SOFTENER ────────────────────────────────────────────
+// FIX 3: Added "should" → "may" (previously only caught "will")
 
 function applyTomorrowSoftener(text: string, logsCount: number): string {
   if (logsCount > 0) return text;
   return text
     .replace(/\bwill\b(?!\s+not)/gi, "may")
     .replace(/\byou'll\b/gi, "you may")
+    .replace(/\bshould\b/gi, "may")
     .replace(/\bhit(?:s|ting)?\b/gi, "reach")
     .replace(/\benergy and confidence hit\b/gi, "energy and confidence can reach");
 }
