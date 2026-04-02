@@ -8,6 +8,8 @@
     "build": "tsc -p tsconfig.json",
     "typecheck:tests": "tsc -p tsconfig.tests.json --noEmit",
     "start": "node dist/index.js",
+    "postinstall": "prisma generate",
+    "migrate": "prisma migrate deploy",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "demo:insights": "ts-node --transpile-only scripts/run-menstrual-insight-demo.ts",

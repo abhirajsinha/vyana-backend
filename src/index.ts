@@ -30,6 +30,10 @@ app.get("/health", (_req, res) => {
   res.json({ ok: true, service: "vyana-backend" });
 });
 
+app.get("/api/health", (_req, res) => {
+  res.json({ status: "ok" });
+});
+
 app.use("/api/auth", authRoutes);
 app.use("/api/user", userRoutes);
 app.use("/api/cycle", cycleRoutes);
