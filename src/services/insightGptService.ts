@@ -1134,6 +1134,10 @@ Keep whyThisIsHappening tied to the specific day number, not generic hormone exp
     primaryDriverInstruction = `\nCRITICAL — STRESS-LED PRIMARY: whyThisIsHappening MUST attribute how she feels to stress, NOT hormones or sleep. physicalInsight should NOT mention sleep dropping (sleep is fine). mentalInsight should reference focus affected by stress load.`;
   }
 
+  if (ctx.phase === "ovulation" && ctx.stress_state === "elevated") {
+    primaryDriverInstruction += `\nCRITICAL — OVULATION BLOCKED: stress is dampening this user's peak window. physicalInsight MUST acknowledge the energy peak is being cancelled by stress. Do NOT write pure peak-phase copy when stress is active. whyThisIsHappening should mention stress dampening the ovulation window.`;
+  }
+
   const signalPositiveOverride =
     ctx.priorityDrivers.length === 0 &&
     ctx.physical_state !== "high_strain" &&

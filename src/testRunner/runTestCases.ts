@@ -9,6 +9,7 @@ import {
   type GeneratedTestCase,
   type TestExpect,
 } from "./generateTestCases";
+import { generateEdgeCases } from "./generateEdgeCases";
 
 import { getInsights, getInsightsContext } from "../controllers/insightController";
 
@@ -25,13 +26,14 @@ type RunnableCase = {
 };
 
 function parseArgs(): {
-  source: "manual" | "generated";
+  source: "manual" | "generated" | "edge";
   batch: number | null;
   outFile: string;
 } {
   const argv = process.argv.slice(2);
-  const source: "manual" | "generated" =
-    argv[argv.indexOf("--source") + 1] === "generated" ? "generated" : "manual";
+  const rawSource = argv[argv.indexOf("--source") + 1];
+  const source: "manual" | "generated" | "edge" =
+    rawSource === "generated" ? "generated" : rawSource === "edge" ? "edge" : "manual";
   const batchIdx = argv.indexOf("--batch");
   const batch =
     batchIdx !== -1 ? Math.max(1, parseInt(argv[batchIdx + 1] ?? "500", 10)) : null;
@@ -40,10 +42,21 @@ function parseArgs(): {
   return { source, batch, outFile };
 }
 
-function loadCases(source: "manual" | "generated", batch: number | null): RunnableCase[] {
+function loadCases(source: "manual" | "generated" | "edge", batch: number | null): RunnableCase[] {
   if (source === "manual") {
     const list = manualTestCases as unknown as RunnableCase[];
     return batch ? list.slice(0, batch) : list;
+  }
+  if (source === "edge") {
+    const gen = generateEdgeCases();
+    const sliced = batch ? gen.slice(0, batch) : gen;
+    return sliced.map((c) => ({
+      id: c.id,
+      description: c.description,
+      user: { ...c.user, lastPeriodStart: c.user.lastPeriodStart },
+      logs: c.logs.map((l) => ({ ...l, date: l.date })),
+      expect: c.expect,
+    }));
   }
   const gen = generateAllTestCases() as GeneratedTestCase[];
   const sliced = batch ? gen.slice(0, batch) : gen;

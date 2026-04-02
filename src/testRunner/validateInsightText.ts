@@ -166,8 +166,8 @@ const ZERO_DATA_FORBIDDEN: Array<{ pattern: RegExp; label: string }> = [
   // Medical
   { pattern: /\biron\s+levels?\s+(?:is|are)\s+(?:low|dropping)\b/i, label: "medical assertion" },
 
-  // "today" without data
-  { pattern: /\btoday\b/i, label: "'today' without data" },
+  // "today" with assertion verb (Fix 2 — context-aware, not blanket)
+  { pattern: /\b(?:energy|focus|mood|flow|cramping|sleep|body|fatigue)\s+(?:is|are|feels)\b[^.]*\btoday\b/i, label: "'today' with assertion verb" },
 
   // Intensity words
   { pattern: /\bnoticeably\b/i, label: "intensity 'noticeably'" },
@@ -177,6 +177,18 @@ const ZERO_DATA_FORBIDDEN: Array<{ pattern: RegExp; label: string }> = [
   // Absolute assertions
   { pattern: /\beverything\s+(?:takes|feels)\b/i, label: "'everything' assertion" },
   { pattern: /\bsmall\s+things\s+feel\s+harder\b/i, label: "'small things' assertion" },
+
+  // Fuzzy "feels" assertions (Fix 1)
+  { pattern: /\b(?:flow|cramping|energy|focus|mood|sleep|body)\s+feels\s+(?:lighter|heavier|softer|worse|low|high|drained|scattered|sharp|heavy|sluggish|tired|restless|disrupted)\b/i, label: "fuzzy 'feels' assertion" },
+
+  // Weak verb assertions (Fix A)
+  { pattern: /\b(?:flow|energy|focus|mood|sleep|body|fatigue|clarity)\s+(?:seems|appears|looks)\b/i, label: "weak verb assertion" },
+
+  // Hallucination claims (Fix 3)
+  { pattern: /\bpelvic\b/i, label: "hallucinated 'pelvic' claim" },
+  { pattern: /\btingling\b/i, label: "hallucinated 'tingling' claim" },
+  { pattern: /\bpressure in your\b/i, label: "hallucinated 'pressure in your' claim" },
+  { pattern: /\bsensation in your\b/i, label: "hallucinated 'sensation in your' claim" },
 ];
 
 const LOW_DATA_FORBIDDEN: Array<{ pattern: RegExp; label: string }> = [

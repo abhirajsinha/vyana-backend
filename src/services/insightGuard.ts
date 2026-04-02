@@ -57,6 +57,8 @@ const ZERO_DATA_SPECIFIC_PATTERNS: Array<[RegExp, string]> = [
   [/\b[Yy]ou are bleeding\b/gi, "Bleeding can occur"],
   [/\b[Yy]our period is ending\b/gi, "Your period may be winding down"],
   [/\b[Yy]our period is starting\b/gi, "Your period may be starting"],
+  [/\b[Yy]our period\b/gi, "the period"],
+  [/\b[Yy]our body\b(?!\s+(?:can|may))/gi, "the body"],
 
   // ── Cramping / pain ────────────────────────────────────────────────────
   [/\b[Cc]ramping is softer\b/gi, "Cramping can start to ease"],
@@ -83,6 +85,7 @@ const ZERO_DATA_SPECIFIC_PATTERNS: Array<[RegExp, string]> = [
   [/\b[Ee]nergy is high\b/gi, "Energy can feel higher"],
   [/\b[Ee]nergy is strong\b/gi, "Energy can feel stronger"],
   [/\b[Ee]nergy is returning\b/gi, "Energy can start returning"],
+  [/\b[Ee]nergy is coming\b/gi, "Energy can start coming"],
 
   // ── Focus / clarity / motivation ───────────────────────────────────────
   [/\b[Ff]ocus is sharpening\b/gi, "Focus can start to sharpen"],
@@ -93,6 +96,7 @@ const ZERO_DATA_SPECIFIC_PATTERNS: Array<[RegExp, string]> = [
   [/\b[Cc]larity is improving\b/gi, "Clarity can start improving"],
   [/\b[Cc]larity is lower\b/gi, "Clarity can feel lower"],
   [/\b[Cc]larity is higher\b/gi, "Clarity can feel higher"],
+  [/\b[Cc]larity is sharp\b/gi, "Clarity can feel sharper"],
   [/\b[Mm]otivation is growing\b/gi, "Motivation can start to grow"],
   [/\b[Mm]otivation is rising\b/gi, "Motivation can start to rise"],
   [/\b[Mm]otivation is low\b/gi, "Motivation can feel lower"],
@@ -180,6 +184,36 @@ const ZERO_DATA_SPECIFIC_PATTERNS: Array<[RegExp, string]> = [
   [/\b[Hh]ormones are\b(?!\s+(typically|often|can|may|sometimes))/gi, "Hormones tend to be"],
   [/\bPMS symptoms are\b/gi, "PMS symptoms can be"],
 
+  // ── Broad possessive drops (GPT reintroduces "your" constantly) ────────
+  [/\b[Yy]our energy\b/gi, "Energy"],
+  [/\b[Yy]our mood\b/gi, "Mood"],
+  [/\b[Yy]our cycle\b/gi, "The cycle"],
+  [/\b[Yy]our physical\b/gi, "Physical"],
+  [/\b[Yy]our emotional\b/gi, "Emotional"],
+
+  // ── Fuzzy "feels" verb patterns (GPT uses "feels" instead of "is") ─────
+  [/\b[Ff]low feels lighter\b/gi, "Flow can start to ease"],
+  [/\b[Ff]low feels heavier\b/gi, "Flow can feel heavier"],
+  [/\b[Cc]ramping feels softer\b/gi, "Cramping can start to ease"],
+  [/\b[Cc]ramping feels worse\b/gi, "Cramping can feel more intense"],
+  [/\b[Ee]nergy feels low\b/gi, "Energy can feel lower"],
+  [/\b[Ee]nergy feels high\b/gi, "Energy can feel higher"],
+  [/\b[Ee]nergy feels drained\b/gi, "Energy can feel lower"],
+  [/\b[Ff]ocus feels scattered\b/gi, "Focus can feel scattered"],
+  [/\b[Ff]ocus feels sharp\b/gi, "Focus can feel sharper"],
+  [/\b[Mm]ood feels heavy\b/gi, "Mood can feel heavier"],
+  [/\b[Mm]ood feels lighter\b/gi, "Mood can start to lift"],
+  [/\b[Mm]ood feels low\b/gi, "Mood can feel lower"],
+  [/\b[Ss]leep feels disrupted\b/gi, "Sleep can feel disrupted"],
+  [/\b[Ss]leep feels restless\b/gi, "Sleep can feel restless"],
+  [/\b[Bb]ody feels heavy\b/gi, "Your body can feel heavier"],
+  [/\b[Bb]ody feels sluggish\b/gi, "Your body can feel sluggish"],
+  [/\b[Bb]ody feels tired\b/gi, "Your body can feel tired"],
+  [/\b[Bb]ody feels drained\b/gi, "Your body can feel drained"],
+
+  // ── Weak verb variations ("seems/appears/looks") ──────────────────────
+  [/\b(flow|energy|focus|mood|sleep|body|fatigue|clarity|confidence|motivation)\s+(seems|appears|looks)\b/gi, "$1 can feel"],
+
   // ── Catch-all for core nouns (after specific patterns) ──────────────────
   [/\b[Ee]nergy is\b(?!\s+(typically|often|can|may|sometimes))/gi, "Energy can be"],
   [/\b[Ff]ocus is\b(?!\s+(typically|often|can|may|sometimes))/gi, "Focus can be"],
@@ -213,8 +247,6 @@ const ZERO_DATA_SPECIFIC_PATTERNS: Array<[RegExp, string]> = [
   [/\bdefinitely\b/g, ""],
   [/\bclearly\b/g, ""],
 
-  // ── "today" → "around this time" (GPT reintroduces this constantly) ───
-  [/\btoday\b/gi, "around this time"],
 ];
 
 // ─── BROAD CATCH PATTERNS ────────────────────────────────────────────────────
@@ -227,6 +259,9 @@ const BROAD_NOUN_ARE_PATTERN = /\b(symptoms|cramps|cravings|headaches|aches|pain
 const BROAD_YOUR_IS_PATTERN = /\b[Yy]our\s+(stamina|drive|resilience|capacity|endurance|vitality|concentration|composure|patience|tolerance|appetite|digestion|metabolism|libido|cycle|system|rhythm|baseline|routine|recovery|wellbeing|wellness|balance|stability|hormones?|cortisol|serotonin|dopamine|insulin|adrenaline|temperature|weight|skin|hair|nails|gut|immunity|inflammation)\s+is\b/gi;
 
 const BROAD_YOU_ARE_PATTERN = /\b[Yy]ou are\s+(recovering|adjusting|transitioning|adapting|stabilizing|rebuilding|resetting|healing|compensating|ovulating|menstruating|cycling|peaking|declining|shifting|changing|transforming|detoxing|cleansing|rebalancing|recalibrating)\b/gi;
+
+const BROAD_NOUN_FEELS_PATTERN =
+  /\b(energy|focus|mood|flow|cramping|sleep|body|fatigue|motivation|confidence|clarity|drive|stamina|concentration)\s+feels\b/gi;
 
 function applyBroadCatches(text: string): string {
   let result = text;
@@ -247,6 +282,10 @@ function applyBroadCatches(text: string): string {
     return `You may be ${verb}`;
   });
 
+  result = result.replace(BROAD_NOUN_FEELS_PATTERN, (_match, noun: string) => {
+    return `${noun} can feel`;
+  });
+
   return result;
 }
 
@@ -257,10 +296,23 @@ const GENERIC_STATE_IS_PATTERN =
 
 function applyGenericStateCatch(text: string): string {
   return text.replace(GENERIC_STATE_IS_PATTERN, (match, subject: string) => {
+    if (/is\s+(?:why|how|what|when|where|because)/i.test(match)) return match;
     const skip = ["This", "That", "It", "There", "Here", "What", "Which", "Where", "When", "How", "Who"];
     if (skip.includes(subject.trim())) return match;
     return `${subject} can be `;
   });
+}
+
+function applySmartTodayReplacement(text: string): string {
+  const sentences = text.split(/(?<=[.!?])\s+/);
+  const assertionVerbs = /\b(is|are|feels?|notice|experiencing|showing|having)\b/i;
+
+  return sentences.map(sentence => {
+    if (assertionVerbs.test(sentence)) {
+      return sentence.replace(/\btoday\b/gi, "around this time");
+    }
+    return sentence;
+  }).join(" ");
 }
 
 function applyZeroDataGuard(text: string): string {
@@ -277,7 +329,10 @@ function applyZeroDataGuard(text: string): string {
   // Step 3: Apply generic state catch (last resort)
   result = applyGenericStateCatch(result);
 
-  // Step 4: Clean up double spaces from removals
+  // Step 4: Smart "today" replacement (context-aware)
+  result = applySmartTodayReplacement(result);
+
+  // Step 5: Clean up double spaces from removals
   result = result.replace(/\s{2,}/g, " ").trim();
 
   return result;
@@ -479,15 +534,24 @@ function applyHallucinationFilter(text: string, phase: Phase, logsCount: number)
   if (logsCount > 0) return text; // Only filter for zero-data users
 
   let result = text;
-  for (const term of FORBIDDEN_PHYSICAL_CLAIMS) {
-    if (term === "cramping" && phase === "menstrual") continue; // Cramping is expected in menstrual
-    // Remove sentences containing the term
-    const sentences = result.split(/(?<=[.!?])\s+/);
-    result = sentences
-      .filter(s => !s.toLowerCase().includes(term))
-      .join(" ");
+
+  const HALLUCINATION_REPLACEMENTS: Array<[RegExp, string]> = [
+    [/\bpelvic\s+(?:discomfort|pressure|pain|sensation|heaviness|tension)\b/gi, "discomfort"],
+    [/\bpelvic\b/gi, "lower body"],
+    [/\btingling\s+(?:sensation|feeling)?\b/gi, "mild sensation"],
+    [/\bpressure in your\s+\w+\b/gi, "some discomfort"],
+    [/\bsensation in your\s+\w+\b/gi, "some changes"],
+  ];
+
+  if (phase !== "menstrual") {
+    HALLUCINATION_REPLACEMENTS.push([/\bcramping\b/gi, "discomfort"]);
   }
-  return result.trim();
+
+  for (const [pattern, replacement] of HALLUCINATION_REPLACEMENTS) {
+    result = result.replace(pattern, replacement);
+  }
+
+  return result.replace(/\s{2,}/g, " ").trim();
 }
 
 // ─── 8. TOMORROW PREVIEW SOFTENER ────────────────────────────────────────────
@@ -519,14 +583,31 @@ function applyTomorrowSoftener(text: string, logsCount: number): string {
     .replace(/\bthe worst is behind\b/gi, "the hardest part may be behind");
 }
 
-// ─── 9. CAPITALIZE FIX ──────────────────────────────────────────────────────
+// ─── 9. GRAMMAR REPAIR ─────────────────────────────────────────────────────
+// Catches common GPT grammar breaks that other guards don't handle.
+
+const GRAMMAR_FIXES: Array<[RegExp, string]> = [
+  [/\byou be (\w+ing)\b/gi, "you may be $1"],
+  [/\bYou're (small things|everything|nothing|things)\b/gi, "$1"],
+  [/\b(the \w+)\s+It\s+/gi, "$1. It "],
+];
+
+function applyGrammarRepair(text: string): string {
+  let result = text;
+  for (const [pattern, replacement] of GRAMMAR_FIXES) {
+    result = result.replace(pattern, replacement);
+  }
+  return result;
+}
+
+// ─── 10. CAPITALIZE FIX ─────────────────────────────────────────────────────
 // Fix broken capitalization from replacements (e.g., "— Your" mid-sentence)
 
 function fixCapitalization(text: string): string {
   // Fix "— Your" / "— The" mid-sentence → "— your" / "— the"
   let result = text.replace(/(?:—\s*)([A-Z])(?=[a-z]{2,})/g, (match, letter) => match.replace(letter, letter.toLowerCase()));
   // Fix mid-sentence capitals after conjunctions/prepositions ("and Cramping" → "and cramping")
-  result = result.replace(/(?<=\b(?:and|or|but|as|the|a|an|with|in|on|for)\s)([A-Z])(?=[a-z]{2,})/g, (_, letter) => letter.toLowerCase());
+  result = result.replace(/(?<=\b(?:and|or|but|as|the|a|an|with|in|on|of|for)\s)([A-Z])(?=[a-z]{2,})/g, (_, letter) => letter.toLowerCase());
   // Fix mid-sentence capitals after commas/semicolons that aren't proper nouns
   result = result.replace(/(?<=[,;]\s)([A-Z])(?=[a-z]{2,})/g, (_, letter) => letter.toLowerCase());
   // Ensure sentence starts are capitalized
@@ -737,7 +818,14 @@ export function applyAllGuards(input: InsightGuardInput): InsightGuardResult {
       if (text !== before) guardsApplied.push(`directive:${key}`);
     }
 
-    // Guard 10: Capitalize fix (always last — cleans up after all replacements)
+    // Guard 10: Grammar repair (common GPT breaks)
+    {
+      const before = text;
+      text = applyGrammarRepair(text);
+      if (text !== before) guardsApplied.push(`grammar:${key}`);
+    }
+
+    // Guard 11: Capitalize fix (always last — cleans up after all replacements)
     text = fixCapitalization(text);
 
     insights[key] = text;

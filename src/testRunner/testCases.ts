@@ -60,10 +60,10 @@ export const testCases = [
     ],
   },
 
-  // T3 — Ovulation peak: day 14, high mood, low stress, good sleep, 5+ logs
+  // T3 — Early luteal / post-ovulation: day 15, high mood, low stress, good sleep, 5+ logs
   {
     id: "T3_ovulation_peak",
-    description: "High energy, high mood, peak state",
+    description: "Early luteal / post-ovulation — high energy, high mood, stable state",
     user: {
       name: "Ovulation User",
       age: 28, height: 168, weight: 62,

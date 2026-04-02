@@ -82,7 +82,7 @@ import {
   isStableInsightState,
   type PrimaryInsightCause,
 } from "../services/insightCause";
-import { applyAllGuards } from "../services/insightGuard";
+import { applyAllGuards, validateZeroDataSafety } from "../services/insightGuard";
 import {
   buildMonitorEntry,
   recordInsightGeneration,
@@ -871,6 +871,21 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     logsCount,
   });
   insights = guardResult.insights;
+
+  // ── Final safety net — silent fallback if guards missed something ────
+  if (logsCount === 0) {
+    const safetyCheck = validateZeroDataSafety(insights);
+    if (!safetyCheck.pass) {
+      console.error(JSON.stringify({
+        type: "guard_miss",
+        userId: req.userId,
+        cycleDay: cycleInfo.currentDay,
+        failures: safetyCheck.failures,
+        timestamp: new Date().toISOString(),
+      }));
+      insights = draftInsights;
+    }
+  }
 
   const view = buildInsightView(context, insights, { primaryKeyOverride });
 
