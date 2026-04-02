@@ -35,13 +35,13 @@ export function classifyIntent(message: string, history: ChatHistoryItem[]): Cha
   if (casualPatterns.some(p => p.test(msg))) return "casual";
 
   const healthPatterns = [
-    /\b(period|cycle|phase|ovulat|menstrual|luteal|follicular|pms|cramp)\b/,
-    /\b(sleep|stress|mood|energy|fatigue|pain|bloat|headache)\b/,
+    /\b(period|cycle|phase|ovulat\w*|menstrual|luteal|follicular|pms|cramp\w*)\b/,
+    /\b(sleep|stress|mood|energy|fatigue|pain|bloat\w*|headache)\b/,
     /\b(feel|feeling|felt)\b.*\b(today|lately|recently|bad|good|tired|low|anxious)\b/,
     /\b(why\s+(do|am|is)\s+i)\b/,
     /\b(what('s| is) (wrong|happening|going on) with (me|my))\b/,
     /\b(should i|can i|is it normal)\b/,
-    /\b(log|track|insight|predict|forecast)\b/,
+    /\b(log|track|insight\w*|predict|forecast)\b/,
     /\b(exercise|workout|diet|eat|iron|vitamin)\b/,
     /\b(hormone|estrogen|progesterone)\b/,
     /\b(pregnant|fertility|conceive|ovulation)\b/,

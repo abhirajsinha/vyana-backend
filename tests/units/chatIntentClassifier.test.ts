@@ -52,15 +52,15 @@ describe("classifyIntent", () => {
 
   describe("Group 2: Pure health messages → 'health'", () => {
     const HEALTH_MESSAGES: string[] = [
-      // cycle keywords (must match \b-bounded stems exactly)
+      // cycle keywords
       "why is my period late",
       "what phase am I in",
-      "I think I'm about to ovulat",  // matches \bovulat\b
-      "is this ovulation",              // matches \bovulation\b
-      // symptoms (exact word boundary matches)
-      "I have a cramp",                 // matches \bcramp\b
+      "when will I ovulate",
+      "is this ovulation",
+      // symptoms
+      "my cramps are bad",
       "I have a headache",
-      "I feel bloat",                   // matches \bbloat\b
+      "I'm bloated",
       // feelings with temporal qualifier
       "I feel tired today",
       "I'm feeling really low lately",
@@ -71,12 +71,12 @@ describe("classifyIntent", () => {
       "why am I so tired",
       // what is wrong
       "what is wrong with me",
-      // tracking (exact matches: log, track, insight, predict, forecast)
+      // tracking
       "should I log this",
-      "show me my insight",             // matches \binsight\b
+      "show me my insights",
       "predict my next period",
       // medical
-      "is it normal to bleed this much",// bleed doesn't match \bbleeding\b — but "should i" matches
+      "is it normal to bleed this much",
       "should I see a doctor",
       "can I exercise on my period",
       // body signals
@@ -162,7 +162,7 @@ describe("classifyIntent", () => {
 
     it("very long message (500+ chars) with health keywords → health", () => {
       const padding = "a ".repeat(300);
-      const longMsg = `${padding} my period is late and I have pain`;
+      const longMsg = `${padding} my period is late and I have cramps`;
       expect(classifyIntent(longMsg, [])).toBe("health");
     });
 
