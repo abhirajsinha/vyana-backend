@@ -1028,12 +1028,27 @@ export async function generateInsightsWithGpt(
 
   const zeroDataInstruction =
     ctx.mode === "fallback" && ctx.recentLogsCount === 0
-      ? `\nZERO-DATA USER (CRITICAL):
+      ? `\nZERO-DATA USER (CRITICAL — STRICT ENFORCEMENT):
 This user has logged ZERO days. You have NO behavioral data.
-DO NOT assert her current state. DO NOT say "you feel", "energy is lower", "focus is lower".
-Instead: describe what this PHASE typically brings, framed as tendencies, not facts.
-Use: "can feel", "may notice", "tends to", "many people find", "it's common to"
-Each insight field must describe a DIFFERENT aspect — do not repeat "energy is low" across multiple fields.
+
+NEVER assume her current state. You CANNOT know:
+- Her flow level ("flow is lighter" ❌)
+- Her cramp intensity ("cramping is softer" ❌)
+- Her mood ("you feel" ❌)
+- Her energy ("energy is lower" ❌)
+- Her focus ("focus is lower" ❌)
+
+BLOCKED phrases: "your cramps", "your flow", "you are bleeding heavily", "you feel", "you are feeling", "you notice", "energy is", "focus is", "mood is"
+
+REQUIRED language: "can", "may", "often", "typically", "many people find", "it's common to", "around this time"
+Example: "Flow and cramping can start to ease around this time" ✅ (NOT "Flow is lighter and cramping is softer" ❌)
+
+NO clinical/academic language: "emotional regulation" ❌ → "handling things emotionally" ✅
+NO energy exaggeration: "energy boost" ❌ → "gradual return of energy" ✅
+NO directive tone: "resting will support" ❌ → "resting can help support" ✅
+NO deterministic predictions: "you notice a shift" ❌ → "you may start to notice" ✅
+
+Each insight field must describe a DIFFERENT aspect — do not repeat the same signal across fields.
 Keep whyThisIsHappening tied to the specific day number, not generic hormone explanation.`
       : "";
 
@@ -1048,8 +1063,9 @@ Keep whyThisIsHappening tied to the specific day number, not generic hormone exp
 - Do NOT provide multi-step advice lists (foods, checklists, habit stacks).
 - Keep each field direct, short, and experiential.
 - Avoid system language like "intertwined", "amplifying each other", or "adjusting to shift".
-- Avoid hedging: "might", "may", "can feel" — use direct experiential verbs ("is", "feels", "takes").
-- Good phrasing: "it's normal to feel physically low", "your body is doing a lot right now", "it's okay to take it easier today".`
+- Do NOT assume specific symptoms (flow level, cramp intensity) — describe what "can happen" unless user has logged data.
+- ${ctx.recentLogsCount === 0 ? 'Use: "can feel", "may notice", "around this time" — NOT "is", "feels", "takes".' : 'Use direct experiential verbs ("is", "feels", "takes").'}
+- Good phrasing: "flow and cramping can start to ease", "your body may be going through recovery", "if you can, taking things slower can help".`
       : ctx.phase === "follicular"
         ? `\nPHASE VOICE — FOLLICULAR:
 - Use a light, forward-looking tone.

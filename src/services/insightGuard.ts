@@ -53,12 +53,23 @@ const ZERO_DATA_ASSERTION_PATTERNS: Array<[RegExp, string]> = [
   [/\b[Mm]ood is\b(?!\s+(typically|often|can|may|sometimes))/g, "Mood can be"],
   [/\b[Yy]our body is doing\b/g, "Your body may be going through"],
   [/\b[Yy]ou feel\b/g, "You may feel"],
+  [/\b[Yy]ou are feeling\b/gi, "You may be feeling"],
   [/\b[Yy]ou find that\b/gi, "You may find that"],
   [/\b[Yy]ou find\b/g, "You may find"],
+  [/\b[Yy]ou notice\b/gi, "You may notice"],
   [/\b[Ee]verything takes more effort\b/g, "things may take more effort"],
   [/\b[Ee]verything feels\b/g, "things may feel"],
   [/\b[Ss]mall things feel harder\b/g, "small things may feel harder"],
   [/\b[Ii]t feels like\b/g, "it may feel like"],
+  // Symptom assumption guard — NEVER assume specific symptoms without data
+  [/\b[Ff]low is lighter\b/gi, "Flow can start to ease"],
+  [/\b[Ff]low is heavier\b/gi, "Flow can feel heavier"],
+  [/\b[Ff]low is\b(?!\s+(typically|often|can|may))/gi, "Flow can be"],
+  [/\b[Yy]our flow\b/gi, "Flow"],
+  [/\b[Cc]ramping is softer\b/gi, "Cramping can start to ease"],
+  [/\b[Cc]ramping is\b(?!\s+(typically|often|can|may))/gi, "Cramping can be"],
+  [/\b[Yy]our cramps?\b/gi, "Cramping"],
+  [/\b[Yy]ou are bleeding\b/gi, "Bleeding can occur"],
   // Deterministic state claims
   [/\bis lower today\b/g, "can feel lower around this time"],
   [/\bis lower right now\b/g, "can feel lower around this time"],
@@ -305,16 +316,24 @@ function applyTomorrowSoftener(text: string, logsCount: number): string {
     .replace(/\bwill\b(?!\s+not)/gi, "may")
     .replace(/\byou'll\b/gi, "you may")
     .replace(/\bshould\b/gi, "may")
+    .replace(/\byou notice\b/gi, "you may notice")
+    .replace(/\byou start to\b/gi, "you may start to")
     .replace(/\bhit(?:s|ting)?\b/gi, "reach")
-    .replace(/\benergy and confidence hit\b/gi, "energy and confidence can reach");
+    .replace(/\benergy and confidence hit\b/gi, "energy and confidence can reach")
+    .replace(/\benergy boost\b/gi, "gradual return of energy")
+    .replace(/\ba boost\b/gi, "a gradual lift");
 }
 
 // ─── 9. CAPITALIZE FIX ──────────────────────────────────────────────────────
-// Fix broken capitalization from replacements (e.g., "Small" mid-sentence)
+// Fix broken capitalization from replacements (e.g., "— Your" mid-sentence)
 
 function fixCapitalization(text: string): string {
-  // Fix mid-sentence capitals that aren't proper nouns
-  let result = text.replace(/(?<=[,;]\s)([A-Z])(?=[a-z]{2,})/g, (_, letter) => letter.toLowerCase());
+  // Fix "— Your" / "— The" mid-sentence → "— your" / "— the"
+  let result = text.replace(/(?:—\s*)([A-Z])(?=[a-z]{2,})/g, (match, letter) => match.replace(letter, letter.toLowerCase()));
+  // Fix mid-sentence capitals after conjunctions/prepositions ("and Cramping" → "and cramping")
+  result = result.replace(/(?<=\b(?:and|or|but|as|the|a|an|with|in|on|for)\s)([A-Z])(?=[a-z]{2,})/g, (_, letter) => letter.toLowerCase());
+  // Fix mid-sentence capitals after commas/semicolons that aren't proper nouns
+  result = result.replace(/(?<=[,;]\s)([A-Z])(?=[a-z]{2,})/g, (_, letter) => letter.toLowerCase());
   // Ensure sentence starts are capitalized
   result = result.replace(/(^|\.\s+|\?\s+|!\s+|\n\s*)([a-z])/g, (_, prefix, letter) => prefix + letter.toUpperCase());
   return result;
@@ -335,6 +354,81 @@ function applyTechnicalLanguageGuard(text: string, logsCount: number): string {
     .replace(/\bfollicles? (?:are |is )?developing\b/gi, "your cycle is progressing")
     .replace(/\s{2,}/g, " ")
     .trim();
+}
+
+// ─── 11. CLINICAL LANGUAGE GUARD ────────────────────────────────────────────
+// Replace academic / clinical phrasing with natural human language
+
+const CLINICAL_REPLACEMENTS: Array<[RegExp, string]> = [
+  [/\bemotional regulation\b/gi, "handling things emotionally"],
+  [/\bemotional dysregulation\b/gi, "emotional ups and downs"],
+  [/\bcognitive function\b/gi, "mental clarity"],
+  [/\bcognitive load\b/gi, "mental load"],
+  [/\bserotonin(?:\s+levels?)?\b/gi, "mood-related changes"],
+  [/\bcortisol(?:\s+levels?)?\b/gi, "stress hormones"],
+  [/\bhormonal fluctuations?\b/gi, "hormonal changes"],
+  [/\bluteal phase defect\b/gi, "cycle variation"],
+  [/\bpremenstrual dysphoric\b/gi, "premenstrual"],
+  [/\bneuroendocrine\b/gi, "hormonal"],
+  [/\bvasomotor\b/gi, "temperature"],
+  [/\bsomatic\b/gi, "physical"],
+];
+
+function applyClinicalLanguageGuard(text: string): string {
+  let result = text;
+  for (const [pattern, replacement] of CLINICAL_REPLACEMENTS) {
+    result = result.replace(pattern, replacement);
+  }
+  return result;
+}
+
+// ─── 12. ENERGY LANGUAGE GUARD ──────────────────────────────────────────────
+// Cap energy exaggeration — "boost", "peak", "optimal" → softer alternatives
+
+const ENERGY_REPLACEMENTS: Array<[RegExp, string]> = [
+  [/\benergy boost\b/gi, "gradual return of energy"],
+  [/\benergy lift\b/gi, "gradual return of energy"],
+  [/\ba boost\b/gi, "a gradual lift"],
+  [/\bboost(?:s|ing|ed)?\b/gi, "lift"],
+  [/\bpeak energy\b/gi, "higher energy"],
+  [/\boptimal\b/gi, "a good window for"],
+  [/\bat (?:its?|their) best\b/gi, "tends to be stronger"],
+  [/\bat (?:its?|their) highest\b/gi, "can feel higher"],
+  [/\bat its maximum\b/gi, "at a higher point"],
+];
+
+function applyEnergyLanguageGuard(text: string, logsCount: number): string {
+  if (logsCount >= 5) return text; // High-data users get assertive language
+  let result = text;
+  for (const [pattern, replacement] of ENERGY_REPLACEMENTS) {
+    result = result.replace(pattern, replacement);
+  }
+  return result;
+}
+
+// ─── 13. DIRECTIVE LANGUAGE SOFTENER ────────────────────────────────────────
+// "you should" → "it can help to", "you must" → "you may want to"
+
+const DIRECTIVE_REPLACEMENTS: Array<[RegExp, string]> = [
+  [/\b[Yy]ou should\b/g, "It can help to"],
+  [/\b[Yy]ou must\b/g, "You may want to"],
+  [/\b[Yy]ou need to\b/g, "It may help to"],
+  [/\b[Mm]ake sure (?:you |to )\b/gi, "If you can, try to "],
+  [/\bresting will support\b/gi, "resting can help support"],
+  [/\bresting will\b/gi, "resting can"],
+  [/\bwill support\b/gi, "can help support"],
+  [/\bwill help\b/gi, "can help"],
+  [/\bwill change\b/gi, "can change"],
+  [/\bwill improve\b/gi, "may improve"],
+];
+
+function applyDirectiveLanguageGuard(text: string, logsCount: number): string {
+  if (logsCount >= 5) return text; // Data-backed users get firmer advice
+  let result = text;
+  for (const [pattern, replacement] of DIRECTIVE_REPLACEMENTS) {
+    result = result.replace(pattern, replacement);
+  }
+  return result;
 }
 
 // ─── MAIN PIPELINE ──────────────────────────────────────────────────────────
@@ -412,13 +506,34 @@ export function applyAllGuards(input: InsightGuardInput): InsightGuardResult {
       if (text !== before) guardsApplied.push(`tomorrow:${key}`);
     }
 
-    // Guard 7: Capitalize fix
+    // Guard 7: Clinical language cleanup (all users)
+    {
+      const before = text;
+      text = applyClinicalLanguageGuard(text);
+      if (text !== before) guardsApplied.push(`clinical:${key}`);
+    }
+
+    // Guard 8: Energy language control (zero/low data)
+    {
+      const before = text;
+      text = applyEnergyLanguageGuard(text, logsCount);
+      if (text !== before) guardsApplied.push(`energy:${key}`);
+    }
+
+    // Guard 9: Directive language softener (zero/low data)
+    {
+      const before = text;
+      text = applyDirectiveLanguageGuard(text, logsCount);
+      if (text !== before) guardsApplied.push(`directive:${key}`);
+    }
+
+    // Guard 10: Capitalize fix (always last — cleans up after all replacements)
     text = fixCapitalization(text);
 
     insights[key] = text;
   }
 
-  // Guard 8: Cross-field consistency (only for zero/low-data users)
+  // Guard 11: Cross-field consistency (only for zero/low-data users)
   // High-data users can have intentional nuance like "sleep dropped → harder → but tomorrow will be better"
   if (isZeroData || isLowData) {
     const before = JSON.stringify(insights);

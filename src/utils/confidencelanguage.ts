@@ -71,6 +71,10 @@ export const FORBIDDEN_DETERMINISTIC_PHRASES = [
   "progesterone will",
   "you will feel energetic",
   "you will be",
+  "emotional regulation",
+  "luteal phase defect",
+  "cognitive function",
+  "neuroendocrine",
 ];
 
 export function containsForbiddenLanguage(text: string): boolean {
