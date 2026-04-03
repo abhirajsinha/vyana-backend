@@ -59,8 +59,24 @@ const ZERO_DATA_SPECIFIC_PATTERNS: Array<[RegExp, string]> = [
   [/\b[Yy]our period is starting\b/gi, "Your period may be starting"],
   [/\b[Yy]our period\b/gi, "the period"],
   [/\b[Yy]our body\b(?!\s+(?:can|may))/gi, "the body"],
+  // Bleeding verb-phrase assertions
+  [/\bas you continue to bleed\b/gi, "while your body is still in the menstrual phase"],
+  [/\bcontinue to bleed\b/gi, "are still in the menstrual phase"],
+  [/\bstill bleeding\b/gi, "still in the menstrual phase"],
+  [/\bbleeding continues\b/gi, "the menstrual phase continues"],
+  [/\bwhile you bleed\b/gi, "during the menstrual phase"],
+  [/\bas you bleed\b/gi, "during the menstrual phase"],
+  [/\byou're bleeding\b/gi, "bleeding may be occurring"],
 
   // ── Cramping / pain ────────────────────────────────────────────────────
+  // Symptom continuation assertions
+  [/\bas cramps continue\b/gi, "if cramping is present"],
+  [/\bcramps continue\b/gi, "cramping can continue"],
+  [/\bas pain continues\b/gi, "if pain is present"],
+  [/\byour cramps are getting\b/gi, "cramping can get"],
+  [/\byour bleeding is getting\b/gi, "bleeding can get"],
+  [/\byou're still cramping\b/gi, "cramping may still be present"],
+  [/\bstill cramping\b/gi, "cramping may still be present"],
   [/\b[Cc]ramping is softer\b/gi, "Cramping can start to ease"],
   [/\b[Cc]ramping is easing\b/gi, "Cramping can start to ease"],
   [/\b[Cc]ramping is worse\b/gi, "Cramping can feel more intense"],
@@ -566,7 +582,12 @@ function applyTomorrowSoftener(text: string, logsCount: number): string {
     .replace(/\bwill\b(?!\s+not)/gi, "may")
     .replace(/\byou'll\b/gi, "you may")
     .replace(/\bshould\b(?!\s+not)/gi, "may")
+    .replace(/\byou notice that\b/gi, "you may notice that")
     .replace(/\byou notice\b/gi, "you may notice")
+    .replace(/\byou find that\b/gi, "you may find that")
+    .replace(/\byou start to notice\b/gi, "you may start to notice")
+    .replace(/\byou begin to feel\b/gi, "you may begin to feel")
+    .replace(/\byou start to feel\b/gi, "you may start to feel")
     .replace(/\byou start to\b/gi, "you may start to")
     .replace(/\byou feel\b/gi, "you may feel")
     .replace(/\bhit(?:s|ting)?\b/gi, "reach")
@@ -740,6 +761,25 @@ export interface InsightGuardResult {
   guardsApplied: string[];
 }
 
+function applyPopulationFramingGuard(text: string): string {
+  const replacements: Array<[RegExp, string]> = [
+    [/\bmost people notice\b/gi, "you may notice"],
+    [/\bmost people experience\b/gi, "you may experience"],
+    [/\bmost people feel\b/gi, "you may feel"],
+    [/\bmany people find\b/gi, "you may find"],
+    [/\bsome people find\b/gi, "you may find"],
+    [/\bsome women experience\b/gi, "you may experience"],
+    [/\bit's normal for most\b/gi, "it's normal"],
+    [/\bresearch shows that?\b/gi, ""],
+    [/\bstudies suggest that?\b/gi, ""],
+  ];
+  let result = text;
+  for (const [pattern, replacement] of replacements) {
+    result = result.replace(pattern, replacement);
+  }
+  return result.replace(/\s{2,}/g, " ").trim();
+}
+
 export function applyAllGuards(input: InsightGuardInput): InsightGuardResult {
   const { cycleDay, cycleLength, phase, logsCount } = input;
   let insights = { ...input.insights };
@@ -821,7 +861,14 @@ export function applyAllGuards(input: InsightGuardInput): InsightGuardResult {
       if (text !== before) guardsApplied.push(`directive:${key}`);
     }
 
-    // Guard 10: Grammar repair (common GPT breaks)
+    // Guard 10: Population framing (all users)
+    {
+      const before = text;
+      text = applyPopulationFramingGuard(text);
+      if (text !== before) guardsApplied.push(`population:${key}`);
+    }
+
+    // Guard 11: Grammar repair (common GPT breaks)
     {
       const before = text;
       text = applyGrammarRepair(text);

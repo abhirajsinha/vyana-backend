@@ -129,6 +129,13 @@ function checkNoPhaseFraming(output: string): boolean {
   return !PHASE_FRAME_ANY_RE.test(output);
 }
 
+// Population framing (soft check)
+const POPULATION_RE = /\b(most people|many people|many users|some people|some women|research shows|studies suggest|it's normal for most|most users)\b/i;
+
+function checkNoPopulationFraming(output: string): boolean {
+  return !POPULATION_RE.test(output);
+}
+
 // ─── Main validator ──────────────────────────────────────────────────────────
 
 export function validateInsightField(input: InsightValidationInput): ValidationResult {
@@ -165,6 +172,9 @@ export function validateInsightField(input: InsightValidationInput): ValidationR
   }
   if (!checkNoPhaseFraming(input.output)) {
     softFails.push("phaseFraming");
+  }
+  if (!checkNoPopulationFraming(input.output)) {
+    softFails.push("populationFraming");
   }
 
   return {

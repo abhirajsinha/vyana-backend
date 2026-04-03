@@ -93,6 +93,20 @@ import { evaluateInteractionRules } from "../services/interactionRules";
 import { normMood, normEnergy, normStress } from "../services/insightData";
 import { validateInsightField } from "../services/insightValidator";
 
+/** Extract numeric cramp severity from log's pain field + symptoms array.
+ *  pain field carries severity labels; symptoms array is boolean presence only. */
+function extractCrampSeverity(log: { pain?: string | null; symptoms?: string[] | null }): number | undefined {
+  const pain = log.pain?.trim().toLowerCase();
+  if (pain) {
+    if (pain === 'severe' || pain === 'very_severe') return 8;
+    if (pain === 'moderate') return 5;
+    if (pain === 'mild') return 3;
+    if (pain === 'none') return 0;
+  }
+  if (log.symptoms?.includes('cramps')) return 5;
+  return undefined;
+}
+
 const GUARD_VERSION = 1; // bump to invalidate all insight caches
 
 function isInsightsPayloadCached(payload: unknown): boolean {
@@ -686,9 +700,12 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
         energy: normEnergy(latestRawLog.energy) ?? undefined,
         sleep: latestRawLog.sleep ?? undefined,
         stress: normStress(latestRawLog.stress) ?? undefined,
-        cramps: latestRawLog.symptoms?.includes("cramps") ? 5 : undefined,
+        cramps: extractCrampSeverity(latestRawLog),
         headache: latestRawLog.symptoms?.includes("headache") || undefined,
         breastTenderness: latestRawLog.symptoms?.includes("breast_tenderness") || undefined,
+        bleeding: (latestRawLog.padsChanged != null && latestRawLog.padsChanged > 0)
+          ? (latestRawLog.padsChanged >= 7 ? 'heavy' : latestRawLog.padsChanged >= 4 ? 'moderate' : 'light')
+          : (Array.isArray(latestRawLog.symptoms) && latestRawLog.symptoms.includes('bleeding') ? 'present' : undefined),
       }
     : null;
 
@@ -696,15 +713,22 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     ? {
         mood: normMood(previousRawLog.mood) ?? undefined,
         energy: normEnergy(previousRawLog.energy) ?? undefined,
-        cramps: previousRawLog.symptoms?.includes("cramps") ? 5 : undefined,
+        cramps: extractCrampSeverity(previousRawLog),
         sleep: previousRawLog.sleep ?? undefined,
       }
     : null;
 
   // Count consecutive bleeding days (from latest backward)
+  // Check multiple signals: padsChanged, symptoms array
   let bleedingDays = 0;
   for (const log of sortedLogs) {
-    if (log.padsChanged && log.padsChanged > 0) bleedingDays++;
+    const hasPadData = log.padsChanged != null && log.padsChanged > 0;
+    const hasBleedingSymptom = Array.isArray(log.symptoms) && (
+      log.symptoms.includes('bleeding') ||
+      log.symptoms.includes('spotting') ||
+      log.symptoms.includes('heavy_flow')
+    );
+    if (hasPadData || hasBleedingSymptom) bleedingDays++;
     else break;
   }
 

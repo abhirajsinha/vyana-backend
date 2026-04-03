@@ -532,3 +532,106 @@ import {
     }
     expect(failedTests).toBe(0);
   });
+
+  // ── Task 1: Bleeding assertion patterns ─────────────────────────────────────
+
+  it("zero-data guard catches 'as you continue to bleed'", () => {
+    const result = applyAllGuards({
+      insights: {
+        physicalInsight: "Energy is low as you continue to bleed",
+        mentalInsight: "Focus can feel lower.",
+        emotionalInsight: "Things may feel heavier.",
+        whyThisIsHappening: "Hormonal shift.",
+        solution: "Rest.",
+        recommendation: "Log how you feel.",
+        tomorrowPreview: "Tomorrow may bring some ease.",
+      },
+      logsCount: 0,
+      cycleDay: 3,
+      cycleLength: 28,
+      phase: "menstrual" as Phase,
+    });
+    expect(result.insights.physicalInsight).not.toContain("continue to bleed");
+    expect(result.insights.physicalInsight).toContain("menstrual phase");
+  });
+
+  it("zero-data guard catches 'You notice that' and softens it", () => {
+    const result = applyAllGuards({
+      insights: {
+        physicalInsight: "Energy can feel lower.",
+        mentalInsight: "Focus can feel lower.",
+        emotionalInsight: "You notice that small things feel easier",
+        whyThisIsHappening: "Hormonal shift.",
+        solution: "Rest.",
+        recommendation: "Log how you feel.",
+        tomorrowPreview: "Tomorrow may bring some ease.",
+      },
+      logsCount: 0,
+      cycleDay: 4,
+      cycleLength: 28,
+      phase: "menstrual" as Phase,
+    });
+    expect(result.insights.emotionalInsight).toContain("may notice");
+    expect(result.insights.emotionalInsight).not.toMatch(/\bYou notice that\b/);
+  });
+
+  // ── Task 6: Population framing guard ─────────────────────────────────────
+
+  it("population framing guard replaces 'most people notice' for zero-data user", () => {
+    const result = applyAllGuards({
+      insights: {
+        physicalInsight: "Energy can feel lower.",
+        mentalInsight: "Focus can feel lower.",
+        emotionalInsight: "Things may feel heavier.",
+        whyThisIsHappening: "Hormonal shift.",
+        solution: "Rest.",
+        recommendation: "Most people notice a shift in energy",
+        tomorrowPreview: "Tomorrow may bring some ease.",
+      },
+      logsCount: 0,
+      cycleDay: 5,
+      cycleLength: 28,
+      phase: "menstrual" as Phase,
+    });
+    expect(result.insights.recommendation.toLowerCase()).toContain("you may notice");
+    expect(result.insights.recommendation).not.toContain("Most people");
+  });
+
+  it("population framing guard replaces 'most people notice' for 7-log user too", () => {
+    const result = applyAllGuards({
+      insights: {
+        physicalInsight: "Energy is lower than usual.",
+        mentalInsight: "Focus is sharp.",
+        emotionalInsight: "Things feel good.",
+        whyThisIsHappening: "Estrogen peak.",
+        solution: "Lean in.",
+        recommendation: "Most people notice improvement here",
+        tomorrowPreview: "Tomorrow looks good.",
+      },
+      logsCount: 7,
+      cycleDay: 14,
+      cycleLength: 28,
+      phase: "ovulation" as Phase,
+    });
+    expect(result.insights.recommendation.toLowerCase()).toContain("you may notice");
+    expect(result.insights.recommendation).not.toContain("Most people");
+  });
+
+  it("zero-data guard catches 'still bleeding'", () => {
+    const result = applyAllGuards({
+      insights: {
+        physicalInsight: "You are still bleeding heavily today",
+        mentalInsight: "Focus can feel lower.",
+        emotionalInsight: "Things may feel heavier.",
+        whyThisIsHappening: "Hormonal shift.",
+        solution: "Rest.",
+        recommendation: "Log how you feel.",
+        tomorrowPreview: "Tomorrow may bring some ease.",
+      },
+      logsCount: 0,
+      cycleDay: 2,
+      cycleLength: 28,
+      phase: "menstrual" as Phase,
+    });
+    expect(result.insights.physicalInsight).not.toContain("still bleeding");
+  });

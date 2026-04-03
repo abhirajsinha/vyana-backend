@@ -165,6 +165,17 @@ describe("validateInsightField", () => {
     expect(result.valid).toBe(true);
   });
 
+  it("soft fail on population framing", () => {
+    const result = validateInsightField(
+      makeInput({
+        output: "Most people experience a lift in energy around ovulation.",
+        latestLogSignals: { energy: 4 },
+      }),
+    );
+    expect(result.valid).toBe(true);
+    expect(result.softFails).toContain("populationFraming");
+  });
+
   it("soft fail on phase framing in any sentence", () => {
     const result = validateInsightField(
       makeInput({
