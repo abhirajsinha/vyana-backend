@@ -635,6 +635,17 @@ export function buildVyanaContextForInsights(params: {
   anticipationFrequencyState?: AnticipationFrequencyState;
   emotionalMemoryInput?: EmotionalMemoryInput | null;
   primaryInsightCause?: PrimaryInsightCause;
+  // V2 signal-first params
+  latestLogSignals?: { mood?: number; energy?: number; sleep?: number; stress?: number; cramps?: number; bleeding?: string; headache?: boolean; breastTenderness?: boolean } | null;
+  recentTrend?: { mood?: 'improving' | 'worsening' | 'stable'; energy?: 'improving' | 'worsening' | 'stable'; cramps?: 'improving' | 'worsening' | 'stable'; sleep?: 'improving' | 'worsening' | 'stable' } | null;
+  previousDaySignals?: { mood?: number; energy?: number; cramps?: number; sleep?: number } | null;
+  primaryNarrative?: string;
+  conflictDetected?: boolean;
+  conflictDescription?: string | null;
+  interactionOverride?: string | null;
+  amplifyMoodSensitivity?: boolean;
+  mechanismRequired?: boolean;
+  reinforcePositive?: boolean;
 }): VyanaContext {
   return buildVyanaContext(params);
 }

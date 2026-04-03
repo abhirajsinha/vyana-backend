@@ -98,7 +98,7 @@ export interface NumericBaseline {
   baselineLogCount: number;
 }
 
-function normStress(v: string | null | undefined): number | null {
+export function normStress(v: string | null | undefined): number | null {
   if (!v) return null;
   const s = v.toLowerCase();
   if (["high", "very_high", "elevated", "stressed"].some((x) => s.includes(x))) return 3;
@@ -107,7 +107,7 @@ function normStress(v: string | null | undefined): number | null {
   return null;
 }
 
-function normMood(v: string | null | undefined): number | null {
+export function normMood(v: string | null | undefined): number | null {
   if (!v) return null;
   const s = v.toLowerCase();
   if (["sad", "low", "anxious", "irritable", "down", "very_low"].some((x) => s.includes(x))) return 1;
@@ -115,7 +115,7 @@ function normMood(v: string | null | undefined): number | null {
   return 2;
 }
 
-function normEnergy(v: string | null | undefined): number | null {
+export function normEnergy(v: string | null | undefined): number | null {
   if (!v) return null;
   const s = v.toLowerCase();
   if (["low", "very_low", "exhausted", "tired"].some((x) => s.includes(x))) return 1;

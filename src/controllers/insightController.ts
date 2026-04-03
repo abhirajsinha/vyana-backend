@@ -88,6 +88,9 @@ import {
   recordInsightGeneration,
 } from "../services/insightMonitor";
 import { buildTransitionWarmup } from "../services/transitionWarmup";
+import { selectNarrative } from "../services/narrativeSelector";
+import { evaluateInteractionRules } from "../services/interactionRules";
+import { normMood, normEnergy, normStress } from "../services/insightData";
 
 const GUARD_VERSION = 1; // bump to invalidate all insight caches
 
@@ -668,6 +671,74 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     ? buildMemoryContext(driverForMemory, existingMemoryCount)
     : null;
   const anticipationFrequencyState = getAnticipationState(cached);
+
+  // ── V2: Narrative Selection + Interaction Rules ─────────────────────────────
+  const sortedLogs = [...recentLogs].sort(
+    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+  );
+  const latestRawLog = sortedLogs[0] ?? null;
+  const previousRawLog = sortedLogs[1] ?? null;
+
+  const latestLogSignals = latestRawLog
+    ? {
+        mood: normMood(latestRawLog.mood) ?? undefined,
+        energy: normEnergy(latestRawLog.energy) ?? undefined,
+        sleep: latestRawLog.sleep ?? undefined,
+        stress: normStress(latestRawLog.stress) ?? undefined,
+        cramps: latestRawLog.symptoms?.includes("cramps") ? 5 : undefined,
+        headache: latestRawLog.symptoms?.includes("headache") || undefined,
+        breastTenderness: latestRawLog.symptoms?.includes("breast_tenderness") || undefined,
+      }
+    : null;
+
+  const previousDaySignals = previousRawLog
+    ? {
+        mood: normMood(previousRawLog.mood) ?? undefined,
+        energy: normEnergy(previousRawLog.energy) ?? undefined,
+        cramps: previousRawLog.symptoms?.includes("cramps") ? 5 : undefined,
+        sleep: previousRawLog.sleep ?? undefined,
+      }
+    : null;
+
+  // Count consecutive bleeding days (from latest backward)
+  let bleedingDays = 0;
+  for (const log of sortedLogs) {
+    if (log.padsChanged && log.padsChanged > 0) bleedingDays++;
+    else break;
+  }
+
+  const narrativeResult = selectNarrative({
+    cycleDay: cycleInfo.currentDay,
+    phase: cycleInfo.phase,
+    latestLog: latestLogSignals,
+    previousDayLog: previousDaySignals,
+    personalBaseline: numericBaseline
+      ? {
+          avgEnergySameDay: numericBaseline.recentEnergyAvg ?? undefined,
+          avgMoodSameDay: numericBaseline.recentMoodAvg ?? undefined,
+        }
+      : null,
+    logsCount: recentLogs.length,
+    bleedingDays,
+  });
+
+  // Count consecutive low energy days
+  let consecutiveLowEnergyDays = 0;
+  for (const log of sortedLogs) {
+    const e = normEnergy(log.energy);
+    if (e !== null && e <= 1) consecutiveLowEnergyDays++;
+    else break;
+  }
+
+  const interactionResult = evaluateInteractionRules({
+    latestLog: latestLogSignals,
+    phase: cycleInfo.phase,
+    cycleDay: cycleInfo.currentDay,
+    trend: narrativeResult.trend,
+    consecutiveLowEnergyDays,
+    bleedingActive: bleedingDays > 0,
+  });
+
   const vyanaCtx = buildVyanaContextForInsights({
     ctx: context,
     baseline: numericBaseline,
@@ -691,6 +762,17 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     anticipationFrequencyState,
     emotionalMemoryInput,
     primaryInsightCause,
+    // V2 signal-first fields
+    latestLogSignals,
+    recentTrend: narrativeResult.trend,
+    previousDaySignals,
+    primaryNarrative: narrativeResult.primaryNarrative,
+    conflictDetected: narrativeResult.conflictDetected,
+    conflictDescription: narrativeResult.conflictDescription,
+    interactionOverride: interactionResult.overrideExplanation,
+    amplifyMoodSensitivity: interactionResult.amplifyMoodSensitivity,
+    mechanismRequired: interactionResult.mechanismRequired,
+    reinforcePositive: interactionResult.reinforcePositive,
   });
 
   let insights = draftInsights;
