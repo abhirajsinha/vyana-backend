@@ -45,7 +45,7 @@ const library: DayInsight[] = [
       "Focus is difficult today; low estrogen makes mental effort feel much harder.",
     ],
     emotionalNote: [
-      "Low hormones and pain signals make emotional regulation harder today.",
+      "Low hormones and pain signals make handling things emotionally harder today.",
       "Emotional sensitivity peaks today as hormones crash to their lowest point.",
       "Pain and hormone drop combine to make emotional steadiness harder today.",
     ],
@@ -119,7 +119,7 @@ const library: DayInsight[] = [
     emotionalNote: [
       "Emotional steadiness starts returning as pain eases and estrogen rises.",
       "The worst emotional sensitivity is passing; today feels slightly easier.",
-      "As cramping eases, emotional regulation starts becoming more manageable.",
+      "As cramping eases, handling things emotionally starts becoming more manageable.",
     ],
     actionTip: [
       "A short gentle walk today can reduce cramping and boost circulation.",

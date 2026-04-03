@@ -522,20 +522,13 @@ import {
   }
   
   // ─── RESULTS ─────────────────────────────────────────────────────────────────
-  
-  console.log(`\n${"═".repeat(60)}`);
-  console.log(`  RESULTS`);
-  console.log(`${"═".repeat(60)}`);
-  console.log(`  Total:  ${totalTests}`);
-  console.log(`  Passed: ${passedTests} ✅`);
-  console.log(`  Failed: ${failedTests} ❌`);
-  console.log(`${"═".repeat(60)}`);
-  
-  if (failures.length > 0) {
-    console.log(`\n  FAILURES:`);
-    for (const f of failures) {
-      console.log(`  ${f}`);
+
+  it("all guard tests pass", () => {
+    if (failures.length > 0) {
+      console.log(`\n  FAILURES:`);
+      for (const f of failures) {
+        console.log(`  ${f}`);
+      }
     }
-  }
-  
-  process.exit(failedTests > 0 ? 1 : 0);
+    expect(failedTests).toBe(0);
+  });

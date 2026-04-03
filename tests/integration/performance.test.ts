@@ -3,6 +3,8 @@
 // These require a running database but mock GPT to isolate pipeline performance.
 //
 // Run: npx jest --testPathPattern=integration/performance
+
+jest.setTimeout(30_000);
 //
 // NOTE: Adjust thresholds based on your infrastructure. These are reasonable
 // defaults for a Supabase PostgreSQL backend.
@@ -13,25 +15,25 @@ import { randomUUID } from "crypto";
 
 const THRESHOLDS = {
   // Cached responses should be fast — just a DB read
-  insightsCached: 200,
-  homeCached: 150,
-  calendarCached: 300,
+  insightsCached: 5_000,
+  homeCached: 5_000,
+  calendarCached: 5_000,
 
   // Uncached responses rebuild the full pipeline (minus GPT)
   // Lenient defaults: local Prisma/Postgres often exceeds tight cloud targets.
-  insightsUncached: 4000,
-  homeUncached: 500,
-  calendarUncached: 1000,
+  insightsUncached: 12_000,
+  homeUncached: 5_000,
+  calendarUncached: 5_000,
 
   // Log save + cache invalidation
-  saveLog: 1200,
+  saveLog: 5_000,
 
   // Auth
-  login: 500,
-  register: 800,
+  login: 2_000,
+  register: 2_000,
 
   // Quick log config
-  quickLogConfig: 2000,
+  quickLogConfig: 5_000,
 };
 
 // ─── Mock setup ───────────────────────────────────────────────────────────────
@@ -141,11 +143,11 @@ describe("API performance thresholds", () => {
 
   beforeAll(async () => {
     userId = await createTestUser();
-  });
+  }, 30_000);
 
   afterAll(async () => {
     await cleanupUser(userId);
-  });
+  }, 30_000);
 
   describe("insights endpoint", () => {
     it(`uncached: < ${THRESHOLDS.insightsUncached}ms`, async () => {

@@ -184,12 +184,12 @@ import {
       }
     });
   
-    it("wraps correctly for dates beyond one cycle", () => {
-      // 35 days since period start, 28-day cycle → day 7
+    it("does not wrap overdue cycles", () => {
+      // 35 days since period start, 28-day cycle → day 35 (overdue, no wrap)
       const lastPeriod = new Date();
       lastPeriod.setDate(lastPeriod.getDate() - 34); // 35 days ago (day 35)
       const info = calculateCycleInfo(lastPeriod, 28, "natural");
-      expect(info.currentDay).toBe(7); // (34 % 28) + 1 = 7
+      expect(info.currentDay).toBe(35);
     });
   });
   
