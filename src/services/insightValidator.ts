@@ -64,8 +64,22 @@ function checkNoBannedPhrases(output: string): boolean {
 
 const PHASE_FIRST_RE = /^(your estrogen|your progesterone|in the .* phase|during this phase|this phase)/i;
 
+// Phase-framing language in the first sentence (hard check)
+const PHASE_FRAME_RE = /\b(this is typical for day \d|typical for this phase|common (?:at|for|during) (?:this|the) (?:phase|day|point)|normal for (?:this|the) (?:phase|day|stage))\b/i;
+
 function checkNotPhaseFirst(output: string): boolean {
-  return !PHASE_FIRST_RE.test(output.trim());
+  const trimmed = output.trim();
+  if (PHASE_FIRST_RE.test(trimmed)) return false;
+  const firstSentence = trimmed.split(/[.!?]/)[0] ?? '';
+  if (PHASE_FRAME_RE.test(firstSentence)) return false;
+  return true;
+}
+
+function checkNoIncompleteSentences(output: string): boolean {
+  const trimmed = output.trim();
+  if (trimmed.length === 0) return true;
+  const lastChar = trimmed[trimmed.length - 1];
+  return lastChar === '.' || lastChar === '!' || lastChar === '?';
 }
 
 function checkWithinLength(output: string): boolean {
@@ -108,6 +122,13 @@ function checkTooBroad(output: string): boolean {
   return matchedThemes <= 3;
 }
 
+// Phase-framing language anywhere in output (soft check)
+const PHASE_FRAME_ANY_RE = /\b(this is typical for|typical for this phase|common (?:at|for|during) this (?:phase|day)|normal for this (?:phase|day|stage)|this is expected (?:at|for|during) this (?:phase|time))\b/i;
+
+function checkNoPhaseFraming(output: string): boolean {
+  return !PHASE_FRAME_ANY_RE.test(output);
+}
+
 // ─── Main validator ──────────────────────────────────────────────────────────
 
 export function validateInsightField(input: InsightValidationInput): ValidationResult {
@@ -129,6 +150,9 @@ export function validateInsightField(input: InsightValidationInput): ValidationR
   if (!checkAcknowledgesConflict(input.output, input.conflictDetected)) {
     hardFails.push("acknowledgesConflict");
   }
+  if (!checkNoIncompleteSentences(input.output)) {
+    hardFails.push("incompleteSentence");
+  }
 
   if (!checkHasTemporalAnchor(input.output)) {
     softFails.push("hasTemporalAnchor");
@@ -138,6 +162,9 @@ export function validateInsightField(input: InsightValidationInput): ValidationR
   }
   if (!checkTooBroad(input.output)) {
     softFails.push("tooBroad");
+  }
+  if (!checkNoPhaseFraming(input.output)) {
+    softFails.push("phaseFraming");
   }
 
   return {

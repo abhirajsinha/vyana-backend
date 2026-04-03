@@ -33,7 +33,7 @@ describe('evaluateInteractionRules', () => {
 
   it('stress-luteal amplification fires', () => {
     const result = evaluateInteractionRules(
-      makeInput({ latestLog: { stress: 4 }, phase: 'late_luteal' })
+      makeInput({ latestLog: { stress: 4 }, phase: 'luteal' })
     );
     expect(result.amplifyMoodSensitivity).toBe(true);
   });
@@ -103,5 +103,21 @@ describe('evaluateInteractionRules', () => {
     expect(result.amplifyMoodSensitivity).toBe(false);
     expect(result.mechanismRequired).toBe(false);
     expect(result.reinforcePositive).toBe(false);
+  });
+
+  // ── Phase string fix tests ─────────────────────────────────────────────────
+
+  it('stress-luteal amplification fires for phase=luteal', () => {
+    const result = evaluateInteractionRules(
+      makeInput({ latestLog: { stress: 5 }, phase: 'luteal', cycleDay: 22 })
+    );
+    expect(result.amplifyMoodSensitivity).toBe(true);
+  });
+
+  it('stress-luteal amplification does NOT fire for phase=follicular', () => {
+    const result = evaluateInteractionRules(
+      makeInput({ latestLog: { stress: 5 }, phase: 'follicular', cycleDay: 9 })
+    );
+    expect(result.amplifyMoodSensitivity).toBe(false);
   });
 });

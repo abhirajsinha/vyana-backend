@@ -32,6 +32,7 @@ export interface NarrativeSelectorInput {
   } | null;
   logsCount: number;
   bleedingDays?: number;
+  cycleLength?: number;
 }
 
 export interface NarrativeSelectorOutput {
@@ -63,18 +64,19 @@ function computeTrend(
 function detectConflict(
   log: NonNullable<NarrativeSelectorInput['latestLog']>,
   phase: string,
-  cycleDay: number
+  cycleDay: number,
+  cycleLength: number
 ): string | null {
   if (log.energy !== undefined && log.energy <= 2 && phase === 'follicular' && cycleDay >= 6) {
     return 'Low energy during follicular \u2014 expected to rise';
   }
-  if (log.mood !== undefined && log.mood >= 4 && phase === 'late_luteal') {
+  if (log.mood !== undefined && log.mood >= 4 && phase === 'luteal' && cycleDay >= (cycleLength - 4)) {
     return 'High mood during late luteal \u2014 mood usually dips';
   }
   if (log.energy !== undefined && log.energy >= 4 && phase === 'menstrual' && cycleDay <= 3) {
     return 'High energy during menstruation \u2014 fatigue expected';
   }
-  if (log.sleep !== undefined && log.sleep <= 2 && phase === 'early_luteal') {
+  if (log.sleep !== undefined && log.sleep <= 2 && phase === 'luteal' && cycleDay <= (cycleLength - 8)) {
     return 'Poor sleep in early luteal \u2014 progesterone should aid sleep';
   }
   if (log.cramps !== undefined && log.cramps >= 5 && phase === 'follicular' && cycleDay >= 8) {
@@ -86,7 +88,7 @@ function detectConflict(
   if (log.mood !== undefined && log.mood <= 2 && phase === 'ovulation') {
     return 'Low mood at ovulation \u2014 estrogen peak usually lifts mood';
   }
-  if (log.energy !== undefined && log.energy >= 4 && phase === 'late_luteal') {
+  if (log.energy !== undefined && log.energy >= 4 && phase === 'luteal' && cycleDay >= (cycleLength - 4)) {
     return 'High energy during late luteal \u2014 energy usually drops with hormone withdrawal';
   }
   return null;
@@ -131,7 +133,8 @@ export function selectNarrative(input: NarrativeSelectorInput): NarrativeSelecto
   }
 
   // 3. CONFLICT
-  const conflictDescription = detectConflict(latestLog, phase, cycleDay);
+  const safeCycleLength = input.cycleLength ?? 28;
+  const conflictDescription = detectConflict(latestLog, phase, cycleDay, safeCycleLength);
   if (conflictDescription) {
     return { primaryNarrative: 'conflict', conflictDetected: true, conflictDescription, trend };
   }

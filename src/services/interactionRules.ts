@@ -46,10 +46,11 @@ export function evaluateInteractionRules(input: InteractionRuleInput): Interacti
   }
 
   // Rule 2: STRESS-LUTEAL AMPLIFICATION
+  // cycleEngine only produces "luteal" — mid/late both qualify
   if (
     stress !== undefined &&
     stress >= 4 &&
-    ['mid_luteal', 'late_luteal'].includes(input.phase)
+    input.phase === 'luteal'
   ) {
     result.amplifyMoodSensitivity = true;
   }

@@ -91,6 +91,7 @@ import { buildTransitionWarmup } from "../services/transitionWarmup";
 import { selectNarrative } from "../services/narrativeSelector";
 import { evaluateInteractionRules } from "../services/interactionRules";
 import { normMood, normEnergy, normStress } from "../services/insightData";
+import { validateInsightField } from "../services/insightValidator";
 
 const GUARD_VERSION = 1; // bump to invalidate all insight caches
 
@@ -720,6 +721,7 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
       : null,
     logsCount: recentLogs.length,
     bleedingDays,
+    cycleLength: effectiveCycleLength,
   });
 
   // Count consecutive low energy days
@@ -792,7 +794,8 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     | "accepted_strength_bypassed"
     | "accepted_vague_fixed"
     | "unchanged_output"
-    | "stable_state" = "gated";
+    | "stable_state"
+    | "validator_hard_fail" = "gated";
 
   // GPT fires on every request — no gating
   try {
@@ -940,6 +943,109 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
   }
 
   insights = cleanupInsightText(insights);
+
+  // ── V2: Post-GPT insight validation ──────────────────────────────────────
+  if (aiEnhanced && latestLogSignals) {
+    const validationInput = {
+      output: '',
+      primaryNarrative: narrativeResult.primaryNarrative,
+      latestLogSignals: latestLogSignals as Record<string, unknown>,
+      conflictDetected: narrativeResult.conflictDetected,
+      confidenceLevel: (context.confidence === 'high' ? 'high' : context.confidence === 'medium' ? 'medium' : 'low') as 'low' | 'medium' | 'high',
+    };
+
+    const fieldsToValidate: (keyof typeof insights)[] = [
+      'physicalInsight', 'mentalInsight', 'emotionalInsight',
+      'whyThisIsHappening', 'solution', 'recommendation', 'tomorrowPreview',
+    ];
+
+    let anyHardFail = false;
+    const validationFailures: string[] = [];
+
+    for (const field of fieldsToValidate) {
+      const result = validateInsightField({
+        ...validationInput,
+        output: insights[field],
+      });
+
+      if (!result.valid) {
+        anyHardFail = true;
+        validationFailures.push(`${field}: [${result.hardFails.join(', ')}]`);
+      }
+
+      if (result.softFails.length > 0) {
+        console.log(JSON.stringify({
+          type: 'insight_validator_soft',
+          userId: req.userId,
+          field,
+          softFails: result.softFails,
+          timestamp: new Date().toISOString(),
+        }));
+      }
+    }
+
+    if (anyHardFail) {
+      console.error(JSON.stringify({
+        type: 'insight_validator_hard_fail',
+        userId: req.userId,
+        cycleDay: cycleInfo.currentDay,
+        phase: cycleInfo.phase,
+        failures: validationFailures,
+        timestamp: new Date().toISOString(),
+      }));
+      insights = draftInsights;
+      aiEnhanced = false;
+      aiDebug = 'validator_hard_fail';
+    }
+  }
+
+  // V2: Zero-log user validation
+  if (aiEnhanced && !latestLogSignals) {
+    const zeroLogValidationInput = {
+      output: '',
+      primaryNarrative: 'phase',
+      latestLogSignals: null,
+      conflictDetected: false,
+      confidenceLevel: 'low' as const,
+    };
+
+    const SKIP_FOR_ZERO_LOG = new Set(['reflectsLogSignals', 'acknowledgesConflict']);
+
+    const fieldsToCheck: (keyof typeof insights)[] = [
+      'physicalInsight', 'mentalInsight', 'emotionalInsight',
+      'whyThisIsHappening', 'solution', 'recommendation', 'tomorrowPreview',
+    ];
+
+    let zeroLogHardFail = false;
+
+    for (const field of fieldsToCheck) {
+      const result = validateInsightField({
+        ...zeroLogValidationInput,
+        output: insights[field],
+      });
+
+      const relevantHardFails = result.hardFails.filter(
+        f => !SKIP_FOR_ZERO_LOG.has(f)
+      );
+
+      if (relevantHardFails.length > 0) {
+        zeroLogHardFail = true;
+        console.error(JSON.stringify({
+          type: 'insight_validator_zero_log_fail',
+          userId: req.userId,
+          field,
+          hardFails: relevantHardFails,
+          timestamp: new Date().toISOString(),
+        }));
+      }
+    }
+
+    if (zeroLogHardFail) {
+      insights = draftInsights;
+      aiEnhanced = false;
+      aiDebug = 'validator_hard_fail';
+    }
+  }
 
   // ── Post-generation guard layer ──────────────────────────────────────────
   // Deterministic enforcement: catches zero-data overconfidence, direction

@@ -154,16 +154,85 @@ describe('selectNarrative', () => {
     expect(result.conflictDescription).toContain('Low mood at ovulation');
   });
 
-  it('conflict detected for high energy during late luteal', () => {
+  it('conflict detected for high energy during late luteal (phase=luteal, cycleDay=26)', () => {
     const result = selectNarrative(
       makeInput({
         cycleDay: 26,
-        phase: 'late_luteal',
+        phase: 'luteal',
+        cycleLength: 28,
         latestLog: { energy: 5 },
       })
     );
     expect(result.primaryNarrative).toBe('conflict');
     expect(result.conflictDetected).toBe(true);
     expect(result.conflictDescription).toContain('High energy during late luteal');
+  });
+
+  // ── Phase string fix tests ─────────────────────────────────────────────────
+
+  it('conflict detected for high mood in late luteal (phase=luteal, cycleDay=25, cycleLength=28)', () => {
+    const result = selectNarrative(
+      makeInput({
+        cycleDay: 25,
+        phase: 'luteal',
+        cycleLength: 28,
+        latestLog: { mood: 5 },
+      })
+    );
+    expect(result.primaryNarrative).toBe('conflict');
+    expect(result.conflictDetected).toBe(true);
+    expect(result.conflictDescription).toContain('mood');
+  });
+
+  it('conflict detected for poor sleep in early luteal (phase=luteal, cycleDay=18, cycleLength=28)', () => {
+    const result = selectNarrative(
+      makeInput({
+        cycleDay: 18,
+        phase: 'luteal',
+        cycleLength: 28,
+        latestLog: { sleep: 1 },
+      })
+    );
+    expect(result.primaryNarrative).toBe('conflict');
+    expect(result.conflictDetected).toBe(true);
+    expect(result.conflictDescription).toContain('sleep');
+  });
+
+  it('NO conflict for high mood in early luteal (phase=luteal, cycleDay=18, cycleLength=28)', () => {
+    const result = selectNarrative(
+      makeInput({
+        cycleDay: 18,
+        phase: 'luteal',
+        cycleLength: 28,
+        latestLog: { mood: 5 },
+      })
+    );
+    expect(result.primaryNarrative).not.toBe('conflict');
+  });
+
+  it('late luteal conflict adapts to longer cycle (cycleLength=35)', () => {
+    const result = selectNarrative(
+      makeInput({
+        cycleDay: 31,
+        phase: 'luteal',
+        cycleLength: 35,
+        latestLog: { mood: 5 },
+      })
+    );
+    expect(result.primaryNarrative).toBe('conflict');
+    expect(result.conflictDetected).toBe(true);
+    expect(result.conflictDescription).toContain('mood');
+  });
+
+  it('day 25 is NOT late luteal for a 35-day cycle', () => {
+    const result = selectNarrative(
+      makeInput({
+        cycleDay: 25,
+        phase: 'luteal',
+        cycleLength: 35,
+        latestLog: { mood: 5 },
+      })
+    );
+    expect(result.primaryNarrative).not.toBe('conflict');
   });
 });

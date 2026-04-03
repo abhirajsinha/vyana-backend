@@ -9,7 +9,7 @@ import {
 
 function makeInput(overrides: Partial<InsightValidationInput>): InsightValidationInput {
   return {
-    output: "Your cramps are intense today at 7/10. This is typical for Day 2 as prostaglandins peak. Tomorrow should feel easier.",
+    output: "Your cramps are intense today at 7/10. Prostaglandins are peaking and driving the pain. Tomorrow should feel easier.",
     primaryNarrative: "severe_symptom",
     latestLogSignals: { cramps: 7 },
     conflictDetected: false,
@@ -131,6 +131,49 @@ describe("validateInsightField", () => {
       }),
     );
     expect(result.valid).toBe(true);
+  });
+
+  // ── Strengthened checks ─────────────────────────────────────────────────────
+
+  it("hard fail on phase-first in first sentence (mid-sentence)", () => {
+    const result = validateInsightField(
+      makeInput({
+        output: "This is typical for day 4 of the cycle and energy is recovering.",
+      }),
+    );
+    expect(result.valid).toBe(false);
+    expect(result.hardFails).toContain("notPhaseFirst");
+  });
+
+  it("hard fail on incomplete sentence", () => {
+    const result = validateInsightField(
+      makeInput({
+        output: "FSH is beginning its gradual rise to start",
+      }),
+    );
+    expect(result.valid).toBe(false);
+    expect(result.hardFails).toContain("incompleteSentence");
+  });
+
+  it("passes with complete sentences and no phase framing", () => {
+    const result = validateInsightField(
+      makeInput({
+        output: "Your energy is lower than yesterday. Things should start improving over the next couple of days.",
+        latestLogSignals: { energy: 2 },
+      }),
+    );
+    expect(result.valid).toBe(true);
+  });
+
+  it("soft fail on phase framing in any sentence", () => {
+    const result = validateInsightField(
+      makeInput({
+        output: "Energy is low right now. This is normal for this phase of your cycle.",
+        latestLogSignals: { energy: 2 },
+      }),
+    );
+    expect(result.valid).toBe(true);
+    expect(result.softFails).toContain("phaseFraming");
   });
 });
 
