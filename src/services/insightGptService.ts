@@ -1044,7 +1044,7 @@ REQUIRED language: "can", "may", "often", "typically", "many people find", "it's
 Example: "Flow and cramping can start to ease around this time" ✅ (NOT "Flow is lighter and cramping is softer" ❌)
 
 NO clinical/academic language: "emotional regulation" ❌ → "handling things emotionally" ✅
-NO energy exaggeration: "energy boost" ❌ → "gradual return of energy" ✅
+NO energy exaggeration: "energy boost" ❌ → "a gentle energy shift" ✅
 NO directive tone: "resting will support" ❌ → "resting can help support" ✅
 NO deterministic predictions: "you notice a shift" ❌ → "you may start to notice" ✅
 

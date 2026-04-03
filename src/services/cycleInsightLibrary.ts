@@ -83,7 +83,7 @@ const library: DayInsight[] = [
     emotionalNote: [
       "Cramping and fatigue can make emotional sensitivity run high today.",
       "Day 2 often feels emotionally raw — pain and low hormones amplify feelings.",
-      "Emotional regulation is hardest today; give yourself extra grace.",
+      "Handling things emotionally is hardest today; give yourself extra grace.",
     ],
     actionTip: [
       "Stay warm, reduce exertion, and prioritize iron-rich food today.",

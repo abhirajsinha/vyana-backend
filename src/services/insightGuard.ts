@@ -85,6 +85,9 @@ const ZERO_DATA_SPECIFIC_PATTERNS: Array<[RegExp, string]> = [
   [/\b[Ee]nergy is high\b/gi, "Energy can feel higher"],
   [/\b[Ee]nergy is strong\b/gi, "Energy can feel stronger"],
   [/\b[Ee]nergy is returning\b/gi, "Energy can start returning"],
+  [/\breturn of energy\b/gi, "a gentle energy shift"],
+  [/\benergy is coming\b/gi, "energy can start to come back"],
+  [/\benergy is on its way\b/gi, "energy may start to return"],
   [/\b[Ee]nergy is coming\b/gi, "Energy can start coming"],
 
   // ── Focus / clarity / motivation ───────────────────────────────────────
@@ -568,7 +571,7 @@ function applyTomorrowSoftener(text: string, logsCount: number): string {
     .replace(/\byou feel\b/gi, "you may feel")
     .replace(/\bhit(?:s|ting)?\b/gi, "reach")
     .replace(/\benergy and confidence hit\b/gi, "energy and confidence can reach")
-    .replace(/\benergy boost\b/gi, "gradual return of energy")
+    .replace(/\benergy boost\b/gi, "a gentle energy shift")
     .replace(/\ba boost\b/gi, "a gradual lift")
     .replace(/\blifts soon\b/gi, "can lift soon")
     .replace(/\beases soon\b/gi, "can ease soon")
@@ -662,8 +665,8 @@ function applyClinicalLanguageGuard(text: string): string {
 // Cap energy exaggeration — "boost", "peak", "optimal" → softer alternatives
 
 const ENERGY_REPLACEMENTS: Array<[RegExp, string]> = [
-  [/\benergy boost\b/gi, "gradual return of energy"],
-  [/\benergy lift\b/gi, "gradual return of energy"],
+  [/\benergy boost\b/gi, "a gentle energy shift"],
+  [/\benergy lift\b/gi, "a gentle energy shift"],
   [/\ba boost\b/gi, "a gradual lift"],
   [/\bboost(?:s|ing|ed)?\b/gi, "lift"],
   [/\bpeak energy\b/gi, "higher energy"],
