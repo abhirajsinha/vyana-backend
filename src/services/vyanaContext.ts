@@ -152,6 +152,37 @@ export interface VyanaContext {
   isHighSeverity: boolean;
   /** Life-factor vs cycle attribution — steers GPT and suppresses wrong cycle narratives */
   primaryInsightCause: PrimaryInsightCause;
+
+  // ─── V2 signal-first fields ───────────────────────────────────────────────────
+  latestLogSignals: {
+    mood?: number;
+    energy?: number;
+    sleep?: number;
+    stress?: number;
+    cramps?: number;
+    bleeding?: string;
+    headache?: boolean;
+    breastTenderness?: boolean;
+  } | null;
+  recentTrend: {
+    mood?: 'improving' | 'worsening' | 'stable';
+    energy?: 'improving' | 'worsening' | 'stable';
+    cramps?: 'improving' | 'worsening' | 'stable';
+    sleep?: 'improving' | 'worsening' | 'stable';
+  } | null;
+  previousDaySignals: {
+    mood?: number;
+    energy?: number;
+    cramps?: number;
+    sleep?: number;
+  } | null;
+  primaryNarrative: string;
+  conflictDetected: boolean;
+  conflictDescription: string | null;
+  interactionOverride: string | null;
+  amplifyMoodSensitivity: boolean;
+  mechanismRequired: boolean;
+  reinforcePositive: boolean;
 }
 
 // ─── Fix 5: Anticipation persistence contract ─────────────────────────────────
@@ -851,6 +882,17 @@ export function buildVyanaContext(params: {
   anticipationFrequencyState?: AnticipationFrequencyState;
   emotionalMemoryInput?: EmotionalMemoryInput | null; // NEW
   primaryInsightCause?: PrimaryInsightCause;
+  // V2 signal-first params
+  latestLogSignals?: { mood?: number; energy?: number; sleep?: number; stress?: number; cramps?: number; bleeding?: string; headache?: boolean; breastTenderness?: boolean } | null;
+  recentTrend?: { mood?: 'improving' | 'worsening' | 'stable'; energy?: 'improving' | 'worsening' | 'stable'; cramps?: 'improving' | 'worsening' | 'stable'; sleep?: 'improving' | 'worsening' | 'stable' } | null;
+  previousDaySignals?: { mood?: number; energy?: number; cramps?: number; sleep?: number } | null;
+  primaryNarrative?: string;
+  conflictDetected?: boolean;
+  conflictDescription?: string | null;
+  interactionOverride?: string | null;
+  amplifyMoodSensitivity?: boolean;
+  mechanismRequired?: boolean;
+  reinforcePositive?: boolean;
 }): VyanaContext {
   const {
     ctx, baseline, crossCycleNarrative, hormoneState, hormoneLanguage,
@@ -861,6 +903,17 @@ export function buildVyanaContext(params: {
     anticipationFrequencyState = { lastShownCycleDay: null, lastShownType: null },
     emotionalMemoryInput = null,
     primaryInsightCause = "cycle",
+    // V2 signal-first defaults
+    latestLogSignals = null,
+    recentTrend = null,
+    previousDaySignals = null,
+    primaryNarrative = "phase",
+    conflictDetected = false,
+    conflictDescription = null,
+    interactionOverride = null,
+    amplifyMoodSensitivity = false,
+    mechanismRequired = false,
+    reinforcePositive = false,
   } = params;
 
   const daysLeft = cycleLength - cycleDay;
@@ -1025,6 +1078,17 @@ export function buildVyanaContext(params: {
     mode: ctx.mode, confidence: ctx.confidence,
     isHighSeverity: highSeverity,
     primaryInsightCause,
+    // V2 signal-first fields
+    latestLogSignals,
+    recentTrend,
+    previousDaySignals,
+    primaryNarrative,
+    conflictDetected,
+    conflictDescription,
+    interactionOverride,
+    amplifyMoodSensitivity,
+    mechanismRequired,
+    reinforcePositive,
   };
 }
 
@@ -1032,6 +1096,63 @@ export function buildVyanaContext(params: {
 
 export function serializeVyanaContext(vc: VyanaContext): string {
   const lines: string[] = [];
+
+  // ─── V2: Signal context block (highest priority — GPT reads this first) ──────
+  if (vc.primaryNarrative && vc.primaryNarrative !== "phase") {
+    lines.push("=== SIGNAL CONTEXT (HIGHEST PRIORITY — READ THIS FIRST) ===");
+    lines.push(`Primary narrative: ${vc.primaryNarrative}`);
+    if (vc.conflictDetected && vc.conflictDescription) {
+      lines.push(`⚠️ CONFLICT: ${vc.conflictDescription}`);
+    }
+    if (vc.interactionOverride) {
+      lines.push(`OVERRIDE: ${vc.interactionOverride}`);
+    }
+    if (vc.latestLogSignals) {
+      lines.push(`Today's logged signals: ${JSON.stringify(vc.latestLogSignals)}`);
+    }
+    if (vc.recentTrend) {
+      lines.push(`Recent trend: ${JSON.stringify(vc.recentTrend)}`);
+    }
+    if (vc.previousDaySignals) {
+      lines.push(`Yesterday's signals: ${JSON.stringify(vc.previousDaySignals)}`);
+    }
+    if (vc.amplifyMoodSensitivity) {
+      lines.push("Note: Amplify mood sensitivity in this insight");
+    }
+    if (vc.mechanismRequired) {
+      lines.push("Note: Include biological mechanism explanation");
+    }
+    if (vc.reinforcePositive) {
+      lines.push("Note: Reinforce and affirm the positive state");
+    }
+    lines.push(""); // blank line separator
+  } else if (vc.latestLogSignals || vc.interactionOverride) {
+    // Even for phase narrative, include signal data if available
+    lines.push("=== SIGNAL CONTEXT (HIGHEST PRIORITY — READ THIS FIRST) ===");
+    lines.push(`Primary narrative: ${vc.primaryNarrative}`);
+    if (vc.interactionOverride) {
+      lines.push(`OVERRIDE: ${vc.interactionOverride}`);
+    }
+    if (vc.latestLogSignals) {
+      lines.push(`Today's logged signals: ${JSON.stringify(vc.latestLogSignals)}`);
+    }
+    if (vc.recentTrend) {
+      lines.push(`Recent trend: ${JSON.stringify(vc.recentTrend)}`);
+    }
+    if (vc.previousDaySignals) {
+      lines.push(`Yesterday's signals: ${JSON.stringify(vc.previousDaySignals)}`);
+    }
+    if (vc.amplifyMoodSensitivity) {
+      lines.push("Note: Amplify mood sensitivity in this insight");
+    }
+    if (vc.mechanismRequired) {
+      lines.push("Note: Include biological mechanism explanation");
+    }
+    if (vc.reinforcePositive) {
+      lines.push("Note: Reinforce and affirm the positive state");
+    }
+    lines.push(""); // blank line separator
+  }
 
   if (vc.userName) lines.push(`User: ${vc.userName}`);
   lines.push(`Cycle: ${vc.cycle.cycleSummary} — ${vc.cycle.phasePositionHuman}`);
