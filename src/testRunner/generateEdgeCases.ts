@@ -42,20 +42,20 @@ import type {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function localMidnight(): Date {
+function utcMidnight(): Date {
   const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 }
 
 function daysAgo(n: number): Date {
-  const d = localMidnight();
-  d.setDate(d.getDate() - n);
+  const d = utcMidnight();
+  d.setUTCDate(d.getUTCDate() - n);
   return d;
 }
 
 function periodStartForDay(cycleDay: number): Date {
-  const d = localMidnight();
-  d.setDate(d.getDate() - (cycleDay - 1));
+  const d = utcMidnight();
+  d.setUTCDate(d.getUTCDate() - (cycleDay - 1));
   return d;
 }
 
@@ -475,8 +475,8 @@ function buildDelayedCases(): GeneratedTestCase[] {
   for (const offset of offsets) {
     for (const count of logCounts) {
       idx++;
-      const d = localMidnight();
-      d.setDate(d.getDate() - (offset - 1));
+      const d = utcMidnight();
+      d.setUTCDate(d.getUTCDate() - (offset - 1));
       out.push({
         id: `T_DELAY_${String(idx).padStart(2, "0")}`,
         description: `Delayed ${offset}d, ${count} logs`,

@@ -53,20 +53,20 @@ export interface GeneratedTestCase {
   expect: TestExpect;
 }
 
-function localMidnight(): Date {
+function utcMidnight(): Date {
   const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 }
 
 function daysAgo(n: number): Date {
-  const d = localMidnight();
-  d.setDate(d.getDate() - n);
+  const d = utcMidnight();
+  d.setUTCDate(d.getUTCDate() - n);
   return d;
 }
 
 function periodStartForDay(cycleDay: number): Date {
-  const d = localMidnight();
-  d.setDate(d.getDate() - (cycleDay - 1));
+  const d = utcMidnight();
+  d.setUTCDate(d.getUTCDate() - (cycleDay - 1));
   return d;
 }
 
@@ -316,9 +316,9 @@ function buildDelayedEdges(): GeneratedTestCase[] {
   const offsets = [35, 40, 32, 45, 50, 38];
   const cycleLength = 28;
   offsets.forEach((rawDaysAgo, idx) => {
-    const d = localMidnight();
-    d.setDate(d.getDate() - (rawDaysAgo - 1));
-    const today = localMidnight();
+    const d = utcMidnight();
+    d.setUTCDate(d.getUTCDate() - (rawDaysAgo - 1));
+    const today = utcMidnight();
     const { currentDay: cycleDay } = calculateCycleInfoForDate(
       d,
       today,

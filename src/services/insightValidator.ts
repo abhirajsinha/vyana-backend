@@ -7,6 +7,13 @@ export interface InsightValidationInput {
   latestLogSignals: Record<string, unknown> | null;
   conflictDetected: boolean;
   confidenceLevel: 'low' | 'medium' | 'high';
+  /** Which insight field is being validated. When set, reflectsLogSignals is
+   *  only a hard fail for signal-describing fields (physicalInsight,
+   *  whyThisIsHappening). For other fields it becomes a soft fail. */
+  fieldName?: string;
+  /** Primary driver from the insight pipeline. When a strong signal driver
+   *  (sleep/stress/mood) explains the state, conflict language is less critical. */
+  primaryDriver?: string | null;
 }
 
 export interface ValidationResult {
@@ -87,7 +94,7 @@ function checkWithinLength(output: string): boolean {
   return sentences.length <= 6;
 }
 
-const CONFLICT_RE = /even though|despite|usually|normally|override|unexpected/i;
+const CONFLICT_RE = /even though|despite|usually|normally|override|unexpected|however|but your|but today|but this|but the|but right now|although|while your|instead of|rather than|doesn't match|not typical|contrary|working against|pulling against|competing with|yet your|still your|which is unusual|that said|not what/i;
 
 function checkAcknowledgesConflict(output: string, conflictDetected: boolean): boolean {
   if (!conflictDetected) return true;
@@ -96,7 +103,7 @@ function checkAcknowledgesConflict(output: string, conflictDetected: boolean): b
 
 // ─── Soft checks ─────────────────────────────────────────────────────────────
 
-const TEMPORAL_RE = /tomorrow|next .* days|yesterday|compared to|easing|building|improving|worsening/i;
+const TEMPORAL_RE = /tomorrow|next .* days|next day|next couple|over the next|in the next|yesterday|compared to|recent|lately|last (?:few|couple)|day \d+|easing|building|improving|worsening|shifting|recovering|starting to|begins? to|tapering|within a day|has been|over the last|for the past|dropping|rising|been rising|been dropping|been building|been steady|trending/i;
 
 function checkHasTemporalAnchor(output: string): boolean {
   return TEMPORAL_RE.test(output);
@@ -142,20 +149,41 @@ export function validateInsightField(input: InsightValidationInput): ValidationR
   const hardFails: string[] = [];
   const softFails: string[] = [];
 
+  // reflectsLogSignals: hard fail only for signal-describing fields AND only
+  // when a meaningful driver exists. When driver is 'none'/absent (stable state),
+  // the insight legitimately uses general language — demote to soft fail.
+  const SIGNAL_HARD_FIELDS = new Set(['physicalInsight']);
+  const isStableState = input.primaryNarrative === 'phase';
   if (!checkReflectsLogSignals(input.output, input.latestLogSignals)) {
-    hardFails.push("reflectsLogSignals");
+    if (!isStableState && (!input.fieldName || SIGNAL_HARD_FIELDS.has(input.fieldName))) {
+      hardFails.push("reflectsLogSignals");
+    } else {
+      softFails.push("reflectsLogSignals");
+    }
   }
   if (!checkNoBannedPhrases(input.output)) {
     hardFails.push("noBannedPhrases");
   }
-  if (!checkNotPhaseFirst(input.output)) {
+  // notPhaseFirst: exempt tomorrowPreview and recommendation (advice fields)
+  const PHASE_FIRST_EXEMPT = new Set(['tomorrowPreview', 'recommendation', 'whyThisIsHappening']);
+  if (!PHASE_FIRST_EXEMPT.has(input.fieldName ?? '') && !checkNotPhaseFirst(input.output)) {
     hardFails.push("notPhaseFirst");
   }
   if (!checkWithinLength(input.output)) {
     hardFails.push("withinLength");
   }
+  // acknowledgesConflict: hard fail ONLY for true phase-signal conflicts where
+  // no strong signal driver already explains the state. When a driver like
+  // sleep/stress/mood is present, the insight naturally explains via the driver
+  // rather than using conflict-acknowledging language ("despite", "even though").
   if (!checkAcknowledgesConflict(input.output, input.conflictDetected)) {
-    hardFails.push("acknowledgesConflict");
+    const SIGNAL_DRIVERS = /sleep|stress|mood|strain/i;
+    const driverExplainsState = input.primaryDriver && SIGNAL_DRIVERS.test(input.primaryDriver);
+    if (input.primaryNarrative === 'conflict' && !driverExplainsState) {
+      hardFails.push("acknowledgesConflict");
+    } else {
+      softFails.push("acknowledgesConflict");
+    }
   }
   if (!checkNoIncompleteSentences(input.output)) {
     hardFails.push("incompleteSentence");

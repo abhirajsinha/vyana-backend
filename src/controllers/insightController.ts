@@ -639,7 +639,7 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
   }
 
   if (effectiveStable && context.mode === "personalized") {
-    draftInsights = applyStableStateNarrative(draftInsights);
+    draftInsights = applyStableStateNarrative(draftInsights, cycleInfo.currentDay);
   }
 
   draftInsights = {
@@ -819,45 +819,60 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     | "accepted_vague_fixed"
     | "unchanged_output"
     | "stable_state"
-    | "validator_hard_fail" = "gated";
+    | "validator_hard_fail"
+    | "zero_data_skip" = "gated";
 
-  // GPT fires on every request — no gating
-  try {
-    const aiResult = await generateInsightsWithGpt(
-      context,
-      draftInsights,
-      numericBaseline,
-      crossCycleNarrative,
-      user.name,
-      contraceptionBehavior.insightTone,
-      vyanaCtx,
-      {
-        insightMemoryCount: existingMemoryCount,
-        hasCrossCycleNarrative: crossCycleNarrative !== null,
-      },
-    );
-    const candidate = softenDailyInsights(
-      sanitizeInsights(aiResult.insights, draftInsights),
-      context.confidenceScore,
-    );
-    const hasForbidden = Object.values(candidate).some(
-      (v) => typeof v === "string" && containsForbiddenLanguage(v),
-    );
-    if (!hasForbidden) {
-      insights = candidate;
-      aiEnhanced = JSON.stringify(insights) !== JSON.stringify(draftInsights);
-      const aiStatus = aiResult.status;
-      aiDebug = aiEnhanced
-        ? "accepted"
-        : aiStatus === "accepted"
-          ? "unchanged_output"
-          : (aiStatus as Exclude<InsightGenerationStatus, "accepted">);
-    } else {
-      aiDebug = "forbidden_language";
+  console.log(JSON.stringify({
+    type: 'zero_data_debug',
+    logsCount,
+    recentLogsLength: recentLogs.length,
+    skipGptForZeroData: logsCount === 0,
+    timestamp: new Date().toISOString(),
+  }));
+
+  if (logsCount === 0) {
+    // Skip GPT for zero-data users — draft insights are cleaner.
+    // GPT has nothing to personalize and defaults to population filler.
+    aiDebug = 'zero_data_skip';
+  } else {
+    // GPT fires on every request for users with data
+    try {
+      const aiResult = await generateInsightsWithGpt(
+        context,
+        draftInsights,
+        numericBaseline,
+        crossCycleNarrative,
+        user.name,
+        contraceptionBehavior.insightTone,
+        vyanaCtx,
+        {
+          insightMemoryCount: existingMemoryCount,
+          hasCrossCycleNarrative: crossCycleNarrative !== null,
+        },
+      );
+      const candidate = softenDailyInsights(
+        sanitizeInsights(aiResult.insights, draftInsights),
+        context.confidenceScore,
+      );
+      const hasForbidden = Object.values(candidate).some(
+        (v) => typeof v === "string" && containsForbiddenLanguage(v),
+      );
+      if (!hasForbidden) {
+        insights = candidate;
+        aiEnhanced = JSON.stringify(insights) !== JSON.stringify(draftInsights);
+        const aiStatus = aiResult.status;
+        aiDebug = aiEnhanced
+          ? "accepted"
+          : aiStatus === "accepted"
+            ? "unchanged_output"
+            : (aiStatus as Exclude<InsightGenerationStatus, "accepted">);
+      } else {
+        aiDebug = "forbidden_language";
+      }
+    } catch {
+      insights = draftInsights;
+      aiDebug = "api_error";
     }
-  } catch {
-    insights = draftInsights;
-    aiDebug = "api_error";
   }
 
   // Momentum protection — when a positive streak is broken by one bad day,
@@ -876,7 +891,7 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
       insights = {
         ...insights,
         physicalInsight:
-          "Sleep dropping and stress rising are feeding into each other.\nThat feedback loop is why everything feels heavier right now.",
+          "Sleep dropping and stress rising are feeding into each other. That feedback loop is why everything feels heavier right now.",
       };
     }
 
@@ -898,21 +913,21 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
       if (existingMemoryCount <= 1) {
         insights = {
           ...insights,
-          mentalInsight: `Stress levels appear elevated today.\nThis may make focusing harder than usual.`,
-          solution: `Stress may be affecting you today.\nShort breaks can help.`,
+          mentalInsight: `Stress levels appear elevated today. This may make focusing harder than usual.`,
+          solution: `Stress may be affecting you today. Short breaks can help.`,
           recommendation: `This week, keep a steady routine and add brief stress resets when you notice overload.`,
         };
       } else if (existingMemoryCount <= 3) {
         insights = {
           ...insights,
-          mentalInsight: `Stress has been consistent for ${existingMemoryCount} days now.\nMental load may be building up.`,
-          solution: `Stress has been consistent recently.\nReducing your workload slightly may help.`,
+          mentalInsight: `Stress has been consistent for ${existingMemoryCount} days now. Mental load may be building up.`,
+          solution: `Stress has been consistent recently. Reducing your workload slightly may help.`,
           recommendation: `Consider lighter pacing this week and protect recovery time so stress doesn't carry over.`,
         };
       } else {
         insights = {
           ...insights,
-          mentalInsight: `Stress has been persistent for ${existingMemoryCount} days — your body is registering this.\nThis level of sustained load matters.`,
+          mentalInsight: `Stress has been persistent for ${existingMemoryCount} days — your body is registering this. This level of sustained load matters.`,
           solution: `Stepping back and prioritizing recovery is the right call now.`,
           recommendation: `For the next few days, prioritize recovery anchors: sleep consistency, gentle movement, and reduced decision load.`,
         };
@@ -931,7 +946,7 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
           : `Sleep has been below your usual baseline for ${existingMemoryCount} days.`;
       insights = {
         ...insights,
-        physicalInsight: `${sleepNote}\nThis can compound fatigue and slow recovery.`,
+        physicalInsight: `${sleepNote} This can compound fatigue and slow recovery.`,
         solution: `Prioritize an earlier wind-down tonight and protect tomorrow morning for lighter tasks.`,
       };
     }
@@ -968,6 +983,30 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
 
   insights = cleanupInsightText(insights);
 
+  // ── Driver-first explanation guard ──────────────────────────────────────
+  // If primaryDriver is signal-based but whyThisIsHappening leads with hormones,
+  // prepend the driver explanation so the user sees signal-first reasoning.
+  const HORMONE_LEAD_RE = /^(both estrogen|estrogen|progesterone|hormonal|your hormones|hormone levels)/i;
+  const PHASE_ALIGNED_DRIVERS = new Set(["bleeding_heavy", "hormonal_shift_expected", "cycle_driven_fatigue"]);
+  if (
+    driverForMemory &&
+    !PHASE_ALIGNED_DRIVERS.has(driverForMemory) &&
+    HORMONE_LEAD_RE.test(insights.whyThisIsHappening.trim())
+  ) {
+    const driverExplanations: Record<string, string> = {
+      stress: "Elevated stress is the main factor here.",
+      sleep: "Your sleep pattern is driving this.",
+      mood: "Your mood trend is the primary factor.",
+    };
+    const driverKey = Object.keys(driverExplanations).find(k => driverForMemory.includes(k));
+    if (driverKey) {
+      insights = {
+        ...insights,
+        whyThisIsHappening: `${driverExplanations[driverKey]} ${insights.whyThisIsHappening}`,
+      };
+    }
+  }
+
   // ── V2: Post-GPT insight validation ──────────────────────────────────────
   if (aiEnhanced && latestLogSignals) {
     const validationInput = {
@@ -976,6 +1015,7 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
       latestLogSignals: latestLogSignals as Record<string, unknown>,
       conflictDetected: narrativeResult.conflictDetected,
       confidenceLevel: (context.confidence === 'high' ? 'high' : context.confidence === 'medium' ? 'medium' : 'low') as 'low' | 'medium' | 'high',
+      primaryDriver: driverForMemory ?? null,
     };
 
     const fieldsToValidate: (keyof typeof insights)[] = [
@@ -990,6 +1030,7 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
       const result = validateInsightField({
         ...validationInput,
         output: insights[field],
+        fieldName: field,
       });
 
       if (!result.valid) {
@@ -1017,7 +1058,7 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
         failures: validationFailures,
         timestamp: new Date().toISOString(),
       }));
-      insights = draftInsights;
+      insights = cleanupInsightText(draftInsights);
       aiEnhanced = false;
       aiDebug = 'validator_hard_fail';
     }
@@ -1046,6 +1087,7 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
       const result = validateInsightField({
         ...zeroLogValidationInput,
         output: insights[field],
+        fieldName: field,
       });
 
       const relevantHardFails = result.hardFails.filter(
@@ -1065,7 +1107,7 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     }
 
     if (zeroLogHardFail) {
-      insights = draftInsights;
+      insights = cleanupInsightText(draftInsights);
       aiEnhanced = false;
       aiDebug = 'validator_hard_fail';
     }
@@ -1095,7 +1137,7 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
         failures: safetyCheck.failures,
         timestamp: new Date().toISOString(),
       }));
-      insights = draftInsights;
+      insights = cleanupInsightText(draftInsights);
     }
   }
 

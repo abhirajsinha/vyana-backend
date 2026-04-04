@@ -125,7 +125,7 @@ export function applySleepDisruptionNarrative(
     ...insights,
     physicalInsight: `Your sleep has dropped sharply over the last few days — from ${fromH} to ${toH}. That kind of drop puts your body under real strain, which is why you're feeling physically low right now.`,
     mentalInsight: `When sleep dips like this, focus drops with it — even simple things take more effort right now.`,
-    emotionalInsight: `Small things feel harder than they should — everything takes more effort right now.`,
+    emotionalInsight: `Small things feel harder than it should — everything takes more effort right now.`,
     whyThisIsHappening: `This isn't about your cycle — your sleep has taken a hit over the last few days, and that's what's driving how you feel right now.`,
     solution: `The most important thing right now is getting your sleep back on track — that will shift how everything feels more than anything else.`,
     recommendation: `Keep your load lighter until your sleep recovers — your energy will come back quickly once it does.`,
@@ -138,22 +138,54 @@ export function applyStressLedNarrative(insights: DailyInsights): DailyInsights 
   return {
     ...insights,
     whyThisIsHappening: `Stress has been building over the last few days, and that's what's driving how you feel right now.`,
-    mentalInsight: `When stress stays elevated like this, focus and clarity both take a hit — decisions feel harder than they should.`,
+    mentalInsight: `When stress stays elevated like this, focus and clarity both take a hit — decisions feel harder than it should.`,
     emotionalInsight: `Things feel emotionally heavier right now — that's stress showing up in your mood, not just your head.`,
     tomorrowPreview: `If stress eases even slightly, you'll notice the difference — your system responds quickly when the pressure drops.`,
   };
 }
 
 /** Deterministic copy when logs show no meaningful movement — do not invent problems. */
-export function applyStableStateNarrative(insights: DailyInsights): DailyInsights {
+export function applyStableStateNarrative(insights: DailyInsights, cycleDay: number = 1): DailyInsights {
+  const pick = <T>(variants: T[]): T => variants[cycleDay % variants.length]!;
   return {
     ...insights,
-    physicalInsight: `Your body feels steady right now — nothing is pulling it in either direction.`,
-    mentalInsight: `Focus is stable — things feel manageable without extra effort or strain.`,
-    emotionalInsight: `Your mood is balanced — nothing feels too heavy or too elevated.`,
-    whyThisIsHappening: `There aren't any strong shifts right now — your system is in a stable, consistent state.`,
-    solution: `Keep doing what's working — consistency is what's supporting this balance.`,
-    recommendation: `Maintain your current rhythm — sleep, stress, and energy are all holding steady.`,
-    tomorrowPreview: `Things should feel similar tomorrow — no major shifts expected.`,
+    physicalInsight: pick([
+      `Your body feels steady right now — nothing is pulling it in either direction.`,
+      `Physically, things are steady today — no strong signals in any direction.`,
+      `Your body is holding steady right now — energy isn't being pulled anywhere specific.`,
+      `No major physical shifts today — your system is steady and balanced.`,
+    ]),
+    mentalInsight: pick([
+      `Focus is stable — things feel manageable without extra effort or strain.`,
+      `Your headspace feels clear today — no mental fog or extra strain.`,
+      `Mentally, things are steady — focus isn't being pulled in any particular direction.`,
+      `Your mind is holding steady — nothing is demanding extra mental effort right now.`,
+    ]),
+    emotionalInsight: pick([
+      `Your mood is balanced — nothing feels too heavy or too elevated.`,
+      `Emotionally, things feel even today — no sharp dips or lifts.`,
+      `Your emotional state is steady — nothing is weighing on you more than usual.`,
+      `Mood-wise, things are settled — no strong pulls in either direction.`,
+    ]),
+    whyThisIsHappening: pick([
+      `There aren't any strong shifts right now — your system is in a stable, consistent state.`,
+      `Sleep, stress, and energy are all in a stable range — nothing is disrupting your balance.`,
+      `Your signals are aligned and stable right now — no single factor is pulling things off course.`,
+    ]),
+    solution: pick([
+      `Keep doing what's working — consistency is what's supporting this balance.`,
+      `No changes needed — your current routine is supporting a stable state.`,
+      `Stay the course — what you're doing is working well right now.`,
+    ]),
+    recommendation: pick([
+      `Maintain your current rhythm — sleep, stress, and energy are all holding steady.`,
+      `Stick with your routine — steady days like this are built on the habits you already have.`,
+      `Keep your rhythm going — this balance reflects your current habits working well.`,
+    ]),
+    tomorrowPreview: pick([
+      `Things should feel similar tomorrow — no major shifts expected.`,
+      `Tomorrow looks steady — expect a similar baseline to today.`,
+      `No big changes expected tomorrow — your body is in a consistent rhythm.`,
+    ]),
   };
 }

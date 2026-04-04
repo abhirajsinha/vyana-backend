@@ -233,7 +233,7 @@ function fixVagueLanguage(insights: DailyInsights): DailyInsights {
     ["clarity is harder to grasp", "focus takes more effort"],
     ["everything feels a bit heavier right now", "everything takes more effort right now"],
     ["feels a bit heavier", "takes more effort"],
-    ["more overwhelming than expected", "more overwhelming than they should"],
+    ["more overwhelming than expected", "more overwhelming than it should"],
   ];
 
   const fix = (text: string): string => {
@@ -275,6 +275,7 @@ type InsightGuardHints = {
   hasEmotionalMemoryEvidence: boolean;
   phase: InsightContext["phase"];
   hasHistoricalEvidence: boolean;
+  primaryDriver?: string;
 };
 
 function shouldBypassStrengthGuard(hints: InsightGuardHints): boolean {
@@ -462,7 +463,7 @@ function polishOvulationPeakCopy(insights: DailyInsights): DailyInsights {
   };
 }
 
-function enforceMenstrualDiscipline(insights: DailyInsights): DailyInsights {
+function enforceMenstrualDiscipline(insights: DailyInsights, primaryDriver?: string): DailyInsights {
   const simplify = (text: string): string =>
     stripMenstrualHedging(
       text
@@ -478,21 +479,31 @@ function enforceMenstrualDiscipline(insights: DailyInsights): DailyInsights {
         .trim(),
     );
 
+  function driverAwareMentalFallback(): string {
+    if (primaryDriver?.includes("sleep")) {
+      return "Sleep loss is clouding your focus — your brain is running on less fuel than it needs.";
+    }
+    if (primaryDriver?.includes("stress")) {
+      return "Stress is scattering your focus — your mind is processing too many signals at once.";
+    }
+    return "Focus may feel harder to hold today — your system is redirecting energy to recovery.";
+  }
+
   let mental = simplify(insights.mentalInsight)
     .replace(
       /focus drops when sleep dips like this[^.?!]*[.?!]?/i,
-      "Focus is lower today — your body is prioritizing recovery over clarity.",
+      driverAwareMentalFallback(),
     )
     .replace(/\bwith sleep at about[^.?!]*focus[^.?!]*[.?!]?/i, "")
     .replace(/\bfocus might feel scattered[^.?!]*[.?!]?/gi, "")
+    .replace(/recovery over clarity/gi, "recovery")
     .trim();
 
   if (
     /might|may|scattered|sleep at about/i.test(mental) ||
     mental.length < 20
   ) {
-    mental =
-      "Focus is lower today — your body is prioritizing recovery over clarity.";
+    mental = driverAwareMentalFallback();
   }
 
   let emotional = simplify(insights.emotionalInsight)
@@ -502,14 +513,14 @@ function enforceMenstrualDiscipline(insights: DailyInsights): DailyInsights {
     )
     .replace(
       /small things feel harder than they should[^.?!]*[.?!]?/i,
-      "Small things feel harder than they should.",
+      "Small things feel harder than it should.",
     )
     .replace(/\bstress is pulling your mood[^.?!]*[.?!]?/gi, "")
     .trim();
 
   if (/stress.*mood|mood.*stress|pulling/i.test(emotional)) {
     emotional =
-      "Everything takes more effort right now — even small things feel harder than they should.";
+      "Everything takes more effort right now — even small things feel harder than it should.";
   }
 
   let why = simplify(insights.whyThisIsHappening)
@@ -580,7 +591,7 @@ function safeParseInsightsDetailed(
       enforced = removeUnearnedHistoricalClaims(enforced);
     }
     if (guardHints.phase === "menstrual") {
-      enforced = enforceMenstrualDiscipline(enforced);
+      enforced = enforceMenstrualDiscipline(enforced, guardHints.primaryDriver);
     }
     if (guardHints.phase === "ovulation") {
       enforced = polishOvulationPeakCopy(enforced);
@@ -758,6 +769,12 @@ export const VYANA_SYSTEM_PROMPT =
 
 10. Only reference symptoms the user has actually logged. Never invent patterns.
 
+11. CONFLICT STRUCTURE: When the user's signals contradict what their cycle phase would normally predict (e.g., high energy in luteal, low mood in follicular), structure the insight as: (a) Acknowledge what this phase would typically bring, (b) State what is actually happening based on their signals, (c) Explain why the override is happening. Use natural conflict connectors like "however", "despite", "even though", "although", "but". Do NOT use rigid phrasing — vary the structure.
+
+12. CONFIDENCE GATING: When confidence is medium or low, never claim one factor dominates another. Use additive framing ("alongside", "on top of", "combined with") rather than comparative framing ("more than", "rather than", "instead of"). You do not have enough data to rank causes.
+
+13. TREND EVIDENCE: When logsCount is less than 5, do not describe trends as "steady", "consistent", or "improving" — you cannot establish a trend from fewer than 5 data points. Use hedged language ("early signs suggest", "so far it looks like").
+
 ENFORCEMENT: If any of the above rules are violated, your output will be automatically rejected and you will be asked to regenerate. Comply fully on the first attempt.
 
 ---
@@ -846,7 +863,7 @@ Do NOT say:
 - "heavier than usual"
 
 INSTEAD describe experience:
-- "small things feel harder than they should"
+- "small things feel harder than it should"
 - "everything takes more effort"
 - "you feel more overwhelmed than expected"
 
@@ -1258,7 +1275,7 @@ CRITICAL REMINDERS:
 - Each JSON field: at most 2 sentences total (periods . ! ? count as sentence ends).
 - whyThisIsHappening: keep concise and experiential (avoid textbook biology dumps)
 ${ctx.phase === "menstrual"
-    ? `- mentalInsight: simple and non-analytical — prefer "Focus is lower today — your body is prioritizing recovery over clarity." Do NOT chain sleep → focus or stress → mood.
+    ? `- mentalInsight: simple and non-analytical — match the primary driver. If sleep-driven: "Sleep loss is clouding your focus." If stress-driven: "Stress is scattering your focus." Otherwise: "Focus may feel harder to hold today." Do NOT chain sleep → focus or stress → mood. Do NOT use "recovery over clarity."
 - emotionalInsight: direct experience only — no system explanations ("stress pulling mood").`
     : ctx.phase === "ovulation"
       ? `- mentalInsight: grounded sentences only — e.g. "Clarity and focus are at their peak — ideas flow more easily and conversations feel smoother." Avoid abstract fragments.
@@ -1308,6 +1325,7 @@ Return strict JSON only.
       ),
       phase: ctx.phase,
       hasHistoricalEvidence: hasHistoricalEvidenceForPrompt,
+      primaryDriver: ctx.priorityDrivers[0],
     });
   } catch {
     recordGptFailure();

@@ -42,15 +42,28 @@ describe("validateInsightField", () => {
     expect(result.hardFails).toContain("notPhaseFirst");
   });
 
-  it("fails when conflict not acknowledged", () => {
+  it("fails when conflict not acknowledged (primaryNarrative=conflict)", () => {
     const result = validateInsightField(
       makeInput({
+        primaryNarrative: "conflict",
         conflictDetected: true,
         output: "Your energy is great today. Cramps are at 7.",
       }),
     );
     expect(result.valid).toBe(false);
     expect(result.hardFails).toContain("acknowledgesConflict");
+  });
+
+  it("soft-fails acknowledgesConflict when conflict detected but narrative is not conflict", () => {
+    const result = validateInsightField(
+      makeInput({
+        primaryNarrative: "severe_symptom",
+        conflictDetected: true,
+        output: "Your energy is great today. Cramps are at 7.",
+      }),
+    );
+    expect(result.hardFails).not.toContain("acknowledgesConflict");
+    expect(result.softFails).toContain("acknowledgesConflict");
   });
 
   it("fails when log signals not reflected", () => {

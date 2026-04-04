@@ -3,7 +3,8 @@
 
 ## Context
 
-IMPORTANT Read `VYANA_COMPLETE_REFERENCE.md` for full context. The V2 Insight Engine is implemented and the validator is wired. These are the remaining quality fixes before launch.
+HARD RULES:
+IMPORTANT Please Read `VYANA_COMPLETE_REFERENCE.md` for full context. The V2 Insight Engine is implemented and the validator is wired. These are the remaining quality fixes before launch.
 
 **Priority order matters.** Tasks 1–4 are pre-launch critical. Tasks 5–8 are quality polish. Execute in order.
 

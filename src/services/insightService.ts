@@ -598,31 +598,43 @@ function buildPhysicalInsight(ctx: InsightContext): string {
   }
 
   if (ctx.bleeding_load === "heavy") {
-    return `Your bleeding looks heavier today, which can increase weakness.\nReduce exertion and prioritize recovery.`;
+    return `Your bleeding looks heavier today, which can increase weakness. Reduce exertion and prioritize recovery.`;
   }
 
   if (ctx.physical_state === "high_strain") {
-    return `Your body is under more strain than usual today.\nSlowing down isn't optional right now — it's what helps.`;
+    const variants = [
+      `Your body is under more strain than usual today. Slowing down isn't optional right now — it's what helps.`,
+      `Physical strain is higher than your baseline right now. Ease off where you can — your body needs the margin.`,
+      `Your body is under more strain than usual today. Giving it space to recover will make tomorrow easier.`,
+      `Strain is showing up physically today. Pull back on intensity and let recovery take priority.`,
+    ];
+    return variants[ctx.normalizedDay % variants.length]!;
   }
 
   if (isPeakPositiveWindow(ctx)) {
     if (ctx.phase === "ovulation") {
-      return `Your energy is high right now — your body is in a strong, well-supported state.\nMovement and focus tend to feel easier in this window.`;
+      return `Your energy is high right now — your body is in a strong, well-supported state. Movement and focus tend to feel easier in this window.`;
     }
-    return `Your energy is building — your body is in a good place to take on more.\nPhysical tasks often feel lighter than they did earlier in the cycle.`;
+    return `Your energy is building — your body is in a good place to take on more. Physical tasks often feel lighter than they did earlier in the cycle.`;
   }
 
   if (isSignalPositive(ctx)) {
-    return `Your body feels steady and well-supported right now.\nEnergy and recovery both look good.`;
+    return `Your body feels steady and well-supported right now. Energy and recovery both look good.`;
   }
 
   if (ctx.priorityDrivers.includes("sleep_trend_declining")) {
     return ctx.recentLogsCount < 3
-      ? `Your latest log suggests sleep quality may be dropping.\nThis can affect energy recovery.`
-      : `Sleep has been declining over recent days.\nThis may affect physical recovery and energy.`;
+      ? `Your latest log suggests sleep quality may be dropping. This can affect energy recovery.`
+      : `Sleep has been declining over recent days. This may affect physical recovery and energy.`;
   }
 
-  return `Your physical energy looks stable for this phase.\nAdjust activity based on how you feel.`;
+  const stableVariants = [
+    "Your physical energy looks stable for this phase. Adjust activity based on how you feel.",
+    "Physically, things are holding steady — no strong signals pulling you in either direction today.",
+    "Your energy is in a neutral zone right now. Match your activity to what feels right.",
+    "No major physical shifts today — your body is maintaining a steady baseline.",
+  ];
+  return stableVariants[ctx.normalizedDay % stableVariants.length]!;
 }
 
 function buildMentalInsight(ctx: InsightContext): string {
@@ -642,33 +654,39 @@ function buildMentalInsight(ctx: InsightContext): string {
     const isFatigued = ctx.mental_state === "fatigued_and_stressed";
     if (ctx.recentLogsCount < 3) {
       return isFatigued
-        ? `Your latest log suggests stress and fatigue today.\nThis may make focusing harder.`
-        : `Your latest log suggests higher stress today.\nThis may make focusing harder.`;
+        ? `Your latest log suggests stress and fatigue today. This may make focusing harder.`
+        : `Your latest log suggests higher stress today. This may make focusing harder.`;
     }
 
     return isFatigued
-      ? `Stress and fatigue have been building up.\nThis is why focusing feels harder than it should right now.`
-      : `Stress has been higher than your normal.\nIt's starting to stack up and make everything feel heavier.`;
+      ? `Stress and fatigue have been building up. This is why focusing feels harder than it should right now.`
+      : `Stress has been higher than your normal. It's starting to stack up and make everything feel heavier.`;
   }
 
   if (ctx.priorityDrivers.includes("stress_trend_spiking")) {
     return ctx.recentLogsCount < 3
-      ? `Your logs suggest stress may be rising.\nThis can make focusing harder.`
-      : `Stress has been building for a few days.\nYour headspace is carrying more weight than it looks.`;
+      ? `Your logs suggest stress may be rising. This can make focusing harder.`
+      : `Stress has been building for a few days. Your headspace is carrying more weight than it looks.`;
   }
 
   if (isPeakPositiveWindow(ctx)) {
     if (ctx.phase === "ovulation") {
-      return `Focus and clarity are strong — things feel easier to handle and decisions come more naturally.\nThis is a high-capacity window mentally.`;
+      return `Focus and clarity are strong — things feel easier to handle and decisions come more naturally. This is a high-capacity window mentally.`;
     }
-    return `Mental bandwidth is opening up — tasks feel more manageable than they did a week ago.\nClarity tends to improve as energy builds in this phase.`;
+    return `Mental bandwidth is opening up — tasks feel more manageable than they did a week ago. Clarity tends to improve as energy builds in this phase.`;
   }
 
   if (isSignalPositive(ctx)) {
-    return `Focus feels steady and manageable right now.\nNo signs of mental strain or overload.`;
+    return `Focus feels steady and manageable right now. No signs of mental strain or overload.`;
   }
 
-  return `Your recent signal suggests a relatively balanced mental state.\nNo strong strain signals detected.`;
+  const mentalNeutralVariants = [
+    "Your mental state looks balanced right now — no strong strain showing.",
+    "Focus and clarity feel steady today — nothing pulling your attention off track.",
+    "Mentally, things are holding steady — no signs of extra strain.",
+    "Your mind feels clear today — no strong pressure showing.",
+  ];
+  return mentalNeutralVariants[ctx.normalizedDay % mentalNeutralVariants.length]!;
 }
 
 function buildEmotionalInsight(ctx: InsightContext): string {
@@ -682,22 +700,33 @@ function buildEmotionalInsight(ctx: InsightContext): string {
 
   if (ctx.emotional_state === "loaded") {
     return ctx.recentLogsCount < 3
-      ? `Stress today may be affecting your mood.\nEmotional dips may feel sharper.`
-      : `How you're feeling emotionally has been heavier than usual.\nGiving yourself space to decompress will help more than pushing through.`;
+      ? `Stress today may be affecting your mood. Emotional dips may feel sharper.`
+      : [
+          `How you're feeling emotionally has been heavier than usual. Giving yourself space to decompress will help more than pushing through.`,
+          `Emotions have been sitting heavier lately. Letting yourself slow down is more productive than forcing through it.`,
+          `Your emotional load has been building. A lighter schedule or some downtime would go further than willpower right now.`,
+          `Things have felt emotionally weighty recently. Give yourself room — rest helps more than effort here.`,
+        ][ctx.normalizedDay % 4]!;
   }
 
   if (isPeakPositiveWindow(ctx)) {
     if (ctx.phase === "ovulation") {
-      return `You feel more open and engaged — social connection and motivation often come easier here.\nThis is a connected, upbeat kind of energy.`;
+      return `You feel more open and engaged — social connection and motivation often come easier here. This is a connected, upbeat kind of energy.`;
     }
-    return `Things feel lighter emotionally — there's less heaviness dragging through the day.\nMotivation and mood tend to lift in this part of the cycle.`;
+    return `Things feel lighter emotionally — there's less heaviness dragging through the day. Motivation and mood tend to lift in this part of the cycle.`;
   }
 
   if (isSignalPositive(ctx)) {
-    return `Things feel emotionally steady right now.\nNothing is pulling your mood down.`;
+    return `Things feel emotionally steady right now. Nothing is pulling your mood down.`;
   }
 
-  return `Your emotional state looks steady right now.\nNo strong shifts in either direction.`;
+  const emotionalNeutralVariants = [
+    "Your emotional state looks steady right now — no strong shifts in either direction.",
+    "Emotionally, things feel settled today — nothing is pulling your mood around.",
+    "Your mood is holding even — no sharp dips or unexpected lifts showing up.",
+    "Things feel emotionally neutral right now — steady, without much movement.",
+  ];
+  return emotionalNeutralVariants[ctx.normalizedDay % emotionalNeutralVariants.length]!;
 }
 
 function buildBroaderGuidance(ctx: InsightContext): string {
@@ -738,7 +767,13 @@ function buildRecommendation(ctx: InsightContext): string {
     return `Keep your current rhythm and add one anchor habit today (sleep timing or movement) for consistency.`;
   }
   if (primary === "sleep_variability_high") {
-    return `Pick a consistent bedtime and stick to it for the next 3 nights — the regularity will do more than extra hours.`;
+    const sleepVarVariants = [
+      "Pick a consistent bedtime and stick to it for the next 3 nights — the regularity will do more than extra hours.",
+      "Your sleep timing has been inconsistent — locking in one fixed wake-up time for the next few days will help more than sleeping in.",
+      "Sleep variability is what's dragging you down. Set one non-negotiable bedtime this week and protect it.",
+      "Irregular sleep hits harder than short sleep. Aim for the same window tonight — consistency is the fix here.",
+    ];
+    return sleepVarVariants[ctx.normalizedDay % sleepVarVariants.length]!;
   }
   if (primary === "sleep_below_baseline") {
     return `Get to bed 30 minutes earlier tonight. It will change how tomorrow feels.`;
@@ -824,7 +859,7 @@ function buildWhyThisIsHappening(ctx: InsightContext): string {
   }
 
   if (ctx.recentLogsCount < 3) {
-    return `This combines your cycle phase with limited data.\nIt will refine as more logs are added.`;
+    return `This combines your cycle phase with limited data. It will refine as more logs are added.`;
   }
 
   if (ctx.phase_deviation) {
@@ -842,6 +877,19 @@ function buildWhyThisIsHappening(ctx: InsightContext): string {
   if (ctx.trends.length > 0) {
     return `Recent trends (${ctx.trends.join(", ")}) indicate your body and mood are responding to day-to-day changes.`;
   }
+
+  // Driver-first explanations — avoid defaulting to hormones when a signal driver exists
+  const primaryDriver = ctx.priorityDrivers[0];
+  if (primaryDriver?.includes("stress")) {
+    return `Elevated stress is the main factor shaping how you feel right now — your cycle phase may be adding to it, but stress is what's driving this.`;
+  }
+  if (primaryDriver?.includes("sleep")) {
+    return `Your sleep pattern is the main factor here — when sleep is off, it cascades into energy, mood, and recovery regardless of cycle phase.`;
+  }
+  if (primaryDriver?.includes("mood")) {
+    return `Your declining mood is the primary factor right now — this is coming from your logged signals more than from cycle-related shifts.`;
+  }
+
   return `Cycle-related hormonal shifts can naturally influence energy, mood, and symptoms even with limited logs.`;
 }
 
@@ -953,7 +1001,7 @@ export function softenForConfidenceTier(
   if (logsCount >= 1) {
     const lightSoften = (text: string): string =>
       text
-        .replace(/\bYou feel\b/gi, "Based on your recent log, you may feel")
+        .replace(/(?:^|(?<=[.!?\n]\s*))You feel\b/gi, "Based on your recent log, you may feel")
         .replace(/\bEnergy is\b/gi, "Energy may be")
         .replace(/\bFocus is\b/gi, "Focus may be")
         .replace(/\bYour sleep has been\b/gi, "Your latest log suggests sleep has been")

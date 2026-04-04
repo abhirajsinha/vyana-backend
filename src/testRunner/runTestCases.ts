@@ -12,6 +12,7 @@ import {
 import { generateEdgeCases } from "./generateEdgeCases";
 
 import { getInsights, getInsightsContext } from "../controllers/insightController";
+import { toUTCDateOnly } from "../services/cycleEngine";
 
 const CLEANUP = true;
 const DEFAULT_OUT = "test-results-500.json";
@@ -28,6 +29,7 @@ type RunnableCase = {
 function parseArgs(): {
   source: "manual" | "generated" | "edge";
   batch: number | null;
+  offset: number;
   outFile: string;
 } {
   const argv = process.argv.slice(2);
@@ -37,19 +39,22 @@ function parseArgs(): {
   const batchIdx = argv.indexOf("--batch");
   const batch =
     batchIdx !== -1 ? Math.max(1, parseInt(argv[batchIdx + 1] ?? "500", 10)) : null;
+  const offsetIdx = argv.indexOf("--offset");
+  const offset =
+    offsetIdx !== -1 ? Math.max(0, parseInt(argv[offsetIdx + 1] ?? "0", 10)) : 0;
   const outIdx = argv.indexOf("--out");
   const outFile = outIdx !== -1 ? argv[outIdx + 1] ?? DEFAULT_OUT : DEFAULT_OUT;
-  return { source, batch, outFile };
+  return { source, batch, offset, outFile };
 }
 
-function loadCases(source: "manual" | "generated" | "edge", batch: number | null): RunnableCase[] {
+function loadCases(source: "manual" | "generated" | "edge", batch: number | null, offset: number = 0): RunnableCase[] {
   if (source === "manual") {
     const list = manualTestCases as unknown as RunnableCase[];
-    return batch ? list.slice(0, batch) : list;
+    return batch ? list.slice(offset, offset + batch) : list.slice(offset);
   }
   if (source === "edge") {
     const gen = generateEdgeCases();
-    const sliced = batch ? gen.slice(0, batch) : gen;
+    const sliced = batch ? gen.slice(offset, offset + batch) : gen.slice(offset);
     return sliced.map((c) => ({
       id: c.id,
       description: c.description,
@@ -59,7 +64,7 @@ function loadCases(source: "manual" | "generated" | "edge", batch: number | null
     }));
   }
   const gen = generateAllTestCases() as GeneratedTestCase[];
-  const sliced = batch ? gen.slice(0, batch) : gen;
+  const sliced = batch ? gen.slice(offset, offset + batch) : gen.slice(offset);
   return sliced.map((c) => ({
     id: c.id,
     description: c.description,
@@ -86,21 +91,49 @@ function writeResults(file: string, results: unknown[]) {
   fs.writeFileSync(file, JSON.stringify(results, null, 2));
 }
 
+/**
+ * Re-anchor a test case's dates to the current UTC midnight so that long-
+ * running batches that cross midnight don't produce a +1 cycle-day drift.
+ * Preserves the relative day offsets between lastPeriodStart / log dates
+ * and "today" as computed at generation time.
+ */
+function reanchorDates(test: RunnableCase, genMidnight: number): RunnableCase {
+  const nowMidnight = toUTCDateOnly(new Date());
+  const shiftMs = nowMidnight - genMidnight;
+  if (shiftMs === 0) return test; // same day — no shift needed
+
+  const shift = (d: unknown): Date => {
+    const orig = d instanceof Date ? d : new Date(d as string | number);
+    return new Date(orig.getTime() + shiftMs);
+  };
+
+  return {
+    ...test,
+    user: {
+      ...test.user,
+      lastPeriodStart: shift(test.user.lastPeriodStart),
+    },
+    logs: test.logs.map((l) => ({ ...l, date: shift(l.date) })),
+  };
+}
+
 async function run() {
-  const { source, batch, outFile } = parseArgs();
-  const cases = loadCases(source, batch);
+  const { source, batch, offset, outFile } = parseArgs();
+  const cases = loadCases(source, batch, offset);
   const total = cases.length;
   const results: unknown[] = [];
   const resolvedOut = path.isAbsolute(outFile)
     ? outFile
     : path.join(process.cwd(), outFile);
+  // Capture the UTC midnight at generation time so we can detect clock rollover
+  const genMidnight = toUTCDateOnly(new Date());
 
   console.log(
     `\n▶ Test runner: source=${source}, cases=${total}, out=${resolvedOut}\n`,
   );
 
   for (let i = 0; i < cases.length; i++) {
-    const test = cases[i]!;
+    const test = reanchorDates(cases[i]!, genMidnight);
     const label = `[${i + 1}/${total}]`;
     const t0 = Date.now();
     let jsonResponse: unknown = null;

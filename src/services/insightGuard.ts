@@ -244,6 +244,9 @@ const ZERO_DATA_SPECIFIC_PATTERNS: Array<[RegExp, string]> = [
   [/\b[Yy]ou feel\b/g, "You may feel"],
   [/\b[Yy]ou find that\b/gi, "You may find that"],
   [/\b[Yy]ou find\b/g, "You may find"],
+  [/\b[Yy]ou start to notice\b/gi, "You may start to notice"],
+  [/\b[Yy]ou begin to feel\b/gi, "You may begin to feel"],
+  [/\b[Yy]ou start to feel\b/gi, "You may start to feel"],
   [/\b[Yy]ou notice\b/gi, "You may notice"],
   [/\b[Ee]verything takes more effort\b/g, "Things may take more effort"],
   [/\b[Ee]verything feels\b/g, "Things may feel"],
@@ -364,7 +367,7 @@ function applyZeroDataGuard(text: string): string {
 
 const NEGATIVE_ASSERTION_REPLACEMENTS: Array<[string, string]> = [
   ["harder than usual", "still settling"],
-  ["harder than they should", "not quite settled yet"],
+  ["harder than it should", "not quite settled yet"],
   ["harder than", "still adjusting compared to"],
   ["get worse", "still be adjusting"],
   ["worse than usual", "still stabilizing"],
@@ -484,7 +487,7 @@ function applyConsistencyGuard(insights: DailyInsightsShape): DailyInsightsShape
         if (NEGATIVE_SIGNALS.test(result[key]) && !IMPROVING_SIGNALS.test(result[key])) {
           result[key] = result[key]
             // Phrase-level replacements first (longer patterns before shorter)
-            .replace(/\bharder than they should\b/gi, "not quite settled yet")
+            .replace(/\bharder than (?:they|it) should\b/gi, "not quite settled yet")
             .replace(/\bharder than usual\b/gi, "still settling")
             .replace(/\bharder than\b/gi, "not as easy as")
             .replace(/\bworse than usual\b/gi, "still stabilizing")
@@ -766,9 +769,12 @@ function applyPopulationFramingGuard(text: string): string {
     [/\bmost people notice\b/gi, "you may notice"],
     [/\bmost people experience\b/gi, "you may experience"],
     [/\bmost people feel\b/gi, "you may feel"],
-    [/\bmany people find\b/gi, "you may find"],
+    [/\bmany (?:people |women |users )?(?:find|notice|experience|feel|report|describe|say)\b/gi, "you may find"],
+    [/\bThis is a time when many\b/gi, "This is a time when you may"],
     [/\bsome people find\b/gi, "you may find"],
     [/\bsome women experience\b/gi, "you may experience"],
+    [/\bit's common to\b/gi, "it can be normal to"],
+    [/\bit is common to\b/gi, "it can be normal to"],
     [/\bit's normal for most\b/gi, "it's normal"],
     [/\bresearch shows that?\b/gi, ""],
     [/\bstudies suggest that?\b/gi, ""],

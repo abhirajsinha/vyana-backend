@@ -220,6 +220,14 @@ export function cleanupInsightText(insights: DailyInsights): DailyInsights {
     "whyThisIsHappening", "solution", "recommendation", "tomorrowPreview",
   ];
   for (const k of keys) {
+    cleaned[k] = cleaned[k]
+      .replace(/\n/g, " ")
+      .replace(/\s{2,}/g, " ")
+      .replace(/than they should/g, "than it should")
+      .replace(/a under/g, "an under")
+      .replace(/under some pressure sense/g, "sense of pressure")
+      .replace(/more overwhelming than they/g, "more overwhelming than it")
+      .trim();
     cleaned[k] = dedupSentences(cleaned[k]);
   }
 
