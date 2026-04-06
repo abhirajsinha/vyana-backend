@@ -1141,7 +1141,17 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     }
   }
 
-  const view = buildInsightView(context, insights, { primaryKeyOverride });
+  const progress = {
+    logsCount,
+    nextMilestone,
+    logsToNextMilestone: Math.max(0, nextMilestone - logsCount),
+  };
+  const view = buildInsightView(context, insights, {
+    primaryKeyOverride,
+    logsCount,
+    completedCycles: completedCycleCount,
+    progress,
+  });
 
   let pmsWarning = null;
   if (contraceptionBehavior.showPmsForecast && completedCycleCount >= 2) {
@@ -1177,11 +1187,7 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     guardVersion: GUARD_VERSION,
     cycleDay: cycleInfo.currentDay,
     isNewUser,
-    progress: {
-      logsCount,
-      nextMilestone,
-      logsToNextMilestone: Math.max(0, nextMilestone - logsCount),
-    },
+    progress,
     confidence: context.confidence,
     isPeriodDelayed,
     daysOverdue,

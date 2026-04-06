@@ -1,4 +1,5 @@
 import type { DailyInsights, InsightContext } from "./insightService";
+import { getDayInsight } from "./cycleInsightLibrary";
 
 const BODY_KEYS = ["physicalInsight", "mentalInsight", "emotionalInsight"] as const;
 
@@ -73,32 +74,90 @@ export function pickNovelPrimaryKey(
   return candidates[0];
 }
 
-export type InsightViewPayload = {
-  primaryInsight: string;
-  supportingInsights: string[];
-  action: string;
-  explanation?: string;
+// ─── Two-layer view: vyana (user-facing voice) + system (product/UI) ────────
+
+export type VyanaLayer = {
+  physical: string;
+  mental: string;
+  emotional: string;
+  orientation: string;
+  allowance: string;
+};
+
+export type SystemLayer = {
   recommendation: string;
+  nextUnlock: InsightBasisNextUnlock | null;
+  progress: { logsCount: number; nextMilestone: number; logsToNextMilestone: number } | null;
+  confidenceLabel: string;
+  insightBasis: string;
   tomorrowPreview: string;
+};
+
+export type InsightViewPayload = {
+  vyana: VyanaLayer;
+  system: SystemLayer;
+  /** @deprecated kept for backwards compatibility */
+  primaryInsight: string;
+  /** @deprecated kept for backwards compatibility */
+  supportingInsights: string[];
+  /** @deprecated kept for backwards compatibility */
+  action: string;
+  /** @deprecated kept for backwards compatibility */
+  explanation?: string;
+  /** @deprecated kept for backwards compatibility */
+  recommendation: string;
+  /** @deprecated kept for backwards compatibility */
+  tomorrowPreview: string;
+  /** @deprecated kept for backwards compatibility */
   confidenceLabel: string;
 };
 
 export function buildInsightView(
   ctx: InsightContext,
   insights: DailyInsights,
-  options?: { primaryKeyOverride?: BodyKey | null },
+  options?: {
+    primaryKeyOverride?: BodyKey | null;
+    logsCount?: number;
+    completedCycles?: number;
+    progress?: { logsCount: number; nextMilestone: number; logsToNextMilestone: number };
+  },
 ): InsightViewPayload {
   const primaryKey = options?.primaryKeyOverride ?? resolvePrimaryInsightKey(ctx);
   const supporting = BODY_KEYS.filter((k) => k !== primaryKey).map((k) => insights[k]);
 
+  // Get orientation and allowance from the day-specific template
+  const dayInsight = getDayInsight(ctx.normalizedDay, ctx.variantIndex, ctx.cycleMode);
+
+  const logsCount = options?.logsCount ?? ctx.recentLogsCount;
+  const completedCycles = options?.completedCycles ?? 0;
+  const basis = buildInsightBasis(logsCount, completedCycles);
+
+  const confidenceLabel = getConfidenceLabel(ctx);
+
   const view: InsightViewPayload = {
+    vyana: {
+      physical: insights.physicalInsight,
+      mental: insights.mentalInsight,
+      emotional: insights.emotionalInsight,
+      orientation: dayInsight.hormoneNote,
+      allowance: dayInsight.actionTip,
+    },
+    system: {
+      recommendation: insights.recommendation,
+      nextUnlock: basis.nextUnlock,
+      progress: options?.progress ?? null,
+      confidenceLabel,
+      insightBasis: basis.description,
+      tomorrowPreview: insights.tomorrowPreview,
+    },
+    // Backwards compatibility
     primaryInsight: insights[primaryKey],
     supportingInsights: supporting,
     action: insights.solution,
     explanation: insights.whyThisIsHappening,
     recommendation: insights.recommendation,
     tomorrowPreview: insights.tomorrowPreview,
-    confidenceLabel: getConfidenceLabel(ctx),
+    confidenceLabel,
   };
 
   if (!shouldShowSupporting(ctx)) {
@@ -152,7 +211,7 @@ export function buildInsightBasis(
       nextUnlock: {
         logsNeeded: null,
         cyclesNeeded,
-        what: "Cross-cycle intelligence — patterns across your cycles",
+        what: "When this phase repeats next cycle, we'll see if what you've noticed holds. That's when insights become truly yours.",
       },
     };
   }
@@ -165,7 +224,7 @@ export function buildInsightBasis(
       nextUnlock: {
         logsNeeded: 14 - logsCount,
         cyclesNeeded: null,
-        what: "Baseline comparison — we'll compare against your personal normal",
+        what: "You're close. Another cycle and we'll know exactly what happens for you here.",
       },
     };
   }
@@ -178,7 +237,7 @@ export function buildInsightBasis(
       nextUnlock: {
         logsNeeded: 1,
         cyclesNeeded: null,
-        what: "Full personalized insights",
+        what: "One more complete cycle. After that, we'll know your personal rhythm with real clarity.",
       },
     };
   }
@@ -193,7 +252,7 @@ export function buildInsightBasis(
       nextUnlock: {
         logsNeeded: 5 - logsCount,
         cyclesNeeded: null,
-        what: "Pattern detection and signal connections",
+        what: "Track once more in a different part of your cycle. That's what unlocks the next level.",
       },
     };
   }
@@ -201,11 +260,11 @@ export function buildInsightBasis(
   // Stage 1: 0 logs → phase only
   return {
     source: "phase_only",
-    description: "Based on your cycle phase — log your first day to start personalizing",
+    description: "Based on your cycle phase — log how you feel to start building your personal picture",
     nextUnlock: {
       logsNeeded: 1,
       cyclesNeeded: null,
-      what: "Early signal detection",
+      what: "Log what you're feeling today. Even one entry starts building your personal picture.",
     },
   };
 }

@@ -460,7 +460,6 @@ export function buildInsightContext(
   cycleMode: CycleMode = "natural",
   cyclePredictionConfidence: CyclePredictionConfidence = "unknown",
 ): InsightContext {
-  const variantIndex = (cycleNumber % 3) as 0 | 1 | 2;
   const normalizedDay = getNormalizedDay(cycleDay, cycleLength, phase);
   const recentLogsCount = recentLogs.length;
   const signals = buildSignals(recentLogs);
@@ -479,6 +478,8 @@ export function buildInsightContext(
 
   const confidence: InsightContext["confidence"] =
     recentLogs.length >= 5 ? "high" : recentLogs.length >= 3 ? "medium" : "low";
+  // Map confidence to variantIndex: low=0 (tentative), medium=1 (grounded), high=2 (earned identity)
+  const variantIndex = (confidence === "high" ? 2 : confidence === "medium" ? 1 : 0) as 0 | 1 | 2;
   const trendCount = trendList.length;
   const signalStrength =
     (signals.physicalState === "high_strain" ? 1 : 0) +
