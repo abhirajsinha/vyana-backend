@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getInsights, getInsightsContext, getInsightsForecast } from "../controllers/insightController";
+import { getInsights, getInsightsContext, getInsightsForecast } from "../controllers/insightControllerPhase1";
 import { requireAuth } from "../middleware/auth";
 import { insightLimiter } from "../middleware/rateLimit";
 

@@ -136,11 +136,11 @@ export function buildInsightView(
 
   const view: InsightViewPayload = {
     vyana: {
-      physical: insights.physicalInsight,
-      mental: insights.mentalInsight,
-      emotional: insights.emotionalInsight,
-      orientation: dayInsight.hormoneNote,
-      allowance: dayInsight.actionTip,
+      physical: insights.physical || insights.physicalInsight,
+      mental: insights.mental || insights.mentalInsight,
+      emotional: insights.emotional || insights.emotionalInsight,
+      orientation: dayInsight.orientation,
+      allowance: dayInsight.allowance,
     },
     system: {
       recommendation: insights.recommendation,

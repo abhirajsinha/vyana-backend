@@ -108,6 +108,14 @@ export interface InsightContext {
 }
 
 export interface DailyInsights {
+  // New Vyana Voice fields (from template)
+  physical: string;
+  mental: string;
+  emotional: string;
+  orientation: string;
+  allowance: string;
+  nudge: string;
+  // Legacy compatibility — GPT still uses these names
   physicalInsight: string;
   mentalInsight: string;
   emotionalInsight: string;
@@ -591,7 +599,7 @@ function buildPhysicalInsight(ctx: InsightContext): string {
       ctx.normalizedDay,
       ctx.variantIndex,
       ctx.cycleMode,
-    ).physicalExpectation;
+    ).physical;
     if (ctx.cyclePredictionConfidence === "irregular") {
       out = out.replace(/\btoday\b/gi, "around this time").replace(/\busually\b/gi, "often");
     }
@@ -644,7 +652,7 @@ function buildMentalInsight(ctx: InsightContext): string {
       ctx.normalizedDay,
       ctx.variantIndex,
       ctx.cycleMode,
-    ).mentalExpectation;
+    ).mental;
     if (ctx.cyclePredictionConfidence === "irregular") {
       out = out.replace(/\btoday\b/gi, "around this time").replace(/\busually\b/gi, "often");
     }
@@ -696,7 +704,7 @@ function buildEmotionalInsight(ctx: InsightContext): string {
       ctx.normalizedDay,
       ctx.variantIndex,
       ctx.cycleMode,
-    ).emotionalNote;
+    ).emotional;
   }
 
   if (ctx.emotional_state === "loaded") {
@@ -760,7 +768,7 @@ function buildRecommendation(ctx: InsightContext): string {
   const primary = ctx.priorityDrivers[0];
   if (!primary) {
     if (ctx.mode === "fallback") {
-      return getDayInsight(ctx.cycleDay, ctx.variantIndex).actionTip;
+      return getDayInsight(ctx.cycleDay, ctx.variantIndex).allowance;
     }
     if (isPeakPositiveWindow(ctx) || isSignalPositive(ctx)) {
       return `Lean into momentum today — social plans, focused work, or anything that needs your full presence tend to land easier in this window.`;
@@ -813,7 +821,7 @@ function buildRecommendation(ctx: InsightContext): string {
     return `5 minutes of focused breathing now will lower the mental weight more than powering through.`;
   }
   if (ctx.mode === "fallback") {
-    return getDayInsight(ctx.cycleDay, ctx.variantIndex).actionTip;
+    return getDayInsight(ctx.cycleDay, ctx.variantIndex).allowance;
   }
   return `Keep your current rhythm and add one anchor habit today (sleep timing or movement) for consistency.`;
 }
@@ -824,7 +832,7 @@ function buildWhyThisIsHappening(ctx: InsightContext): string {
       ctx.normalizedDay,
       ctx.variantIndex,
       ctx.cycleMode,
-    ).hormoneNote;
+    ).orientation;
   }
 
   // If the engine decided we have a strong signal, prefer signal-derived reasoning
@@ -915,22 +923,33 @@ export function insightContextAsStableBaseline(ctx: InsightContext): InsightCont
 }
 
 export function generateRuleBasedInsights(ctx: InsightContext): DailyInsights {
+  const dayInsight = getDayInsight(ctx.normalizedDay, ctx.variantIndex, ctx.cycleMode);
+
+  // Build legacy fields for backward compat
+  const physicalInsight = buildPhysicalInsight(ctx);
+  const mentalInsight = buildMentalInsight(ctx);
+  const emotionalInsight = buildEmotionalInsight(ctx);
+  const whyThisIsHappening = buildWhyThisIsHappening(ctx);
   const solution = buildRecommendation(ctx);
   const recommendation = buildBroaderGuidance(ctx);
+  const tomorrowPreview = dayInsight.nudge; // Use nudge as tomorrowPreview for now
+
   return {
-    physicalInsight: buildPhysicalInsight(ctx),
-    mentalInsight: buildMentalInsight(ctx),
-    emotionalInsight: buildEmotionalInsight(ctx),
-    whyThisIsHappening: buildWhyThisIsHappening(ctx),
+    // New Vyana Voice fields (from template)
+    physical: dayInsight.physical,
+    mental: dayInsight.mental,
+    emotional: dayInsight.emotional,
+    orientation: dayInsight.orientation,
+    allowance: dayInsight.allowance,
+    nudge: dayInsight.nudge,
+    // Legacy fields (for GPT + guards + backward compat)
+    physicalInsight,
+    mentalInsight,
+    emotionalInsight,
+    whyThisIsHappening,
     solution,
     recommendation,
-    // Basic tomorrowPreview from day-specific library. Controller replaces with
-    // trend-adjusted version from tomorrowEngine before sending to client.
-    tomorrowPreview: getDayInsight(
-      ctx.normalizedDay,
-      ctx.variantIndex,
-      ctx.cycleMode,
-    ).tomorrowPreview,
+    tomorrowPreview,
   };
 }
 
@@ -971,6 +990,12 @@ function rewriteForZeroData(insights: DailyInsights, phase: Phase, cycleDay: num
       .trim();
 
   return {
+    physical: soften(insights.physical),
+    mental: soften(insights.mental),
+    emotional: soften(insights.emotional),
+    orientation: soften(insights.orientation),
+    allowance: soften(insights.allowance),
+    nudge: insights.nudge,
     physicalInsight: soften(insights.physicalInsight),
     mentalInsight: soften(insights.mentalInsight),
     emotionalInsight: soften(insights.emotionalInsight),
@@ -1010,6 +1035,12 @@ export function softenForConfidenceTier(
         .replace(/\bYour pattern shows\b/gi, "Your recent log suggests")
         .replace(/\bOver the last few days\b/gi, "Based on your recent log");
     return {
+      physical: lightSoften(insights.physical),
+      mental: lightSoften(insights.mental),
+      emotional: lightSoften(insights.emotional),
+      orientation: lightSoften(insights.orientation),
+      allowance: lightSoften(insights.allowance),
+      nudge: insights.nudge,
       physicalInsight: lightSoften(insights.physicalInsight),
       mentalInsight: lightSoften(insights.mentalInsight),
       emotionalInsight: lightSoften(insights.emotionalInsight),

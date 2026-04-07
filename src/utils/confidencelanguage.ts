@@ -88,6 +88,7 @@ export function softenDailyInsights(
   confidenceScore: number,
 ): DailyInsights {
   return {
+    ...insights,
     physicalInsight: softendeterministic(insights.physicalInsight, confidenceScore),
     mentalInsight: softendeterministic(insights.mentalInsight, confidenceScore),
     emotionalInsight: softendeterministic(

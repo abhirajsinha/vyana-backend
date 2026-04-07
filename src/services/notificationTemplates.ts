@@ -7,20 +7,24 @@ export interface NotificationTemplate {
 
 const PHASE_TEMPLATES: Record<Phase, NotificationTemplate[]> = {
   menstrual: [
-    { title: "How's your flow today?", body: "A quick check-in helps Vyana understand your pattern better." },
-    { title: "Taking it easy?", body: "Log how you're feeling — it only takes a few seconds." },
+    { title: "How's today feeling?", body: "A quick log helps build your rhythm." },
+    { title: "Check in with yourself", body: "Even a few taps make a difference." },
+    { title: "Your cycle is listening", body: "Log what you're noticing today." },
   ],
   follicular: [
-    { title: "How's your energy?", body: "This phase often brings a lift — let's see how it's going for you." },
-    { title: "Feeling the shift?", body: "Log today so Vyana can track what's changing." },
+    { title: "Energy shifting?", body: "Log how you're feeling — it builds your picture." },
+    { title: "Things might feel different", body: "Capture what's showing up today." },
+    { title: "Your rhythm is forming", body: "A quick check-in keeps it accurate." },
   ],
   ovulation: [
-    { title: "How are you feeling today?", body: "Energy and mood often peak around now — is that matching for you?" },
-    { title: "Quick check-in", body: "A few taps now means better insights tomorrow." },
+    { title: "How are things today?", body: "This part of your cycle is useful to track." },
+    { title: "Quick check-in", body: "A few taps now, better insights tomorrow." },
+    { title: "Noticing anything?", body: "Log it — even the small stuff matters." },
   ],
   luteal: [
-    { title: "How are you holding up?", body: "This phase can feel heavier — logging helps us support you better." },
-    { title: "Noticing any changes?", body: "Track your mood and energy so Vyana can spot patterns." },
+    { title: "How are you holding up?", body: "Tracking now helps us understand this stretch." },
+    { title: "Worth noting", body: "What you're feeling today is useful data." },
+    { title: "Check in", body: "Even a quick log makes your next cycle smarter." },
   ],
 };
 

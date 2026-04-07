@@ -4,10 +4,8 @@
 export { askVyanaWithGpt, classifyIntent, type ChatHistoryItem } from "./chatService";
 export {
   generateInsightsWithGpt,
-  generateForecastWithGpt,
   buildVyanaContextForInsights,
   buildFallbackContextBlock,
   sanitizeInsights,
   type InsightGenerationStatus,
-  enforceTwoLines,
 } from "./insightGptService";

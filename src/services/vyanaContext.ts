@@ -10,7 +10,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { NumericBaseline, CrossCycleNarrative } from "./insightData";
-import type { PrimaryInsightCause } from "./insightCause";
+import type { PrimaryInsightCause } from "./insightGptService";
 import type { InsightContext } from "./insightService";
 import type { Phase, CycleMode } from "./cycleEngine";
 import type { HormoneState } from "./hormoneengine";

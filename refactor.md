@@ -1,3 +1,236 @@
+# VYANA PHASE 1 — COMPLETE REWRITE GUIDE
+
+## This document contains everything. Execute top to bottom. Nothing else needed.
+
+---
+
+## TABLE OF CONTENTS
+
+1. [Philosophy](#1-philosophy)
+2. [Repo Cleanup — Files to DELETE](#2-repo-cleanup)
+3. [Repo Cleanup — Files to KEEP](#3-files-to-keep)
+4. [New File: featureFlags.ts](#4-feature-flags)
+5. [REWRITE: cycleInsightLibrary.ts (Full 28-Day Templates)](#5-template-rewrite)
+6. [REWRITE: insightService.ts (Simplified)](#6-insight-service)
+7. [NEW: insightControllerPhase1.ts](#7-insight-controller)
+8. [UPDATE: insightView.ts](#8-insight-view)
+9. [UPDATE: insightGptService.ts (Simplified Prompt)](#9-gpt-service)
+10. [UPDATE: chatService.ts (Ask Vyana)](#10-chat-service)
+11. [UPDATE: chatController.ts (Simplified)](#11-chat-controller)
+12. [UPDATE: routes/insights.ts](#12-routes)
+13. [UPDATE: notificationTemplates.ts](#13-notifications)
+14. [Smoke Test Script](#14-smoke-test)
+15. [Testing Checklist](#15-testing)
+16. [Execution Order](#16-execution)
+
+---
+
+## 1. PHILOSOPHY
+
+### Phase 1 = Ship Clean
+
+Two tiers only:
+- **Tier 1 (Zero logs):** Phase-based observation. "Energy can feel lighter here."
+- **Tier 2 (Any logs):** Reflect their data. "Energy has felt lower recently."
+
+Five insight fields (from final voice doc):
+- `physical` — What the body might be feeling
+- `mental` — What focus/clarity might be like
+- `emotional` — What emotions might feel like
+- `orientation` — Grounded context (time-location, no teaching)
+- `allowance` — What feels okay right now (zero action verbs)
+
+Plus `nudge` — what logging unlocks next.
+
+### The Master Rules
+1. If a sentence explains, it breaks. If it notices, it works.
+2. Never "many people." Never "because." Never "your energy is."
+3. Always "Energy feels..." / "Things can feel..."
+4. Allowance = zero verbs. Only "Slower can feel more natural."
+5. If it sounds wise, delete it.
+
+---
+
+## 2. REPO CLEANUP — FILES TO DELETE
+
+Delete these files. They are Phase 2+ complexity that Phase 1 does not use.
+
+### Services to DELETE
+```
+src/services/correlationEngine.ts
+src/services/pmsEngine.ts
+src/services/insightMemory.ts
+src/services/insightMonitor.ts
+src/services/narrativeSelector.ts
+src/services/interactionRules.ts
+src/services/insightCause.ts
+src/services/tomorrowEngine.ts
+```
+
+### Controllers to DELETE
+```
+src/controllers/insightController.ts  (replaced by insightControllerPhase1.ts)
+src/controllers/healthController.ts   (Phase 2 — health pattern detection)
+```
+
+### Test infrastructure to DELETE
+```
+src/testRunner/generateTestCases.ts
+src/testRunner/generateEdgeCases.ts
+src/testRunner/runTestCases.ts
+src/testRunner/validateResults.ts
+src/testRunner/validateInsightText.ts
+src/testRunner/testCases.ts
+```
+
+### Scripts to DELETE
+```
+scripts/compile-test-outputs.ts
+scripts/fetch-test-insights.ts
+scripts/run-menstrual-insight-demo.ts
+scripts/run-scenarios.ts
+scripts/scenario-fixtures.ts
+scripts/seed-follicular-sleep-stress-user.ts
+scripts/seed-health-pattern-user.ts
+scripts/seed-midcycle-stable-user.ts
+scripts/seed-test-cases.ts
+scripts/test-gpt-menstrual-day2-second-cycle.ts
+scripts/clear-health-cache.ts
+```
+
+### Routes to UPDATE (remove health patterns)
+```
+src/routes/health.ts  — DELETE this file
+```
+
+Remove from `src/index.ts`:
+```typescript
+// DELETE these lines:
+import healthRoutes from "./routes/health";
+app.use("/api/health", healthRoutes);
+```
+
+### Service barrel to UPDATE
+`src/services/aiService.ts` — rewrite to only export what Phase 1 uses (see Step 9).
+
+---
+
+## 3. FILES TO KEEP (Untouched)
+
+### Core
+```
+src/index.ts                          (minus health route removal)
+src/lib/prisma.ts
+src/config/featureFlags.ts            (NEW — Step 4)
+```
+
+### Middleware
+```
+src/middleware/auth.ts
+src/middleware/errorHandler.ts
+src/middleware/rateLimit.ts
+src/middleware/requestLogger.ts
+```
+
+### Types
+```
+src/types/express.ts
+src/types/cycleUser.ts
+```
+
+### Routes (keep all except health.ts)
+```
+src/routes/admin.ts
+src/routes/auth.ts
+src/routes/calendar.ts
+src/routes/chat.ts
+src/routes/cycle.ts
+src/routes/home.ts
+src/routes/insights.ts                (UPDATE import — Step 12)
+src/routes/logs.ts
+src/routes/user.ts
+```
+
+### Controllers (keep all except insightController.ts and healthController.ts)
+```
+src/controllers/authController.ts
+src/controllers/calendarController.ts
+src/controllers/chatController.ts     (UPDATE — Step 11)
+src/controllers/cycleController.ts
+src/controllers/homeController.ts
+src/controllers/insightControllerPhase1.ts  (NEW — Step 7)
+src/controllers/logController.ts
+src/controllers/notificationController.ts
+src/controllers/userController.ts
+```
+
+### Services (keep)
+```
+src/services/cycleEngine.ts
+src/services/contraceptionengine.ts
+src/services/contraceptionTransition.ts
+src/services/cycleInsightLibrary.ts   (REWRITE — Step 5)
+src/services/insightService.ts        (REWRITE — Step 6)
+src/services/insightView.ts           (UPDATE — Step 8)
+src/services/insightData.ts
+src/services/insightGptService.ts     (UPDATE — Step 9)
+src/services/insightGuard.ts
+src/services/chatService.ts           (UPDATE — Step 10)
+src/services/openaiClient.ts
+src/services/googleAuthService.ts
+src/services/transitionWarmup.ts
+src/services/notificationScheduler.ts
+src/services/notificationService.ts
+src/services/notificationTemplates.ts (UPDATE — Step 13)
+src/services/healthPatternEngine.ts   (keep — cycleController calls it)
+src/services/hormoneengine.ts         (keep — GPT path uses it)
+src/services/vyanaContext.ts          (keep — GPT path uses it)
+src/services/insightValidator.ts      (keep — GPT path uses it)
+```
+
+### Utils (keep all)
+```
+src/utils/confidencelanguage.ts
+src/utils/homeScreen.ts
+src/utils/jwt.ts
+src/utils/password.ts
+src/utils/userPublic.ts
+```
+
+### Database (keep all — never delete migrations)
+```
+prisma/schema.prisma
+prisma/migrations/*
+```
+
+### Cron
+```
+src/cron/notificationCron.ts
+```
+
+---
+
+## 4. FEATURE FLAGS
+
+**Create:** `src/config/featureFlags.ts`
+
+```typescript
+export const FEATURE_FLAGS = {
+  PHASE1_MODE: true,
+  ENABLE_GPT_ENHANCEMENT: true,  // GPT for 3+ logs
+  MIN_LOGS_FOR_GPT: 3,
+} as const;
+```
+
+---
+
+## 5. TEMPLATE REWRITE — cycleInsightLibrary.ts
+
+**REWRITE:** `src/services/cycleInsightLibrary.ts`
+
+This is the complete file. Replace the entire contents.
+
+```typescript
 import type { CycleMode, Phase } from "./cycleEngine";
 
 // ─── Field Structure (Final Vyana Voice) ────────────────────────────────────
@@ -1098,3 +1331,435 @@ export function getDayInsight(
     focusLevel: day.focusLevel,
   };
 }
+```
+
+---
+
+## 6. INSIGHT SERVICE UPDATE
+
+In `src/services/insightService.ts`, the `generateRuleBasedInsights` function currently returns fields named `physicalInsight`, `mentalInsight`, `emotionalInsight`, `whyThisIsHappening`, `solution`, `recommendation`, `tomorrowPreview`.
+
+### Step 6.1: Update DailyInsights type
+
+Find the `DailyInsights` interface and update it:
+
+```typescript
+export interface DailyInsights {
+  physical: string;
+  mental: string;
+  emotional: string;
+  orientation: string;
+  allowance: string;
+  nudge: string;
+  // Legacy compatibility — GPT still uses these names
+  physicalInsight: string;
+  mentalInsight: string;
+  emotionalInsight: string;
+  whyThisIsHappening: string;
+  solution: string;
+  recommendation: string;
+  tomorrowPreview: string;
+}
+```
+
+### Step 6.2: Update generateRuleBasedInsights
+
+In the `generateRuleBasedInsights` function, add the new fields mapped from the template:
+
+```typescript
+export function generateRuleBasedInsights(ctx: InsightContext): DailyInsights {
+  const dayInsight = getDayInsight(ctx.normalizedDay, ctx.variantIndex, ctx.cycleMode);
+  
+  // Build legacy fields for backward compat
+  const physicalInsight = buildPhysicalInsight(ctx);
+  const mentalInsight = buildMentalInsight(ctx);
+  const emotionalInsight = buildEmotionalInsight(ctx);
+  const whyThisIsHappening = buildWhyThisIsHappening(ctx);
+  const solution = buildRecommendation(ctx);
+  const recommendation = buildBroaderGuidance(ctx);
+  const tomorrowPreview = dayInsight.nudge; // Use nudge as tomorrowPreview for now
+
+  return {
+    // New Vyana Voice fields (from template)
+    physical: dayInsight.physical,
+    mental: dayInsight.mental,
+    emotional: dayInsight.emotional,
+    orientation: dayInsight.orientation,
+    allowance: dayInsight.allowance,
+    nudge: dayInsight.nudge,
+    // Legacy fields (for GPT + guards + backward compat)
+    physicalInsight,
+    mentalInsight,
+    emotionalInsight,
+    whyThisIsHappening,
+    solution,
+    recommendation,
+    tomorrowPreview,
+  };
+}
+```
+
+**NOTE:** This dual-field approach means the insight view can choose which set to serve. The `vyana` layer in the view uses the new fields. The `system` layer and GPT path use legacy fields. Clean separation.
+
+---
+
+## 7. INSIGHT CONTROLLER (Phase 1)
+
+Already provided in the previous guide. Create `src/controllers/insightControllerPhase1.ts` with the simplified pipeline from the previous document. One key update: the response should include the new Vyana voice fields:
+
+In the response payload, add:
+
+```typescript
+const responsePayload = {
+  // ... existing fields ...
+  vyana: {
+    physical: insights.physical ?? view.vyana.physical,
+    mental: insights.mental ?? view.vyana.mental,
+    emotional: insights.emotional ?? view.vyana.emotional,
+    orientation: view.vyana.orientation,
+    allowance: view.vyana.allowance,
+    nudge: insights.nudge ?? "",
+  },
+  // ... rest of response ...
+};
+```
+
+---
+
+## 8. INSIGHT VIEW UPDATE
+
+In `src/services/insightView.ts`, update the `buildInsightView` function to use new field names from the template:
+
+Find where it builds the `vyana` layer and update:
+
+```typescript
+vyana: {
+  physical: insights.physical || insights.physicalInsight,
+  mental: insights.mental || insights.mentalInsight,
+  emotional: insights.emotional || insights.emotionalInsight,
+  orientation: dayInsight.orientation,    // was: dayInsight.hormoneNote
+  allowance: dayInsight.allowance,        // was: dayInsight.actionTip
+},
+```
+
+Also update the `VyanaLayer` type:
+
+```typescript
+export type VyanaLayer = {
+  physical: string;
+  mental: string;
+  emotional: string;
+  orientation: string;
+  allowance: string;
+};
+```
+
+---
+
+## 9. GPT SERVICE SIMPLIFICATION
+
+In `src/services/insightGptService.ts`, the GPT system prompt is 200+ lines. For Phase 1, it still fires for 3+ logs users, but the prompt can be dramatically simplified.
+
+### Step 9.1: Simplify VYANA_SYSTEM_PROMPT
+
+Replace the massive prompt with a clean Phase 1 version:
+
+```typescript
+export const VYANA_SYSTEM_PROMPT = `You are Vyana — a personal cycle companion.
+
+RULES:
+1. Start with what the user is actually experiencing based on their logged data.
+2. Never use: "Many people find...", "It's common to...", "The body is..."
+3. Always use: "Energy feels...", "Things can feel...", "Focus feels..."
+4. Never claim patterns from less than 2 cycles of data.
+5. Each field: max 2 sentences. One clear idea.
+6. Be specific to their data. Never generic.
+7. If you don't have data for something, don't invent it.
+
+FIELDS:
+- physicalInsight: what body feels (from their logs)
+- mentalInsight: focus/clarity (from their logs)
+- emotionalInsight: emotional experience (from their logs)
+- whyThisIsHappening: grounded context (where in cycle, not teaching)
+- solution: one thing for today (permission, not instruction)
+- recommendation: next few days guidance
+- tomorrowPreview: what to expect next
+
+Return strict JSON only.`.trim();
+```
+
+### Step 9.2: Update aiService.ts barrel
+
+Replace `src/services/aiService.ts`:
+
+```typescript
+export { askVyanaWithGpt, classifyIntent, type ChatHistoryItem } from "./chatService";
+export {
+  generateInsightsWithGpt,
+  buildVyanaContextForInsights,
+  buildFallbackContextBlock,
+  sanitizeInsights,
+  type InsightGenerationStatus,
+} from "./insightGptService";
+```
+
+Remove the `generateForecastWithGpt` and `enforceTwoLines` exports — not used in Phase 1.
+
+---
+
+## 10. CHAT SERVICE (Ask Vyana)
+
+In `src/services/chatService.ts`, replace `CHAT_SYSTEM_PROMPT_FULL`:
+
+```typescript
+const CHAT_SYSTEM_PROMPT_FULL = `You are Vyana — a warm, personal menstrual health companion.
+
+VOICE:
+- Speak directly: "you", "your"
+- Sound like a knowledgeable friend, not a doctor
+- Be specific when you have data, honest when you don't
+- Never diagnose. Suggest seeing a doctor for persistent symptoms.
+- Never use: "estrogen surge", "progesterone peak", "hormonal rhythms"
+- Use natural language: "energy feels lower", "things can feel heavier"
+
+CONFIDENCE:
+- Zero logs: general cycle knowledge. "Energy can feel lower during your period."
+- Some logs: reference what they've shared. "You mentioned stress recently."
+- Never claim patterns you haven't seen across 2+ cycles.
+
+DATA:
+- Sleep values: use as given
+- Never show numeric stress/mood scores
+- If you don't have data, say so warmly
+
+CONVERSATION:
+- Lead with empathy. Answer their question first.
+- Only mention cycle context if genuinely relevant
+- For vague messages ("I'm tired"), ask what's going on before assuming cycle cause
+- Keep responses concise: 2-4 sentences for casual, 4-6 for health
+- Never lecture. Never list symptoms unprompted.`;
+```
+
+---
+
+## 11. CHAT CONTROLLER SIMPLIFICATION
+
+In `src/controllers/chatController.ts`, simplify the health/ambiguous message path.
+
+Remove imports for: `correlationEngine`, `narrativeSelector`, `interactionRules`, `insightCause`, `hormoneengine` (if only used in the complex path).
+
+Simplify the full pipeline section to:
+
+```typescript
+  // Full pipeline for health and ambiguous messages
+  const data = await getUserInsightData(req.userId!);
+  if (!data) {
+    res.status(404).json({ error: "User not found" });
+    return;
+  }
+
+  const { user, recentLogs, numericBaseline } = data;
+  const cycleMode = getCycleMode(user);
+  const cyclePrediction = await getCyclePredictionContext(req.userId!, user.cycleLength);
+  const effectiveCycleLength = cyclePrediction.avgLength || user.cycleLength;
+  const cycleInfo = calculateCycleInfo(user.lastPeriodStart, effectiveCycleLength, cycleMode);
+  const totalLogCount = recentLogs.length;
+
+  const reply = await askVyanaWithGpt({
+    userName: user.name ?? "",
+    question: message,
+    cycleInfo,
+    recentLogs,
+    history: safeHistory,
+    numericBaseline,
+    totalLogCount,
+  });
+
+  await prisma.chatMessage.createMany({
+    data: [
+      { userId: req.userId!, role: "user", content: message },
+      { userId: req.userId!, role: "assistant", content: reply },
+    ],
+  });
+
+  res.json({ reply });
+```
+
+---
+
+## 12. ROUTES UPDATE
+
+**Edit:** `src/routes/insights.ts`
+
+```typescript
+import { getInsights, getInsightsContext, getInsightsForecast } from "../controllers/insightControllerPhase1";
+```
+
+**Edit:** `src/index.ts`
+
+Remove:
+```typescript
+import healthRoutes from "./routes/health";
+app.use("/api/health", healthRoutes);
+```
+
+---
+
+## 13. NOTIFICATION TEMPLATES
+
+**Edit:** `src/services/notificationTemplates.ts`
+
+Replace templates with Vyana voice:
+
+```typescript
+const PHASE_TEMPLATES: Record<Phase, NotificationTemplate[]> = {
+  menstrual: [
+    { title: "How's today feeling?", body: "A quick log helps build your rhythm." },
+    { title: "Check in with yourself", body: "Even a few taps make a difference." },
+    { title: "Your cycle is listening", body: "Log what you're noticing today." },
+  ],
+  follicular: [
+    { title: "Energy shifting?", body: "Log how you're feeling — it builds your picture." },
+    { title: "Things might feel different", body: "Capture what's showing up today." },
+    { title: "Your rhythm is forming", body: "A quick check-in keeps it accurate." },
+  ],
+  ovulation: [
+    { title: "How are things today?", body: "This part of your cycle is useful to track." },
+    { title: "Quick check-in", body: "A few taps now, better insights tomorrow." },
+    { title: "Noticing anything?", body: "Log it — even the small stuff matters." },
+  ],
+  luteal: [
+    { title: "How are you holding up?", body: "Tracking now helps us understand this stretch." },
+    { title: "Worth noting", body: "What you're feeling today is useful data." },
+    { title: "Check in", body: "Even a quick log makes your next cycle smarter." },
+  ],
+};
+```
+
+---
+
+## 14. SMOKE TEST SCRIPT
+
+**Create:** `scripts/phase1-smoke-test.ts`
+
+```typescript
+import "dotenv/config";
+
+const BASE = process.env.API_BASE_URL ?? "http://localhost:3000";
+
+async function post(path: string, body: object, token?: string) {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const r = await fetch(`${BASE}${path}`, { method: "POST", headers, body: JSON.stringify(body) });
+  return r.json();
+}
+
+async function get(path: string, token: string) {
+  const r = await fetch(`${BASE}${path}`, { headers: { Authorization: `Bearer ${token}` } });
+  return r.json();
+}
+
+async function main() {
+  const email = `smoke-${Date.now()}@test.vyana`;
+  console.log("\n🔥 PHASE 1 SMOKE TEST\n");
+
+  // Register
+  const reg = await post("/api/auth/register", {
+    email, password: "testpass123", name: "Smoke Test",
+    age: 28, height: 165, weight: 58, cycleLength: 28,
+    lastPeriodStart: new Date(Date.now() - 10 * 86400000).toISOString(),
+  }) as any;
+  const token = reg.tokens?.accessToken;
+  if (!token) { console.error("❌ Registration failed:", reg); return; }
+  console.log("✅ Registered");
+
+  // Zero-log insights
+  const ins0 = await get("/api/insights", token) as any;
+  console.log(`✅ Zero-log: cycleDay=${ins0.cycleDay}, aiEnhanced=${ins0.aiEnhanced}`);
+  console.log(`   vyana.physical: "${ins0.view?.vyana?.physical?.slice(0, 60)}..."`);
+
+  // Quick check-in
+  await post("/api/logs/quick-check-in", { mood: "low", energy: "low", stress: "high" }, token);
+  console.log("✅ Logged (1 entry)");
+
+  // 1-log insights
+  const ins1 = await get("/api/insights", token) as any;
+  console.log(`✅ 1-log: confidence=${ins1.confidence}`);
+
+  // Chat
+  const chat = await post("/api/chat", { message: "How am I doing?" }, token) as any;
+  console.log(`✅ Chat: "${chat.reply?.slice(0, 60)}..."`);
+
+  // Home
+  const home = await get("/api/home", token) as any;
+  console.log(`✅ Home: title="${home.title}"`);
+
+  // Forecast (warmup)
+  const forecast = await get("/api/insights/forecast", token) as any;
+  console.log(`✅ Forecast: available=${forecast.available}`);
+
+  console.log("\n🎯 Smoke test complete.\n");
+}
+
+main().catch(console.error);
+```
+
+---
+
+## 15. TESTING CHECKLIST
+
+### Zero Logs
+- [ ] Day 1 menstrual — observational, no assertions, new field names in response
+- [ ] Day 10 follicular — energy rising language
+- [ ] Day 14 ovulation — bright spot language
+- [ ] Day 22 luteal — declining energy language
+- [ ] Hormonal user — no phase language
+
+### 1-2 Logs
+- [ ] User logs stress — acknowledged in insight, rest is phase-based
+- [ ] User logs fatigue + headache — both reflected
+
+### 3+ Logs
+- [ ] GPT fires and enhances
+- [ ] No forbidden language in output
+
+### Chat
+- [ ] Casual: "Hey" — warm, no cycle dump
+- [ ] Health: "I'm tired" — empathetic, asks context
+- [ ] Zero-data: "How's my sleep?" — honest about no data
+
+### Edge Cases
+- [ ] Delayed period — acknowledged
+- [ ] Post-iPill — disruption template
+- [ ] Post-BC stop — transition template
+
+---
+
+## 16. EXECUTION ORDER
+
+```
+1.  Delete files listed in Section 2
+2.  Update src/index.ts (remove health route)
+3.  Create src/config/featureFlags.ts (Section 4)
+4.  REWRITE src/services/cycleInsightLibrary.ts (Section 5 — full file)
+5.  UPDATE src/services/insightService.ts (Section 6)
+6.  CREATE src/controllers/insightControllerPhase1.ts (Section 7)
+7.  UPDATE src/services/insightView.ts (Section 8)
+8.  UPDATE src/services/insightGptService.ts (Section 9)
+9.  UPDATE src/services/aiService.ts barrel (Section 9.2)
+10. UPDATE src/services/chatService.ts (Section 10)
+11. UPDATE src/controllers/chatController.ts (Section 11)
+12. UPDATE src/routes/insights.ts (Section 12)
+13. UPDATE src/services/notificationTemplates.ts (Section 13)
+14. CREATE scripts/phase1-smoke-test.ts (Section 14)
+15. npm run build — fix any TypeScript errors
+16. Run smoke test
+17. Manual testing checklist
+18. Ship
+```
+
+**Estimated time:** 2-3 days with Claude Code.
+
+---
+
+*This is the complete guide. Every template, every file change, every deletion. Execute top to bottom. Ship clean.*
