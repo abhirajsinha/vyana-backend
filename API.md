@@ -648,6 +648,8 @@ At least one field must be provided.
 
 ## Insights
 
+> Served by the **Phase 1 controller** (`insightControllerPhase1.ts`). GPT enhancement requires 3+ logs (controlled by `FEATURE_FLAGS.MIN_LOGS_FOR_GPT`).
+
 ### `GET /api/insights`
 
 **Auth:** Required
@@ -1087,56 +1089,6 @@ Content adapts to phase, cycle day, delayed period, irregular cycles, and hormon
 | Status | Message |
 |--------|---------|
 | `400` | `date must be YYYY-MM-DD` |
-| `404` | `User not found` |
-
----
-
-## Health Patterns
-
-### `GET /api/health/patterns`
-
-**Auth:** Required
-
-**Response** `200`
-
-```json
-{
-  "hasAlerts": true,
-  "alerts": [
-    {
-      "type": "short_cycles",
-      "message": "Your last 3 cycles have been under 21 days.",
-      "severity": "moderate",
-      "detectedAt": "2026-03-28T00:00:00.000Z"
-    }
-  ],
-  "watching": [
-    {
-      "type": "sleep_trend",
-      "message": "Sleep has been trending downward over 2 weeks.",
-      "since": "2026-03-14T00:00:00.000Z"
-    }
-  ],
-  "lastChecked": "2026-03-28T12:00:00.000Z",
-  "message": "We noticed some patterns worth flagging."
-}
-```
-
-When no alerts:
-
-```json
-{
-  "hasAlerts": false,
-  "alerts": [],
-  "watching": [],
-  "lastChecked": "2026-03-28T12:00:00.000Z"
-}
-```
-
-**Errors**
-
-| Status | Message |
-|--------|---------|
 | `404` | `User not found` |
 
 ---

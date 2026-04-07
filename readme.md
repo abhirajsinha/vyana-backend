@@ -14,10 +14,6 @@ Express + Prisma API for Vyana: cycle tracking, daily logs, deterministic wellne
 |-------|-----------|----------------|
 | 1 | **This file** (`readme.md`) | Setup, env, endpoint index, caching, AI behavior, workflow |
 | 2 | [`API.md`](./API.md) | Request/response shapes, field tables, errors |
-| 3 | [`SYSTEM_DESIGN.md`](./SYSTEM_DESIGN.md) | Architecture, auth, data model, security notes |
-| 4 | [`INSIGHTS_SYSTEM.md`](./INSIGHTS_SYSTEM.md) | Insight engine concepts (signals, baselines, drivers) |
-| 5 | [`INSIGHTS_FLOW_DETAILED.md`](./INSIGHTS_FLOW_DETAILED.md) | Runtime sequence, caches, GPT rules, QA scenarios |
-| 6 | [`SERVICES_GITHUB_LINKS.md`](./SERVICES_GITHUB_LINKS.md) | External references if linked from code |
 
 ### Mental model (30 seconds)
 
@@ -31,9 +27,10 @@ Express + Prisma API for Vyana: cycle tracking, daily logs, deterministic wellne
 |--------------|------------|
 | Add or change an HTTP route | `src/routes/`, then controller under `src/controllers/` |
 | Cycle phase / calendar math | `src/services/cycleEngine.ts` |
-| Insight rules and context | `src/services/insightService.ts`, `insightData.ts`, `insightController.ts` |
+| Insight rules and context | `src/services/insightService.ts`, `insightData.ts`, `insightControllerPhase1.ts` |
 | OpenAI prompts / JSON shaping | `src/services/insightGptService.ts`, `chatService.ts` |
 | Contraception-specific behavior | `src/services/contraceptionengine.ts`, `contraceptionTransition.ts` |
+| Feature flags | `src/config/featureFlags.ts` |
 | Auth / JWT | `src/controllers/authController.ts`, `src/middleware/auth.ts`, `src/utils/jwt.ts` |
 | DB schema | `prisma/schema.prisma` → then `npx prisma migrate dev` |
 
@@ -54,6 +51,7 @@ Express + Prisma API for Vyana: cycle tracking, daily logs, deterministic wellne
 
 ```text
 src/
+  config/          # Feature flags (Phase 1 mode, GPT gating)
   controllers/     # HTTP handlers (thin: validate, call services, respond)
   lib/             # Prisma client
   middleware/      # auth, errors, rate limits
@@ -64,7 +62,7 @@ src/
 prisma/
   schema.prisma
   migrations/
-scripts/           # One-off seeds, demos, scenario runners
+scripts/           # Smoke tests, utilities
 tests/
   units/
   integration/
@@ -127,25 +125,31 @@ Protected routes need: `Authorization: Bearer <access_token>`.
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
 | GET | `/health` | No | Liveness |
+| GET | `/api/health` | No | Health status |
 | POST | `/api/auth/register` | No | Email + password signup |
 | POST | `/api/auth/login` | No | Email + password login |
 | POST | `/api/auth/google` | No | Google ID token signup/sign-in |
 | POST | `/api/auth/refresh` | No | New access token from refresh JWT |
 | GET | `/api/user/me` | Yes | Current user profile |
 | PUT | `/api/user/profile` | Yes | Update profile (may trigger contraception transition / cache invalidation) |
+| PUT | `/api/user/fcm-token` | Yes | Update FCM push token |
 | GET | `/api/home` | Yes | Home screen aggregate |
 | GET | `/api/cycle/current` | Yes | Current cycle info |
 | POST | `/api/cycle/period-started` | Yes | Record new period start (updates cycle + history) |
+| DELETE | `/api/cycle/period-started/:id` | Yes | Undo period logging |
 | GET | `/api/calendar` | Yes | Monthly calendar + cycle overlay (`?month=YYYY-MM`) |
 | GET | `/api/calendar/day-insight` | Yes | Per-day insight card for calendar |
 | POST | `/api/logs` | Yes | Create daily log |
 | GET | `/api/logs` | Yes | List logs (optional `?date=YYYY-MM-DD`) |
+| PUT | `/api/logs/:id` | Yes | Edit existing log |
+| POST | `/api/logs/quick-check-in` | Yes | Minimal log (mood, energy, sleep, stress, pain, fatigue) |
+| GET | `/api/logs/quick-log-config` | Yes | Phase-aware log field config |
 | GET | `/api/insights` | Yes | Daily insights + view payload |
 | GET | `/api/insights/context` | Yes | Debug-style insight context |
 | GET | `/api/insights/forecast` | Yes | Forecast (or warmup if not eligible) |
-| GET | `/api/health/patterns` | Yes | Health pattern detection + cache |
 | POST | `/api/chat` | Yes | Chat completion |
 | GET | `/api/chat/history` | Yes | Persisted chat messages |
+| POST | `/api/admin/send-notifications` | API Key | Trigger notification batch |
 
 **Login identifier:** use **email** + password, not `userId`.
 
@@ -176,11 +180,9 @@ Login/register routes use **rate limiting** (`src/middleware/rateLimit.ts`).
 
 | Feature | When OpenAI runs |
 |---------|-------------------|
-| **Daily insights** (`GET /api/insights`) | On each **cache miss**, `generateInsightsWithGpt` is invoked if the client is configured (`OPENAI_API_KEY`). There is **no** log-count gate in the controller — new users with zero logs still hit the GPT path on a miss. If the client is missing or the call fails, the deterministic draft is kept. |
-| **Forecast** (`GET /api/insights/forecast`) | GPT rewrite only when `logsCount >= 7`, `context.mode === "personalized"`, and `context.confidence !== "low"`. Otherwise the endpoint may return a **warmup / locked** payload (see `checkForecastEligibility` in `contraceptionengine.ts`). |
+| **Daily insights** (`GET /api/insights`) | On cache miss, GPT enhancement runs when the user has **3+ logs** (`FEATURE_FLAGS.MIN_LOGS_FOR_GPT`). Users below this threshold get deterministic-only insights. Controlled by `FEATURE_FLAGS.ENABLE_GPT_ENHANCEMENT` in `src/config/featureFlags.ts`. |
+| **Forecast** (`GET /api/insights/forecast`) | GPT rewrite only when `logsCount >= 7`, `context.mode === "personalized"`, and `context.confidence !== "low"`. Otherwise returns a **warmup / locked** payload. |
 | **Chat** (`POST /api/chat`) | Uses GPT when configured; otherwise a configuration fallback message. |
-
-Treat `INSIGHTS_FLOW_DETAILED.md` §9 as the source of truth; it is kept aligned with `insightController.ts`.
 
 ---
 
@@ -203,15 +205,15 @@ npm run test:integration # integration tests
 npm test                 # all Jest tests
 ```
 
-Scenario / demo scripts live under `scripts/` (see `package.json` for `demo:insights`, `test:scenarios`).
+Phase 1 smoke test: `npx ts-node scripts/phase1-smoke-test.ts`.
 
 ---
 
 ## Implemented vs not in this repo
 
-**Implemented:** Auth (email, Google, refresh), profile updates, cycle + calendar + period start, logs, insights + forecast + context, home, health patterns, chat + history, rate-limited auth, insight/health caching as above.
+**Implemented:** Auth (email, Google, refresh), profile updates, cycle + calendar + period start + undo, logs (full + quick-check-in + quick-log-config), insights + forecast + context (Phase 1 controller), home, chat + history, admin notifications, rate limiting, insight caching.
 
-**Not implemented here:** Background jobs, FCM delivery, refresh-token rotation / logout endpoint (see `SYSTEM_DESIGN.md` for gaps and recommendations).
+**Not implemented here:** Background jobs, refresh-token rotation / logout endpoint.
 
 ---
 
