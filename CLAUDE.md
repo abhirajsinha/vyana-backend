@@ -28,20 +28,19 @@ Vyana is a menstrual health companion app. The backend powers a deeply personali
 
 ```
 src/
+├── config/
+│   └── featureFlags.ts            # PHASE1_MODE, GPT gating thresholds
+│
 ├── controllers/
 │   ├── authController.ts          # Register, login, Google OAuth, refresh
 │   ├── calendarController.ts      # GET /api/calendar, GET /api/calendar/day-insight
 │   ├── chatController.ts          # POST /api/chat (intent classification → light vs full pipeline)
 │   ├── cycleController.ts         # GET /api/cycle/current, POST /api/cycle/period-started, DELETE undo
-│   ├── healthController.ts        # GET /api/health/patterns
 │   ├── homeController.ts          # GET /api/home (signal-aware home screen)
-│   ├── insightController.ts       # GET /api/insights, /insights/context, /insights/forecast
+│   ├── insightControllerPhase1.ts # GET /api/insights, /insights/context, /insights/forecast (Phase 1)
 │   ├── logController.ts           # POST/GET/PUT logs, quick-check-in, quick-log-config
 │   ├── notificationController.ts  # FCM token update, admin notification batch
 │   └── userController.ts          # GET /api/user/me, PUT /api/user/profile
-│
-├── cron/
-│   └── notificationCron.ts        # Hourly push notification scheduler
 │
 ├── middleware/
 │   ├── auth.ts                    # requireAuth — verifies JWT, sets req.userId
@@ -49,7 +48,7 @@ src/
 │   ├── rateLimit.ts               # Per-endpoint rate limiters (auth, chat, insights, logs, general)
 │   └── requestLogger.ts           # Structured JSON request logging
 │
-├── routes/                        # Express routers (admin, auth, calendar, chat, cycle, health, home, insights, logs, user)
+├── routes/                        # Express routers (admin, auth, calendar, chat, cycle, home, insights, logs, user)
 │
 ├── services/                      # Core business logic
 │   ├── aiService.ts               # Re-export barrel (chatService + insightGptService)
@@ -59,14 +58,9 @@ src/
 │   ├── insightData.ts             # getUserInsightData, NumericBaseline, CrossCycleNarrative
 │   ├── insightView.ts             # View composition, insightBasis progressive unlock
 │   ├── insightGuard.ts            # Post-generation deterministic enforcement (12 guard layers)
-│   ├── insightCause.ts            # Primary cause detection (sleep_disruption / stress_led / cycle / stable)
-│   ├── insightMemory.ts           # Driver persistence tracking (memory narratives)
-│   ├── insightMonitor.ts          # Production shadow monitoring (quality signals)
+│   ├── insightValidator.ts        # Insight validation with hard/soft checks + fallback
 │   ├── cycleEngine.ts             # Phase calculation, cycle info, irregularity detection
 │   ├── cycleInsightLibrary.ts     # 28-day × 3-variant insight library + getCycleNumber
-│   ├── correlationEngine.ts       # 7 cross-signal patterns + cycle recurrence detection
-│   ├── tomorrowEngine.ts          # Tomorrow preview with trend adjustment
-│   ├── pmsEngine.ts               # PMS symptom forecast + warmup state
 │   ├── hormoneengine.ts           # Phase→hormone state mapping + safe language builder
 │   ├── contraceptionengine.ts     # Contraception type resolution + behavior rules + forecast eligibility
 │   ├── contraceptionTransition.ts # Handles contraception method changes (cache clear, baseline reset)
@@ -78,14 +72,6 @@ src/
 │   ├── notificationService.ts     # Firebase push send
 │   ├── notificationTemplates.ts   # Phase-aware notification templates
 │   └── openaiClient.ts            # OpenAI client + circuit breaker (5 failures → 5min cooldown)
-│
-├── testRunner/                    # Test infrastructure (500-case generator, edge cases, validators)
-│   ├── generateTestCases.ts       # 500 systematic + random test cases
-│   ├── generateEdgeCases.ts       # 400+ edge cases (all phases × log tiers × contraception × signals)
-│   ├── runTestCases.ts            # DB-backed test runner
-│   ├── validateResults.ts         # Structural validation (phase, cycleDay, drivers)
-│   ├── validateInsightText.ts     # Text quality validation (zero-data safety, tone, contradictions)
-│   └── testCases.ts               # 10 manual canonical test cases
 │
 ├── types/
 │   ├── cycleUser.ts               # CycleLengthDays, HORMONAL_CONTRACEPTIVE_METHODS
@@ -131,9 +117,9 @@ POST   /api/logs/quick-check-in   # Minimal log (mood, energy, sleep, stress, pa
 GET    /api/logs/quick-log-config  # Phase-aware log field configuration
 
 # Insights
-GET    /api/insights               # Full insight pipeline (cached per day)
+GET    /api/insights               # Phase 1 insight pipeline (GPT gated on 3+ logs)
 GET    /api/insights/context       # Debug context (drivers, basedOn, hormoneContext)
-GET    /api/insights/forecast      # Tomorrow forecast + PMS forecast + confidence
+GET    /api/insights/forecast      # Tomorrow forecast + confidence
 
 # Chat
 POST   /api/chat                   # Vyana chat (intent classified → casual or full pipeline)
@@ -146,14 +132,12 @@ GET    /api/home                   # Home screen content (signal-aware, phase-aw
 GET    /api/calendar?month=YYYY-MM # Calendar grid with phase colors, log summaries
 GET    /api/calendar/day-insight?date=YYYY-MM-DD  # Day tap insight card
 
-# Health
-GET    /api/health/patterns        # PCOS, PMDD, endometriosis, iron deficiency detection
-
 # Admin
 POST   /api/admin/send-notifications  # Trigger notification batch (API key required)
 
 # Health check
 GET    /health                     # { ok: true }
+GET    /api/health                 # { status: "ok" }
 ```
 
 ---
@@ -298,22 +282,8 @@ NODE_ENV                # development / production
 ## Scripts
 
 ```bash
-# Seed test users
-npx ts-node scripts/seed-test-cases.ts
-npx ts-node scripts/seed-follicular-sleep-stress-user.ts
-npx ts-node scripts/seed-midcycle-stable-user.ts
-npx ts-node scripts/seed-health-pattern-user.ts
-
-# Run test scenarios
-npx ts-node scripts/run-scenarios.ts
-npx ts-node scripts/fetch-test-insights.ts
-npx ts-node scripts/compile-test-outputs.ts
-
-# 500-case test runner
-npx ts-node src/testRunner/runTestCases.ts --source generated
-npx ts-node src/testRunner/runTestCases.ts --source edge
-npx ts-node src/testRunner/validateResults.ts
-npx ts-node src/testRunner/validateInsightText.ts
+# Phase 1 smoke test
+npx ts-node scripts/phase1-smoke-test.ts
 
 # Database
 npx prisma migrate deploy
@@ -325,7 +295,7 @@ npx prisma studio
 
 ## Known Architectural Decisions
 
-1. **GPT fires on every insight request** — no gating. Circuit breaker protects against outages. Draft is always the fallback.
+1. **GPT fires on insight requests with 3+ logs** — gated by `FEATURE_FLAGS.MIN_LOGS_FOR_GPT`. Circuit breaker protects against outages. Draft is always the fallback.
 2. **Insight cache is per-day** — keyed on userId + date. Invalidated on log save, period-started, profile update.
 3. **Cross-cycle narrative: 1 batch query** — fetches all logs across all cycle windows, filters in memory.
 4. **User + logs fetched in parallel** — `getUserInsightData()` uses `Promise.all`.
