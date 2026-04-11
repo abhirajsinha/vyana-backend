@@ -1,25 +1,23 @@
 import type { DailyInsights, InsightContext } from "./insightService";
-import { getDayInsight } from "./cycleInsightLibrary";
 
-const BODY_KEYS = ["physicalInsight", "mentalInsight", "emotionalInsight"] as const;
+// ─── Layered Insight View (per LAYERED_INSIGHTS spec) ──────────────────────
 
-type BodyKey = (typeof BODY_KEYS)[number];
-
-export function resolvePrimaryInsightKey(ctx: InsightContext): BodyKey {
-  const driver = ctx.priorityDrivers[0];
-  if (!driver) return "physicalInsight";
-  if (driver.includes("sleep") || driver.includes("bleeding") || driver === "high_strain") {
-    return "physicalInsight";
-  }
-  if (driver.includes("stress") || driver.includes("sleep_stress")) {
-    return "mentalInsight";
-  }
-  if (driver.includes("mood")) {
-    return "emotionalInsight";
-  }
-  return "physicalInsight";
-}
-
+export type InsightViewPayload = {
+  /** Main insight (Layer 1 + optional Layer 2 wrapper + optional Layer 3 sentence) */
+  insight: string;
+  /** Supporting body note from the variant */
+  body_note: string;
+  /** Orientation line: "Day 14 · Ovulation · 14 days to next period" */
+  orientation: string;
+  /** Action recommendation (signal-driven when personalized) */
+  recommendation: string;
+  /** Confidence / data basis label */
+  confidenceLabel: string;
+  /** Progressive unlock info */
+  insightBasis: InsightBasis;
+  /** Progress toward next milestone */
+  progress: { logsCount: number; nextMilestone: number; logsToNextMilestone: number } | null;
+};
 
 export function getConfidenceLabel(ctx: InsightContext): string {
   if (ctx.recentLogsCount === 0) return "Phase-based guidance";
@@ -31,142 +29,40 @@ export function getConfidenceLabel(ctx: InsightContext): string {
   return "Personalized insights";
 }
 
-export function shouldShowExplanation(ctx: InsightContext): boolean {
-  // When mode is personalized we trust the engine's signal enough to show "why",
-  // even if confidence is still "low" due to limited log count.
-  return ctx.recentLogsCount >= 3 || ctx.mode === "personalized";
-}
-
-export function shouldShowSupporting(ctx: InsightContext): boolean {
-  // For personalized mode we show supporting insights even when confidence is low,
-  // because the signal strength is high enough to justify context.
-  return true;
-}
-
-export function shouldSuppressPrimary(
-  currentKey: BodyKey,
-  history: { primaryKey: string }[],
-): boolean {
-  return history.filter((h) => h.primaryKey === currentKey).length >= 2;
-}
-
-export function pickNovelPrimaryKey(
-  currentKey: BodyKey,
-  history: { primaryKey: string }[],
-  driver: string | null,
-): BodyKey {
-  const filtered = BODY_KEYS.filter(
-    (k) => history.filter((h) => h.primaryKey === k).length < 2,
-  );
-  const candidates = filtered.length > 0 ? filtered : [...BODY_KEYS];
-
-  if (driver?.includes("stress") || driver?.includes("sleep_stress")) {
-    if (candidates.includes("mentalInsight")) return "mentalInsight";
-    if (candidates.includes("emotionalInsight")) return "emotionalInsight";
-  }
-  if (driver?.includes("sleep") || driver?.includes("bleeding") || driver === "high_strain") {
-    if (candidates.includes("physicalInsight")) return "physicalInsight";
-  }
-  if (driver?.includes("mood")) {
-    if (candidates.includes("emotionalInsight")) return "emotionalInsight";
-  }
-
-  return candidates[0];
-}
-
-// ─── Two-layer view: vyana (user-facing voice) + system (product/UI) ────────
-
-export type VyanaLayer = {
-  physical: string;
-  mental: string;
-  emotional: string;
-  orientation: string;
-  allowance: string;
-};
-
-export type SystemLayer = {
-  recommendation: string;
-  nextUnlock: InsightBasisNextUnlock | null;
-  progress: { logsCount: number; nextMilestone: number; logsToNextMilestone: number } | null;
-  confidenceLabel: string;
-  insightBasis: string;
-  tomorrowPreview: string;
-};
-
-export type InsightViewPayload = {
-  vyana: VyanaLayer;
-  system: SystemLayer;
-  /** @deprecated kept for backwards compatibility */
-  primaryInsight: string;
-  /** @deprecated kept for backwards compatibility */
-  supportingInsights: string[];
-  /** @deprecated kept for backwards compatibility */
-  action: string;
-  /** @deprecated kept for backwards compatibility */
-  explanation?: string;
-  /** @deprecated kept for backwards compatibility */
-  recommendation: string;
-  /** @deprecated kept for backwards compatibility */
-  tomorrowPreview: string;
-  /** @deprecated kept for backwards compatibility */
-  confidenceLabel: string;
-};
-
 export function buildInsightView(
   ctx: InsightContext,
   insights: DailyInsights,
   options?: {
-    primaryKeyOverride?: BodyKey | null;
     logsCount?: number;
     completedCycles?: number;
     progress?: { logsCount: number; nextMilestone: number; logsToNextMilestone: number };
   },
 ): InsightViewPayload {
-  const primaryKey = options?.primaryKeyOverride ?? resolvePrimaryInsightKey(ctx);
-  const supporting = BODY_KEYS.filter((k) => k !== primaryKey).map((k) => insights[k]);
-
-  // Get orientation and allowance from the day-specific template
-  const dayInsight = getDayInsight(ctx.normalizedDay, ctx.variantIndex, ctx.cycleMode);
-
   const logsCount = options?.logsCount ?? ctx.recentLogsCount;
   const completedCycles = options?.completedCycles ?? 0;
   const basis = buildInsightBasis(logsCount, completedCycles);
-
   const confidenceLabel = getConfidenceLabel(ctx);
 
-  const view: InsightViewPayload = {
-    vyana: {
-      physical: insights.physical || insights.physicalInsight,
-      mental: insights.mental || insights.mentalInsight,
-      emotional: insights.emotional || insights.emotionalInsight,
-      orientation: dayInsight.orientation,
-      allowance: dayInsight.allowance,
-    },
-    system: {
-      recommendation: insights.recommendation,
-      nextUnlock: basis.nextUnlock,
-      progress: options?.progress ?? null,
-      confidenceLabel,
-      insightBasis: basis.description,
-      tomorrowPreview: insights.tomorrowPreview,
-    },
-    // Backwards compatibility
-    primaryInsight: insights[primaryKey],
-    supportingInsights: supporting,
-    action: insights.solution,
-    explanation: insights.whyThisIsHappening,
-    recommendation: insights.recommendation,
-    tomorrowPreview: insights.tomorrowPreview,
-    confidenceLabel,
-  };
+  // Compose the main insight: Layer 1 + Layer 2 wrapper + Layer 3 sentence
+  let insight = insights.layer1_insight;
+  if (insights.layer2_wrapper) {
+    // Layer 2 wraps the Layer 1 opening — prepend acknowledgement
+    insight = `${insights.layer2_wrapper} ${insight}`;
+  }
+  if (insights.layer3_sentence) {
+    // Layer 3 appends interpretation
+    insight = `${insight}\n\n${insights.layer3_sentence}`;
+  }
 
-  if (!shouldShowSupporting(ctx)) {
-    view.supportingInsights = [];
-  }
-  if (!shouldShowExplanation(ctx)) {
-    view.explanation = undefined;
-  }
-  return view;
+  return {
+    insight,
+    body_note: insights.body_note,
+    orientation: insights.orientation,
+    recommendation: insights.recommendation,
+    confidenceLabel,
+    insightBasis: basis,
+    progress: options?.progress ?? null,
+  };
 }
 
 // ─── Insight basis — tells the user what insights are based on ────────────────
@@ -193,7 +89,7 @@ export function buildInsightBasis(
   logsCount: number,
   completedCycles: number,
 ): InsightBasis {
-  // Stage 6: 14+ logs + 2+ cycles → fully unlocked
+  // Stage 6: 14+ logs + 2+ cycles — fully unlocked
   if (logsCount >= 14 && completedCycles >= 2) {
     return {
       source: "cross_cycle_identity",
@@ -202,7 +98,7 @@ export function buildInsightBasis(
     };
   }
 
-  // Stage 5: 14+ logs + <2 cycles → baseline active, waiting for cycles
+  // Stage 5: 14+ logs + <2 cycles — baseline active, waiting for cycles
   if (logsCount >= 14) {
     const cyclesNeeded = 2 - completedCycles;
     return {
@@ -216,7 +112,7 @@ export function buildInsightBasis(
     };
   }
 
-  // Stage 4: 6-13 logs → personalized, waiting for baseline
+  // Stage 4: 6-13 logs — personalized, waiting for baseline
   if (logsCount >= 6) {
     return {
       source: "personal_patterns",
@@ -229,7 +125,7 @@ export function buildInsightBasis(
     };
   }
 
-  // Stage 3: 5 logs → emerging patterns (interaction flags just unlocked)
+  // Stage 3: 5 logs — emerging patterns (interaction flags just unlocked)
   if (logsCount === 5) {
     return {
       source: "emerging_patterns",
@@ -242,7 +138,7 @@ export function buildInsightBasis(
     };
   }
 
-  // Stage 2: 1-4 logs → early signals
+  // Stage 2: 1-4 logs — early signals
   if (logsCount >= 1) {
     return {
       source: "early_signals",
@@ -257,7 +153,7 @@ export function buildInsightBasis(
     };
   }
 
-  // Stage 1: 0 logs → phase only
+  // Stage 1: 0 logs — phase only
   return {
     source: "phase_only",
     description: "Based on your cycle phase — log how you feel to start building your personal picture",

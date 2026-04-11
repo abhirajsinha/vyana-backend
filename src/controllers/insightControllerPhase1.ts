@@ -34,11 +34,8 @@ import {
 import {
   buildInsightView,
   buildInsightBasis,
-  resolvePrimaryInsightKey,
-  shouldSuppressPrimary,
-  pickNovelPrimaryKey,
 } from "../services/insightView";
-import { getCycleNumber } from "../services/cycleInsightLibrary";
+import { getCycleNumber, selectVariant } from "../services/cycleInsightLibrary";
 import {
   buildHormoneState,
   buildHormoneLanguage,
@@ -178,6 +175,7 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
   let context = buildInsightContext(
     cycleInfo.phase, cycleInfo.currentDay, recentLogs, baselineForComparison,
     baselineScope, cycleNumber, effectiveCycleLength, cycleMode, cyclePrediction.confidence,
+    cycleInfo.phaseDay,
   );
 
   // Stable state detection (simplified — no isStableInsightState from deleted insightCause.ts)
@@ -185,25 +183,36 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
 
   const primaryInsightCause = detectPrimaryInsightCause();
 
+  // ── Variant selection (weighted A-F rotation) ───────────────────────────
+  const variant = selectVariant(
+    req.userId!, cycleNumber, cycleInfo.currentDay, cycleInfo.phase,
+    cycleInfo.phaseDay,
+  );
+  context = { ...context, variant };
+
   // ── Generate rule-based insights ────────────────────────────────────────
-  let draftInsights = generateRuleBasedInsights(context);
+  let draftInsights = generateRuleBasedInsights(context, cycleInfo.daysUntilNextPeriod);
+
+  // ── Layer 2: Log mirror (acknowledge today's log) ──────────────────────
+  const todayLog = recentLogs.length > 0 ? recentLogs[0] : null;
+  if (todayLog) {
+    const { buildLayer2Wrapper } = await import("../services/layer2Wrappers");
+    const wrapper = buildLayer2Wrapper(todayLog, cycleInfo.phase);
+    if (wrapper) {
+      draftInsights = { ...draftInsights, layer2_wrapper: wrapper };
+    }
+  }
 
   // Soften for confidence tier
   draftInsights = softenForConfidenceTier(
     draftInsights, recentLogs.length, cycleInfo.phase, cycleInfo.currentDay,
   );
 
-  // Hormone language injection
-  if (
-    hormoneLanguage &&
-    context.mode === "personalized" &&
-    !draftInsights.whyThisIsHappening.includes("sleep") &&
-    !draftInsights.whyThisIsHappening.includes("stress") &&
-    !draftInsights.whyThisIsHappening.includes("strain")
-  ) {
+  // Hormone language injection — append to body_note when relevant
+  if (hormoneLanguage && context.mode === "personalized") {
     draftInsights = {
       ...draftInsights,
-      whyThisIsHappening: `${draftInsights.whyThisIsHappening} ${hormoneLanguage}`.trim(),
+      body_note: `${draftInsights.body_note} ${hormoneLanguage}`.trim(),
     };
   }
 
@@ -227,18 +236,9 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
 
     draftInsights = {
       ...draftInsights,
-      physical: stripHormonalLanguage(draftInsights.physical),
-      mental: stripHormonalLanguage(draftInsights.mental),
-      emotional: stripHormonalLanguage(draftInsights.emotional),
-      orientation: stripHormonalLanguage(draftInsights.orientation),
-      allowance: stripHormonalLanguage(draftInsights.allowance),
-      physicalInsight: stripHormonalLanguage(draftInsights.physicalInsight),
-      mentalInsight: stripHormonalLanguage(draftInsights.mentalInsight),
-      emotionalInsight: stripHormonalLanguage(draftInsights.emotionalInsight),
-      whyThisIsHappening: stripHormonalLanguage(draftInsights.whyThisIsHappening),
-      solution: stripHormonalLanguage(draftInsights.solution),
+      layer1_insight: stripHormonalLanguage(draftInsights.layer1_insight),
+      body_note: stripHormonalLanguage(draftInsights.body_note),
       recommendation: stripHormonalLanguage(draftInsights.recommendation),
-      tomorrowPreview: stripHormonalLanguage(draftInsights.tomorrowPreview),
     };
   }
 
@@ -246,7 +246,7 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
   if (isIrregular || cyclePrediction.confidence === "irregular") {
     draftInsights = {
       ...draftInsights,
-      whyThisIsHappening: draftInsights.whyThisIsHappening
+      layer1_insight: draftInsights.layer1_insight
         .replace(/\bthis phase\b/gi, "this part of your cycle")
         .replace(/\btoday\b/gi, "around this time"),
     };
@@ -254,43 +254,30 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
 
   // Delayed period override
   if (isPeriodDelayed) {
-    let physicalInsight: string;
+    let delayedInsight: string;
     if (daysOverdue <= 3) {
-      physicalInsight = "Your period is a little late — this can happen with stress, travel, or lifestyle changes.";
+      delayedInsight = "Your period is a little late — this can happen with stress, travel, or lifestyle changes.";
     } else if (daysOverdue <= 7) {
-      physicalInsight = `Your period is ${daysOverdue} days late. If you're concerned, a pregnancy test or doctor visit might help.`;
+      delayedInsight = `Your period is ${daysOverdue} days late. If you're concerned, a pregnancy test or doctor visit might help.`;
     } else if (daysOverdue <= 14) {
-      physicalInsight = `Your period is ${daysOverdue} days late — that's significantly late. Consider a pregnancy test or checking in with your doctor.`;
+      delayedInsight = `Your period is ${daysOverdue} days late — that's significantly late. Consider a pregnancy test or checking in with your doctor.`;
     } else {
-      physicalInsight = `Your period is more than two weeks late (${daysOverdue} days). We'd recommend seeing a doctor.`;
+      delayedInsight = `Your period is more than two weeks late (${daysOverdue} days). We'd recommend seeing a doctor.`;
     }
     draftInsights = {
       ...draftInsights,
-      physicalInsight,
-      emotionalInsight: "It's natural to feel uncertain when your cycle doesn't follow the expected pattern.",
-      whyThisIsHappening: isIrregular
+      layer1_insight: delayedInsight,
+      body_note: isIrregular
         ? "Irregular cycles can vary significantly — a late period doesn't always mean something is wrong."
         : "Even regular cycles can be shifted by stress, illness, travel, or changes in routine.",
-      tomorrowPreview: "Keep logging how you feel — the more data you have, the better we can support you.",
     };
   }
 
   // Pre-GPT deterministic softening
   draftInsights = {
     ...draftInsights,
-    physical: draftInsights.physical,
-    mental: draftInsights.mental,
-    emotional: draftInsights.emotional,
-    orientation: draftInsights.orientation,
-    allowance: draftInsights.allowance,
-    nudge: draftInsights.nudge,
-    physicalInsight: softendeterministic(draftInsights.physicalInsight, context.confidenceScore),
-    mentalInsight: softendeterministic(draftInsights.mentalInsight, context.confidenceScore),
-    emotionalInsight: softendeterministic(draftInsights.emotionalInsight, context.confidenceScore),
-    whyThisIsHappening: softendeterministic(draftInsights.whyThisIsHappening, context.confidenceScore),
-    solution: draftInsights.solution,
-    recommendation: draftInsights.recommendation,
-    tomorrowPreview: softendeterministic(draftInsights.tomorrowPreview, context.confidenceScore),
+    layer1_insight: softendeterministic(draftInsights.layer1_insight, context.confidenceScore),
+    body_note: softendeterministic(draftInsights.body_note, context.confidenceScore),
   };
 
   const logsCount = recentLogs.length;
@@ -362,28 +349,7 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     insights = applyMomentumBreakNarrative(insights, momentumCheck.streakDays);
   }
 
-  // Primary key rotation
-  const currentPrimaryKey = resolvePrimaryInsightKey(context);
-  const recentHistory =
-    context.mode === "personalized"
-      ? await prisma.insightHistory.findMany({
-          where: { userId: req.userId! },
-          orderBy: { createdAt: "desc" },
-          take: 3,
-          select: { primaryKey: true },
-        })
-      : [];
-
-  let primaryKeyOverride: ReturnType<typeof resolvePrimaryInsightKey> | null = null;
-  if (context.mode === "personalized" && shouldSuppressPrimary(currentPrimaryKey, recentHistory)) {
-    primaryKeyOverride = pickNovelPrimaryKey(
-      currentPrimaryKey, recentHistory, context.priorityDrivers[0] || null,
-    );
-  }
   const driverForMemory = context.priorityDrivers[0] || null;
-  if (driverForMemory === "bleeding_heavy" || driverForMemory === "high_strain") {
-    primaryKeyOverride = null;
-  }
 
   insights = cleanupInsightText(insights);
 
@@ -404,7 +370,7 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
 
   const progress = { logsCount, nextMilestone, logsToNextMilestone: Math.max(0, nextMilestone - logsCount) };
   const view = buildInsightView(context, insights, {
-    primaryKeyOverride, logsCount, completedCycles: completedCycleCount, progress,
+    logsCount, completedCycles: completedCycleCount, progress,
   });
 
   // ── Cache + respond ─────────────────────────────────────────────────────
@@ -480,26 +446,15 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
     ? { show: true, label: "Has your period started?", ctaText: "Log period" }
     : null;
 
-  const insightBasis = buildInsightBasis(logsCount, completedCycleCount);
   const responsePayload = {
     cycleDay: cachePayload.cycleDay,
     isNewUser: cachePayload.isNewUser,
-    progress: cachePayload.progress,
     confidence: cachePayload.confidence,
     isPeriodDelayed: cachePayload.isPeriodDelayed,
     daysOverdue: cachePayload.daysOverdue,
     isIrregular: cachePayload.isIrregular,
-    insights: cachePayload.insights,
-    view: cachePayload.view,
-    vyana: {
-      physical: insights.physical ?? view.vyana.physical,
-      mental: insights.mental ?? view.vyana.mental,
-      emotional: insights.emotional ?? view.vyana.emotional,
-      orientation: view.vyana.orientation,
-      allowance: view.vyana.allowance,
-      nudge: insights.nudge ?? "",
-    },
-    insightBasis,
+    // Layered insight response (includes insight, body_note, orientation, recommendation, progress, etc.)
+    ...view,
     aiEnhanced: cachePayload.aiEnhanced,
     transitionWarmup,
     periodAction,
@@ -516,11 +471,10 @@ export async function getInsights(req: Request, res: Response): Promise<void> {
 
   // Fire-and-forget: insight history
   if (context.mode === "personalized") {
-    const resolvedPrimaryKey = primaryKeyOverride ?? currentPrimaryKey;
     prisma.insightHistory.create({
       data: {
         userId: req.userId!,
-        primaryKey: resolvedPrimaryKey,
+        primaryKey: "layer1",
         driver: driverForMemory,
         cycleDay: cycleInfo.currentDay,
         phase: cycleInfo.phase,
@@ -604,8 +558,6 @@ export async function getInsightsForecast(req: Request, res: Response): Promise<
 
   const todayCycle = calculateCycleInfo(user.lastPeriodStart, effectiveCycleLength, cycleMode);
   const cycleNumber = getCycleNumber(user.lastPeriodStart, effectiveCycleLength);
-  const variantIndex = (cycleNumber % 3) as 0 | 1 | 2;
-
   const phaseBaselineLogs = baselineLogs.filter((log) => {
     const logPhase = calculateCycleInfoForDate(
       user.lastPeriodStart, new Date(log.date), effectiveCycleLength, cycleMode,
@@ -619,6 +571,7 @@ export async function getInsightsForecast(req: Request, res: Response): Promise<
   const context = buildInsightContext(
     todayCycle.phase, todayCycle.currentDay, recentLogs, baselineForComparison,
     baselineScope, cycleNumber, effectiveCycleLength, cycleMode, cyclePrediction.confidence,
+    todayCycle.phaseDay,
   );
 
   const logsCount = recentLogs.length;
@@ -673,9 +626,11 @@ export async function getInsightsForecast(req: Request, res: Response): Promise<
   );
 
   const { getDayInsight } = await import("../services/cycleInsightLibrary");
-  const tomorrowNormalizedDay = tomorrowCycle.currentDay;
-  const tomorrowInsight = getDayInsight(tomorrowNormalizedDay, variantIndex, cycleMode);
-  const tomorrowOutlook = tomorrowInsight.nudge;
+  const tomorrowVariant = selectVariant(
+    req.userId!, cycleNumber, tomorrowCycle.currentDay, tomorrowCycle.phase, tomorrowCycle.phaseDay,
+  );
+  const tomorrowInsight = getDayInsight(tomorrowCycle.phase, tomorrowCycle.phaseDay, tomorrowVariant, cycleMode);
+  const tomorrowOutlook = tomorrowInsight.body_note;
 
   const nextPhaseInDays = todayCycle.daysUntilNextPhase;
   const softenedOutlook = softendeterministic(tomorrowOutlook, context.confidenceScore);

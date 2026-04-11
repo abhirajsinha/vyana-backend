@@ -14,13 +14,12 @@
 import type { Phase } from "./cycleEngine";
 
 export interface DailyInsightsShape {
-  physicalInsight: string;
-  mentalInsight: string;
-  emotionalInsight: string;
-  whyThisIsHappening: string;
-  solution: string;
+  layer1_insight: string;
+  body_note: string;
+  layer2_wrapper?: string;
+  layer3_sentence?: string;
+  orientation: string;
   recommendation: string;
-  tomorrowPreview: string;
 }
 
 export type PhaseDirection = "low" | "improving" | "rising" | "peak" | "stable" | "declining";
@@ -459,14 +458,14 @@ const NEGATIVE_SIGNALS = /\b(harder|low|draining|exhausting|worse|heavy|heavier|
 
 function applyConsistencyGuard(insights: DailyInsightsShape): DailyInsightsShape {
   const result = { ...insights };
-  const allText = Object.values(result).join(" ");
+  const allText = Object.values(result).filter(Boolean).join(" ");
 
   const hasImproving = IMPROVING_SIGNALS.test(allText);
   const hasNegative = NEGATIVE_SIGNALS.test(allText);
 
   if (hasImproving && hasNegative) {
     // Check which direction the majority of fields lean
-    const fields = Object.values(result);
+    const fields = Object.values(result).filter((v): v is string => typeof v === "string");
     let improvingCount = 0;
     let negativeCount = 0;
     for (const field of fields) {
@@ -477,15 +476,15 @@ function applyConsistencyGuard(insights: DailyInsightsShape): DailyInsightsShape
     if (improvingCount >= negativeCount) {
       // Majority improving — soften negatives
       for (const key of Object.keys(result) as (keyof DailyInsightsShape)[]) {
-        if (NEGATIVE_SIGNALS.test(result[key]) && IMPROVING_SIGNALS.test(result[key])) {
+        const val = result[key];
+        if (val == null) continue;
+        if (NEGATIVE_SIGNALS.test(val) && IMPROVING_SIGNALS.test(val)) {
           // Same field has both — keep it, it's probably intentional nuance
           continue;
         }
         // FIX 1: Phrase-level replacements that don't break grammar
-        // OLD: \bharder\b → "a bit uneven" (broke "harder than" → "a bit uneven than")
-        // NEW: Match full phrases first, then standalone words with negative lookahead
-        if (NEGATIVE_SIGNALS.test(result[key]) && !IMPROVING_SIGNALS.test(result[key])) {
-          result[key] = result[key]
+        if (NEGATIVE_SIGNALS.test(val) && !IMPROVING_SIGNALS.test(val)) {
+          (result as Record<string, string>)[key] = val
             // Phrase-level replacements first (longer patterns before shorter)
             .replace(/\bharder than (?:they|it) should\b/gi, "not quite settled yet")
             .replace(/\bharder than usual\b/gi, "still settling")
@@ -506,8 +505,10 @@ function applyConsistencyGuard(insights: DailyInsightsShape): DailyInsightsShape
     } else {
       // Majority negative — soften overly positive claims
       for (const key of Object.keys(result) as (keyof DailyInsightsShape)[]) {
-        if (IMPROVING_SIGNALS.test(result[key]) && !NEGATIVE_SIGNALS.test(result[key])) {
-          result[key] = result[key]
+        const val = result[key];
+        if (val == null) continue;
+        if (IMPROVING_SIGNALS.test(val) && !NEGATIVE_SIGNALS.test(val)) {
+          (result as Record<string, string>)[key] = val
             .replace(/\blifting\b/gi, "may start to ease")
             .replace(/\bimproving\b/gi, "beginning to stabilize")
             .replace(/\bbetter\b/gi, "a little more settled");
@@ -797,12 +798,14 @@ export function applyAllGuards(input: InsightGuardInput): InsightGuardResult {
 
   // Process each field through the pipeline
   const keys: (keyof DailyInsightsShape)[] = [
-    "physicalInsight", "mentalInsight", "emotionalInsight",
-    "whyThisIsHappening", "solution", "recommendation", "tomorrowPreview",
+    "layer1_insight", "body_note",
+    "layer2_wrapper", "layer3_sentence",
+    "orientation", "recommendation",
   ];
 
   for (const key of keys) {
     let text = insights[key];
+    if (text == null) continue; // skip optional fields that are absent
 
     // Guard 1: Zero-data assertion softening
     if (isZeroData) {
@@ -839,42 +842,35 @@ export function applyAllGuards(input: InsightGuardInput): InsightGuardResult {
       if (text !== before) guardsApplied.push(`technical:${key}`);
     }
 
-    // Guard 6: Tomorrow-specific softening
-    if (key === "tomorrowPreview") {
-      const before = text;
-      text = applyTomorrowSoftener(text, logsCount);
-      if (text !== before) guardsApplied.push(`tomorrow:${key}`);
-    }
-
-    // Guard 7: Clinical language cleanup (all users)
+    // Guard 6: Clinical language cleanup (all users)
     {
       const before = text;
       text = applyClinicalLanguageGuard(text);
       if (text !== before) guardsApplied.push(`clinical:${key}`);
     }
 
-    // Guard 8: Energy language control (zero/low data)
+    // Guard 7: Energy language control (zero/low data)
     {
       const before = text;
       text = applyEnergyLanguageGuard(text, logsCount);
       if (text !== before) guardsApplied.push(`energy:${key}`);
     }
 
-    // Guard 9: Directive language softener (zero/low data)
+    // Guard 8: Directive language softener (zero/low data)
     {
       const before = text;
       text = applyDirectiveLanguageGuard(text, logsCount);
       if (text !== before) guardsApplied.push(`directive:${key}`);
     }
 
-    // Guard 10: Population framing (all users)
+    // Guard 9: Population framing (all users)
     {
       const before = text;
       text = applyPopulationFramingGuard(text);
       if (text !== before) guardsApplied.push(`population:${key}`);
     }
 
-    // Guard 11: Grammar repair (common GPT breaks)
+    // Guard 10: Grammar repair (common GPT breaks)
     {
       const before = text;
       text = applyGrammarRepair(text);
@@ -884,7 +880,7 @@ export function applyAllGuards(input: InsightGuardInput): InsightGuardResult {
     // Guard 11: Capitalize fix (always last — cleans up after all replacements)
     text = fixCapitalization(text);
 
-    insights[key] = text;
+    (insights as Record<string, string>)[key] = text;
   }
 
   // Guard 11: Cross-field consistency (only for zero/low-data users)
@@ -957,21 +953,20 @@ export function validateDirectionCorrectness(
 export function validateConsistency(insights: DailyInsightsShape): ValidationResult {
   const failures: string[] = [];
 
-  // Check physicalInsight vs emotionalInsight for contradiction
-  const physical = insights.physicalInsight.toLowerCase();
-  const emotional = insights.emotionalInsight.toLowerCase();
-  const mental = insights.mentalInsight.toLowerCase();
+  // Check layer1_insight vs body_note for contradiction
+  const layer1 = insights.layer1_insight.toLowerCase();
+  const bodyNote = insights.body_note.toLowerCase();
 
-  const physImproving = IMPROVING_SIGNALS.test(physical) && !NEGATIVE_SIGNALS.test(physical);
-  const physNeg = NEGATIVE_SIGNALS.test(physical) && !IMPROVING_SIGNALS.test(physical);
-  const emoImproving = IMPROVING_SIGNALS.test(emotional) && !NEGATIVE_SIGNALS.test(emotional);
-  const emoNeg = NEGATIVE_SIGNALS.test(emotional) && !IMPROVING_SIGNALS.test(emotional);
+  const layer1Improving = IMPROVING_SIGNALS.test(layer1) && !NEGATIVE_SIGNALS.test(layer1);
+  const layer1Neg = NEGATIVE_SIGNALS.test(layer1) && !IMPROVING_SIGNALS.test(layer1);
+  const bodyImproving = IMPROVING_SIGNALS.test(bodyNote) && !NEGATIVE_SIGNALS.test(bodyNote);
+  const bodyNeg = NEGATIVE_SIGNALS.test(bodyNote) && !IMPROVING_SIGNALS.test(bodyNote);
 
-  if (physImproving && emoNeg) {
-    failures.push(`Physical says improving but emotional says negative: "${insights.physicalInsight.substring(0, 50)}" vs "${insights.emotionalInsight.substring(0, 50)}"`);
+  if (layer1Improving && bodyNeg) {
+    failures.push(`layer1_insight says improving but body_note says negative: "${insights.layer1_insight.substring(0, 50)}" vs "${insights.body_note.substring(0, 50)}"`);
   }
-  if (physNeg && emoImproving) {
-    failures.push(`Physical says negative but emotional says improving`);
+  if (layer1Neg && bodyImproving) {
+    failures.push(`layer1_insight says negative but body_note says improving`);
   }
 
   return { pass: failures.length === 0, failures };

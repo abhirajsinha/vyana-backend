@@ -82,29 +82,16 @@ export function containsForbiddenLanguage(text: string): boolean {
   return FORBIDDEN_DETERMINISTIC_PHRASES.some((phrase) => lower.includes(phrase));
 }
 
-/** Run certainty softening on every insight field (GPT often omits solution/recommendation in draft soften pass). */
+/** Run certainty softening on every insight field (GPT often omits recommendation in draft soften pass). */
 export function softenDailyInsights(
   insights: DailyInsights,
   confidenceScore: number,
 ): DailyInsights {
   return {
     ...insights,
-    physicalInsight: softendeterministic(insights.physicalInsight, confidenceScore),
-    mentalInsight: softendeterministic(insights.mentalInsight, confidenceScore),
-    emotionalInsight: softendeterministic(
-      insights.emotionalInsight,
-      confidenceScore,
-    ),
-    whyThisIsHappening: softendeterministic(
-      insights.whyThisIsHappening,
-      confidenceScore,
-    ),
-    solution: softendeterministic(insights.solution, confidenceScore),
+    layer1_insight: softendeterministic(insights.layer1_insight, confidenceScore),
+    body_note: softendeterministic(insights.body_note, confidenceScore),
     recommendation: softendeterministic(insights.recommendation, confidenceScore),
-    tomorrowPreview: softendeterministic(
-      insights.tomorrowPreview,
-      confidenceScore,
-    ),
   };
 }
 
@@ -216,9 +203,8 @@ function hasContradiction(a: string, b: string): boolean {
 
 export function cleanupInsightText(insights: DailyInsights): DailyInsights {
   const cleaned = { ...insights };
-  const keys: (keyof DailyInsights)[] = [
-    "physicalInsight", "mentalInsight", "emotionalInsight",
-    "whyThisIsHappening", "solution", "recommendation", "tomorrowPreview",
+  const keys: (keyof Pick<DailyInsights, "layer1_insight" | "body_note" | "recommendation">)[] = [
+    "layer1_insight", "body_note", "recommendation",
   ];
   for (const k of keys) {
     cleaned[k] = cleaned[k]
@@ -232,25 +218,17 @@ export function cleanupInsightText(insights: DailyInsights): DailyInsights {
     cleaned[k] = dedupSentences(cleaned[k]);
   }
 
-  if (hasContradiction(cleaned.physicalInsight, cleaned.mentalInsight)) {
-    const physNeg = NEGATIVE_MARKERS.some(m => cleaned.physicalInsight.toLowerCase().includes(m));
-    if (physNeg) {
-      cleaned.mentalInsight = cleaned.mentalInsight
+  // Check for contradictions between layer1_insight and body_note
+  if (hasContradiction(cleaned.layer1_insight, cleaned.body_note)) {
+    const layer1Neg = NEGATIVE_MARKERS.some(m => cleaned.layer1_insight.toLowerCase().includes(m));
+    if (layer1Neg) {
+      cleaned.body_note = cleaned.body_note
         .replace(/\bbalanced\b/gi, "under some pressure")
         .replace(/\bsteady\b/gi, "affected");
     } else {
-      cleaned.physicalInsight = cleaned.physicalInsight
+      cleaned.layer1_insight = cleaned.layer1_insight
         .replace(/\bstrain\b/gi, "adjustment")
         .replace(/\bhigh strain\b/gi, "some strain");
-    }
-  }
-
-  if (hasContradiction(cleaned.emotionalInsight, cleaned.physicalInsight)) {
-    const emoNeg = NEGATIVE_MARKERS.some(m => cleaned.emotionalInsight.toLowerCase().includes(m));
-    if (!emoNeg) {
-      cleaned.emotionalInsight = cleaned.emotionalInsight
-        .replace(/\bsteady\b/gi, "under some pressure")
-        .replace(/\bbalanced\b/gi, "shifted");
     }
   }
 

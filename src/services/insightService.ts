@@ -4,7 +4,7 @@ import {
   CyclePredictionConfidence,
   Phase,
 } from "./cycleEngine";
-import { getDayInsight, getNormalizedDay } from "./cycleInsightLibrary";
+import { getDayInsight, getNormalizedDay, buildOrientationLine, type VariantKey } from "./cycleInsightLibrary";
 
 type Trend = "increasing" | "decreasing" | "stable" | "insufficient";
 
@@ -81,8 +81,9 @@ export interface InsightContext {
   recentLogsCount: number;
   cycleDay: number;
   normalizedDay: number;
+  phaseDay: number;
   phase: Phase;
-  variantIndex: 0 | 1 | 2;
+  variant: VariantKey;
   cycleMode: CycleMode;
   cyclePredictionConfidence: CyclePredictionConfidence;
   physical_state: SignalState["physicalState"];
@@ -108,21 +109,14 @@ export interface InsightContext {
 }
 
 export interface DailyInsights {
-  // New Vyana Voice fields (from template)
-  physical: string;
-  mental: string;
-  emotional: string;
+  // Layered insight response (per LAYERED_INSIGHTS_RULES.md)
+  layer1_insight: string;
+  body_note: string;
+  layer2_wrapper?: string;
+  layer3_sentence?: string;
   orientation: string;
-  allowance: string;
-  nudge: string;
-  // Legacy compatibility — GPT still uses these names
-  physicalInsight: string;
-  mentalInsight: string;
-  emotionalInsight: string;
-  whyThisIsHappening: string;
-  solution: string;
+  // Action/recommendation (signal-driven when personalized, body_note when fallback)
   recommendation: string;
-  tomorrowPreview: string;
 }
 
 type InsightDriver =
@@ -425,10 +419,12 @@ function resolvePriorityDrivers(input: {
   moodTrend: TrendState["moodTrend"];
   moodState: SignalState["moodState"];
   cycleDay: number;
-  variantIndex: 0 | 1 | 2;
+  phase: Phase;
+  phaseDay: number;
+  variant: VariantKey;
 }): InsightDriver[] {
-  // Boost physical drivers on days with very_low library energy (days 1–2, day 28)
-  const isVeryLowEnergyDay = getDayInsight(input.cycleDay, input.variantIndex).energyLevel === "very_low";
+  // Boost physical drivers on days with very_low library energy (menstrual days 1–2, luteal day 14)
+  const isVeryLowEnergyDay = getDayInsight(input.phase, input.phaseDay, input.variant).energyLevel === "very_low";
   const physicalBoost = isVeryLowEnergyDay ? 0.3 : 0;
 
   const candidates: Array<{ key: InsightDriver; score: number; active: boolean }> = [
@@ -467,6 +463,7 @@ export function buildInsightContext(
   cycleLength: number = 28,
   cycleMode: CycleMode = "natural",
   cyclePredictionConfidence: CyclePredictionConfidence = "unknown",
+  phaseDay: number = 1,
 ): InsightContext {
   const normalizedDay = getNormalizedDay(cycleDay, cycleLength, phase);
   const recentLogsCount = recentLogs.length;
@@ -486,8 +483,9 @@ export function buildInsightContext(
 
   const confidence: InsightContext["confidence"] =
     recentLogs.length >= 5 ? "high" : recentLogs.length >= 3 ? "medium" : "low";
-  // Map confidence to variantIndex: low=0 (tentative), medium=1 (grounded), high=2 (earned identity)
-  const variantIndex = (confidence === "high" ? 2 : confidence === "medium" ? 1 : 0) as 0 | 1 | 2;
+  // Variant is now selected externally via selectVariant() and passed via cycleNumber param
+  // For backward compat, default to "A" here — the controller overrides this
+  const variant: VariantKey = "A";
   const trendCount = trendList.length;
   const signalStrength =
     (signals.physicalState === "high_strain" ? 1 : 0) +
@@ -512,7 +510,9 @@ export function buildInsightContext(
     moodTrend: trends.moodTrend,
     moodState: signals.moodState,
     cycleDay,
-    variantIndex,
+    phase,
+    phaseDay,
+    variant,
   });
 
   const reasoning = [
@@ -538,8 +538,9 @@ export function buildInsightContext(
     recentLogsCount,
     cycleDay,
     normalizedDay,
+    phaseDay,
     phase,
-    variantIndex,
+    variant,
     cycleMode,
     cyclePredictionConfidence,
     physical_state: signals.physicalState,
@@ -595,11 +596,7 @@ function isSignalPositive(ctx: InsightContext): boolean {
 
 function buildPhysicalInsight(ctx: InsightContext): string {
   if (ctx.mode === "fallback") {
-    let out = getDayInsight(
-      ctx.normalizedDay,
-      ctx.variantIndex,
-      ctx.cycleMode,
-    ).physical;
+    let out = getDayInsight(ctx.phase, ctx.phaseDay, ctx.variant, ctx.cycleMode).insight;
     if (ctx.cyclePredictionConfidence === "irregular") {
       out = out.replace(/\btoday\b/gi, "around this time").replace(/\busually\b/gi, "often");
     }
@@ -648,11 +645,7 @@ function buildPhysicalInsight(ctx: InsightContext): string {
 
 function buildMentalInsight(ctx: InsightContext): string {
   if (ctx.mode === "fallback") {
-    let out = getDayInsight(
-      ctx.normalizedDay,
-      ctx.variantIndex,
-      ctx.cycleMode,
-    ).mental;
+    let out = getDayInsight(ctx.phase, ctx.phaseDay, ctx.variant, ctx.cycleMode).insight;
     if (ctx.cyclePredictionConfidence === "irregular") {
       out = out.replace(/\btoday\b/gi, "around this time").replace(/\busually\b/gi, "often");
     }
@@ -700,11 +693,7 @@ function buildMentalInsight(ctx: InsightContext): string {
 
 function buildEmotionalInsight(ctx: InsightContext): string {
   if (ctx.mode === "fallback") {
-    return getDayInsight(
-      ctx.normalizedDay,
-      ctx.variantIndex,
-      ctx.cycleMode,
-    ).emotional;
+    return getDayInsight(ctx.phase, ctx.phaseDay, ctx.variant, ctx.cycleMode).insight;
   }
 
   if (ctx.emotional_state === "loaded") {
@@ -768,7 +757,7 @@ function buildRecommendation(ctx: InsightContext): string {
   const primary = ctx.priorityDrivers[0];
   if (!primary) {
     if (ctx.mode === "fallback") {
-      return getDayInsight(ctx.cycleDay, ctx.variantIndex).allowance;
+      return getDayInsight(ctx.phase, ctx.phaseDay, ctx.variant, ctx.cycleMode).body_note;
     }
     if (isPeakPositiveWindow(ctx) || isSignalPositive(ctx)) {
       return `Lean into momentum today — social plans, focused work, or anything that needs your full presence tend to land easier in this window.`;
@@ -821,18 +810,14 @@ function buildRecommendation(ctx: InsightContext): string {
     return `5 minutes of focused breathing now will lower the mental weight more than powering through.`;
   }
   if (ctx.mode === "fallback") {
-    return getDayInsight(ctx.cycleDay, ctx.variantIndex).allowance;
+    return getDayInsight(ctx.phase, ctx.phaseDay, ctx.variant, ctx.cycleMode).body_note;
   }
   return `Keep your current rhythm and add one anchor habit today (sleep timing or movement) for consistency.`;
 }
 
 function buildWhyThisIsHappening(ctx: InsightContext): string {
   if (ctx.recentLogsCount === 0) {
-    return getDayInsight(
-      ctx.normalizedDay,
-      ctx.variantIndex,
-      ctx.cycleMode,
-    ).orientation;
+    return getDayInsight(ctx.phase, ctx.phaseDay, ctx.variant, ctx.cycleMode).body_note;
   }
 
   // If the engine decided we have a strong signal, prefer signal-derived reasoning
@@ -922,34 +907,29 @@ export function insightContextAsStableBaseline(ctx: InsightContext): InsightCont
   };
 }
 
-export function generateRuleBasedInsights(ctx: InsightContext): DailyInsights {
-  const dayInsight = getDayInsight(ctx.normalizedDay, ctx.variantIndex, ctx.cycleMode);
+export function generateRuleBasedInsights(
+  ctx: InsightContext,
+  daysToNextPeriod: number = 0,
+): DailyInsights {
+  const dayInsight = getDayInsight(ctx.phase, ctx.phaseDay, ctx.variant, ctx.cycleMode);
 
-  // Build legacy fields for backward compat
-  const physicalInsight = buildPhysicalInsight(ctx);
-  const mentalInsight = buildMentalInsight(ctx);
-  const emotionalInsight = buildEmotionalInsight(ctx);
-  const whyThisIsHappening = buildWhyThisIsHappening(ctx);
-  const solution = buildRecommendation(ctx);
-  const recommendation = buildBroaderGuidance(ctx);
-  const tomorrowPreview = dayInsight.nudge; // Use nudge as tomorrowPreview for now
+  // Layer 1: always present — from the 6-variant library
+  const layer1_insight = dayInsight.insight;
+  const body_note = dayInsight.body_note;
+
+  // Orientation: computed from cycle context
+  const orientation = buildOrientationLine(ctx.cycleDay, ctx.phase, daysToNextPeriod);
+
+  // Recommendation: signal-driven when personalized, body_note when fallback
+  const recommendation = ctx.mode === "fallback"
+    ? dayInsight.body_note
+    : buildRecommendation(ctx);
 
   return {
-    // New Vyana Voice fields (from template)
-    physical: dayInsight.physical,
-    mental: dayInsight.mental,
-    emotional: dayInsight.emotional,
-    orientation: dayInsight.orientation,
-    allowance: dayInsight.allowance,
-    nudge: dayInsight.nudge,
-    // Legacy fields (for GPT + guards + backward compat)
-    physicalInsight,
-    mentalInsight,
-    emotionalInsight,
-    whyThisIsHappening,
-    solution,
+    layer1_insight,
+    body_note,
+    orientation,
     recommendation,
-    tomorrowPreview,
   };
 }
 
@@ -990,19 +970,10 @@ function rewriteForZeroData(insights: DailyInsights, phase: Phase, cycleDay: num
       .trim();
 
   return {
-    physical: soften(insights.physical),
-    mental: soften(insights.mental),
-    emotional: soften(insights.emotional),
-    orientation: soften(insights.orientation),
-    allowance: soften(insights.allowance),
-    nudge: insights.nudge,
-    physicalInsight: soften(insights.physicalInsight),
-    mentalInsight: soften(insights.mentalInsight),
-    emotionalInsight: soften(insights.emotionalInsight),
-    whyThisIsHappening: soften(insights.whyThisIsHappening),
-    solution: soften(insights.solution),
+    layer1_insight: soften(insights.layer1_insight),
+    body_note: soften(insights.body_note),
+    orientation: insights.orientation,
     recommendation: soften(insights.recommendation),
-    tomorrowPreview: soften(insights.tomorrowPreview),
   };
 }
 
@@ -1035,19 +1006,10 @@ export function softenForConfidenceTier(
         .replace(/\bYour pattern shows\b/gi, "Your recent log suggests")
         .replace(/\bOver the last few days\b/gi, "Based on your recent log");
     return {
-      physical: lightSoften(insights.physical),
-      mental: lightSoften(insights.mental),
-      emotional: lightSoften(insights.emotional),
-      orientation: lightSoften(insights.orientation),
-      allowance: lightSoften(insights.allowance),
-      nudge: insights.nudge,
-      physicalInsight: lightSoften(insights.physicalInsight),
-      mentalInsight: lightSoften(insights.mentalInsight),
-      emotionalInsight: lightSoften(insights.emotionalInsight),
-      whyThisIsHappening: lightSoften(insights.whyThisIsHappening),
-      solution: lightSoften(insights.solution),
+      layer1_insight: lightSoften(insights.layer1_insight),
+      body_note: lightSoften(insights.body_note),
+      orientation: insights.orientation,
       recommendation: lightSoften(insights.recommendation),
-      tomorrowPreview: lightSoften(insights.tomorrowPreview),
     };
   }
 
@@ -1117,8 +1079,7 @@ export function applyMomentumBreakNarrative(
 ): DailyInsights {
   return {
     ...insights,
-    physicalInsight: `Today feels rougher than your recent ${streakDays}-day streak — that's a real contrast, and your body is noticing it.`,
-    emotionalInsight: `One harder day doesn't erase the good stretch you've had — it just feels sharper because you've been doing well.`,
-    whyThisIsHappening: `After ${streakDays} solid days, a dip like this stands out more. It doesn't mean the pattern is breaking — it's just one off day.`,
+    layer1_insight: `Today feels rougher than your recent ${streakDays}-day streak — that's a real contrast, and your body is noticing it. One harder day doesn't erase the good stretch you've had.`,
+    body_note: `After ${streakDays} solid days, a dip stands out more. It doesn't mean the pattern is breaking — it's just one off day.`,
   };
 }

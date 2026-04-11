@@ -1,1100 +1,1405 @@
 import type { CycleMode, Phase } from "./cycleEngine";
 
-// ─── Field Structure (Final Vyana Voice) ────────────────────────────────────
-//
-// physical    — What the body might be feeling
-// mental      — What focus/clarity might be like
-// emotional   — What emotions might feel like
-// orientation — Grounded context (time-location only, no teaching)
-// allowance   — What feels okay right now (ZERO action verbs)
-// nudge       — What logging unlocks next
-//
-// Tiers:
-//   [0] = Zero logs — observational, "can feel", no identity
-//   [1] = Medium — "You've noticed...", memory hints, no patterns
-//   [2] = High — "For you...", earned, uses "often" not "always"
+// ─── New Layered Insight Types (6-variant A-F) ─────────────────────────────
 
-export interface DayInsight {
-  cycleDay: number;
-  phase: Phase;
-  physical: [string, string, string];
-  mental: [string, string, string];
-  emotional: [string, string, string];
-  orientation: [string, string, string];
-  allowance: [string, string, string];
-  nudge: [string, string, string];
-  energyLevel: "very_low" | "low" | "moderate" | "rising" | "high" | "declining";
-  focusLevel: "poor" | "moderate" | "good" | "sharp";
+export type VariantKey = "A" | "B" | "C" | "D" | "E" | "F";
+
+export interface VariantContent {
+  insight: string;
+  body_note: string;
 }
+
+export interface PhaseDayEntry {
+  phaseDay: number;
+  variants: Record<VariantKey, VariantContent>;
+}
+
+/** @deprecated Use PhaseDayEntry instead. */
+export type DayEntry = PhaseDayEntry & { phase: Phase };
 
 export interface ResolvedDayInsight {
-  physical: string;
-  mental: string;
-  emotional: string;
-  orientation: string;
-  allowance: string;
-  nudge: string;
-  energyLevel: DayInsight["energyLevel"];
-  focusLevel: DayInsight["focusLevel"];
+  insight: string;
+  body_note: string;
+  energyLevel: EnergyLevel;
+  focusLevel: FocusLevel;
 }
+
+type EnergyLevel =
+  | "very_low"
+  | "low"
+  | "moderate"
+  | "rising"
+  | "high"
+  | "declining";
+type FocusLevel = "poor" | "moderate" | "good" | "sharp";
+
+// ─── Variant Selection (weighted rotation per LAYERED_INSIGHTS_RULES §13) ──
+
+const VARIANT_WEIGHTS: Record<VariantKey, number> = {
+  A: 0.2,
+  B: 0.2,
+  E: 0.25,
+  D: 0.2,
+  C: 0.075,
+  F: 0.075,
+};
+
+/** Simple deterministic hash for stable variant selection. */
+function simpleHash(str: string): number {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) - hash + str.charCodeAt(i)) | 0;
+  }
+  return Math.abs(hash);
+}
+
+/**
+ * Select a variant using weighted rotation with special rules:
+ * - Late luteal (phaseDay 10-14): boost D weight to 0.35
+ * - Day 1 of new cycle: prefer A or B
+ * - Never repeat same variant for same user on consecutive cycles for same phaseDay
+ */
+export function selectVariant(
+  userId: string,
+  cycleNumber: number,
+  cycleDay: number,
+  phase: Phase,
+  phaseDay: number,
+): VariantKey {
+  const weights = { ...VARIANT_WEIGHTS };
+
+  // Late luteal: boost D (reframing matters most here)
+  if (phase === "luteal" && phaseDay >= 10) {
+    const dBoost = 0.35 - weights.D;
+    weights.D = 0.35;
+    // Redistribute from others proportionally
+    const others: VariantKey[] = ["A", "B", "E", "C", "F"];
+    const othersTotal = others.reduce((s, k) => s + weights[k], 0);
+    for (const k of others) {
+      weights[k] -= (weights[k] / othersTotal) * dBoost;
+    }
+  }
+
+  // Day 1 of new cycle: heavily prefer A or B
+  if (cycleDay === 1) {
+    const abWeight = 0.85;
+    weights.A = abWeight / 2;
+    weights.B = abWeight / 2;
+    const remaining = 1 - abWeight;
+    const otherKeys: VariantKey[] = ["C", "D", "E", "F"];
+    for (const k of otherKeys) weights[k] = remaining / otherKeys.length;
+  }
+
+  // Compute previous cycle's variant for same day to avoid repeats
+  const prevSeed = simpleHash(`${userId}-${cycleNumber - 1}-${cycleDay}`);
+  const prevVariant = pickFromWeights(VARIANT_WEIGHTS, prevSeed);
+
+  // Exclude previous variant and redistribute
+  if (weights[prevVariant] > 0) {
+    const excluded = weights[prevVariant];
+    weights[prevVariant] = 0;
+    const remaining = Object.entries(weights).filter(([, w]) => w > 0);
+    const total = remaining.reduce((s, [, w]) => s + w, 0);
+    for (const [k] of remaining) {
+      weights[k as VariantKey] += (weights[k as VariantKey] / total) * excluded;
+    }
+  }
+
+  const seed = simpleHash(`${userId}-${cycleNumber}-${cycleDay}`);
+  return pickFromWeights(weights, seed);
+}
+
+function pickFromWeights(
+  weights: Record<VariantKey, number>,
+  seed: number,
+): VariantKey {
+  const keys: VariantKey[] = ["A", "B", "E", "D", "C", "F"];
+  const total = keys.reduce((s, k) => s + weights[k], 0);
+  let r = ((seed % 10000) / 10000) * total;
+  for (const k of keys) {
+    r -= weights[k];
+    if (r <= 0) return k;
+  }
+  return keys[0];
+}
+
+// ─── Energy/Focus Lookup (keyed by phase + phaseDay) ──────────────────────
+
+export const PHASE_ENERGY_MAP: Record<
+  Phase,
+  Array<{ energyLevel: EnergyLevel; focusLevel: FocusLevel }>
+> = {
+  menstrual: [
+    { energyLevel: "very_low", focusLevel: "poor" }, // phaseDay 1
+    { energyLevel: "very_low", focusLevel: "poor" }, // phaseDay 2
+    { energyLevel: "low", focusLevel: "poor" }, // phaseDay 3
+    { energyLevel: "low", focusLevel: "moderate" }, // phaseDay 4
+    { energyLevel: "low", focusLevel: "moderate" }, // phaseDay 5
+  ],
+  follicular: [
+    { energyLevel: "rising", focusLevel: "moderate" }, // phaseDay 1
+    { energyLevel: "rising", focusLevel: "moderate" }, // phaseDay 2
+    { energyLevel: "rising", focusLevel: "good" }, // phaseDay 3
+    { energyLevel: "high", focusLevel: "good" }, // phaseDay 4
+    { energyLevel: "high", focusLevel: "sharp" }, // phaseDay 5
+    { energyLevel: "high", focusLevel: "sharp" }, // phaseDay 6
+    { energyLevel: "high", focusLevel: "sharp" }, // phaseDay 7
+    { energyLevel: "high", focusLevel: "sharp" }, // phaseDay 8
+  ],
+  ovulation: [
+    { energyLevel: "high", focusLevel: "sharp" }, // phaseDay 1
+  ],
+  luteal: [
+    { energyLevel: "moderate", focusLevel: "good" }, // phaseDay 1
+    { energyLevel: "moderate", focusLevel: "good" }, // phaseDay 2
+    { energyLevel: "moderate", focusLevel: "good" }, // phaseDay 3
+    { energyLevel: "moderate", focusLevel: "moderate" }, // phaseDay 4
+    { energyLevel: "moderate", focusLevel: "moderate" }, // phaseDay 5
+    { energyLevel: "moderate", focusLevel: "moderate" }, // phaseDay 6
+    { energyLevel: "declining", focusLevel: "moderate" }, // phaseDay 7
+    { energyLevel: "declining", focusLevel: "moderate" }, // phaseDay 8
+    { energyLevel: "declining", focusLevel: "moderate" }, // phaseDay 9
+    { energyLevel: "declining", focusLevel: "poor" }, // phaseDay 10
+    { energyLevel: "declining", focusLevel: "poor" }, // phaseDay 11
+    { energyLevel: "low", focusLevel: "poor" }, // phaseDay 12
+    { energyLevel: "low", focusLevel: "poor" }, // phaseDay 13
+    { energyLevel: "very_low", focusLevel: "poor" }, // phaseDay 14
+  ],
+};
+
+/** @deprecated Use PHASE_ENERGY_MAP instead. */
+export const DAY_ENERGY_MAP = PHASE_ENERGY_MAP;
 
 // ─── CONTRACEPTION TEMPLATES ────────────────────────────────────────────────
 
-export interface ContraceptionTemplates {
-  physical: [string, string, string];
-  mental: [string, string, string];
-  emotional: [string, string, string];
-  orientation: [string, string, string];
-  allowance: [string, string, string];
+export interface ContraceptionInsightTemplate {
+  insight: string;
+  body_note: string;
 }
 
-export const HORMONAL_CONTRACEPTION_TEMPLATES: ContraceptionTemplates = {
-  physical: [
+export const HORMONAL_CONTRACEPTION_TEMPLATE: ContraceptionInsightTemplate = {
+  insight:
     "Energy shifts can still happen. On contraception, they tend to follow sleep and stress more than your cycle.",
-    "Energy has been shifting for you. It tends to track with how you've slept and what you're carrying.",
-    "For you, energy often follows sleep and stress more than cycle timing. That's clear across your entries.",
-  ],
-  mental: [
-    "Focus can still move day to day. Without strong hormonal swings, sleep and mental load tend to drive it.",
-    "Focus varies for you. It tends to follow how rested you are.",
-    "Focus tracks with rest and stress for you. Reliably.",
-  ],
-  emotional: [
-    "Emotions can still shift. On contraception, the swings tend to be flatter, but they're still real.",
-    "Emotional shifts show up for you even on contraception. They're real. Just driven by different things.",
-    "Emotional shifts are present for you. Tied to life factors, not hormones. That's your rhythm.",
-  ],
-  orientation: [
-    "On hormonal contraception.",
-    "On hormonal contraception.",
-    "On hormonal contraception.",
-  ],
-  allowance: [
-    "What shows up is still real.",
-    "Your rhythms are still yours.",
-    "You know what drives your days.",
-  ],
+  body_note: "What shows up is still real — just driven by different factors.",
 };
 
-export const POST_IPILL_TEMPLATES: ContraceptionTemplates = {
-  physical: [
+export const POST_IPILL_TEMPLATE: ContraceptionInsightTemplate = {
+  insight:
     "Things can feel unpredictable for a little while. Energy can shift without a clear rhythm.",
-    "Things can feel unpredictable for a little while. Energy can shift without a clear rhythm.",
-    "Things can feel unpredictable for a little while. Energy can shift without a clear rhythm.",
-  ],
-  mental: [
-    "Focus can feel scattered. Things are adjusting.",
-    "Focus can feel scattered. Things are adjusting.",
-    "Focus can feel scattered. Things are adjusting.",
-  ],
-  emotional: [
-    "Emotions can feel more unpredictable. That's a normal response.",
-    "Emotions can feel more unpredictable. That's a normal response.",
-    "Emotions can feel more unpredictable. That's a normal response.",
-  ],
-  orientation: [
-    "Cycle is resetting after emergency contraception.",
-    "Cycle is resetting after emergency contraception.",
-    "Cycle is resetting after emergency contraception.",
-  ],
-  allowance: [
-    "Things are recalibrating.",
-    "Things are recalibrating.",
-    "Things are recalibrating.",
-  ],
+  body_note: "Things are recalibrating. That's a normal response.",
 };
 
-export const POST_BC_STOP_TEMPLATES: ContraceptionTemplates = {
-  physical: [
+export const POST_BC_STOP_TEMPLATE: ContraceptionInsightTemplate = {
+  insight:
     "Things can feel unpredictable for a few cycles as your natural rhythm returns.",
-    "Things can feel unpredictable for a few cycles as your natural rhythm returns.",
-    "Things can feel unpredictable for a few cycles as your natural rhythm returns.",
-  ],
-  mental: [
-    "Focus can shift in unfamiliar ways as things find a new rhythm.",
-    "Focus can shift in unfamiliar ways as things find a new rhythm.",
-    "Focus can shift in unfamiliar ways as things find a new rhythm.",
-  ],
-  emotional: [
-    "Emotions can feel more intense after stopping contraception. That's normal while things adjust.",
-    "Emotions can feel more intense after stopping contraception. That's normal while things adjust.",
-    "Emotions can feel more intense after stopping contraception. That's normal while things adjust.",
-  ],
-  orientation: [
-    "Transitioning off hormonal contraception. Natural cycle returning.",
-    "Transitioning off hormonal contraception. Natural cycle returning.",
-    "Transitioning off hormonal contraception. Natural cycle returning.",
-  ],
-  allowance: [
-    "This is a transition.",
-    "This is a transition.",
-    "This is a transition.",
-  ],
+  body_note: "This is a transition. The body finds its way.",
 };
 
-// ─── NUDGE TEMPLATES ────────────────────────────────────────────────────────
+// ─── PHASE × PHASEDAY × 6-VARIANT TEMPLATE LIBRARY ─────────────────────────
 
-export const NUDGE_ZERO = [
-  "Log what you're noticing. That's where personal insights begin.",
-  "One entry starts building your picture.",
-  "Track what shows up today. That's the first step.",
-];
-
-export const NUDGE_EARLY = [
-  "A few more entries across different days and your rhythm starts to show.",
-  "Keep logging across your cycle. The picture gets clearer.",
-  "More entries across different phases unlock the next level.",
-];
-
-export const NUDGE_MEDIUM = [
-  "One more full cycle and these observations become your personal pattern.",
-  "When this phase repeats next cycle, we'll see if what you've noticed holds.",
-  "You're close. Another cycle and we'll know exactly what happens for you here.",
-];
-
-export const NUDGE_HIGH = [
-  "Your insights are personalized to your cycle now.",
-  "Your rhythm is mapped. Keep logging to catch changes.",
-  "This is your pattern. Logging keeps it accurate.",
-];
-
-// ─── 28-DAY TEMPLATE LIBRARY ────────────────────────────────────────────────
-
-const library: DayInsight[] = [
+const library: Record<Phase, PhaseDayEntry[]> = {
+  // ═══════════════════════════════════════════════════════════════════════════
+  // MENSTRUAL PHASE (phaseDays 1–5)
+  // ═══════════════════════════════════════════════════════════════════════════
+  menstrual: [
+    {
+      phaseDay: 1,
+      variants: {
+        A: {
+          insight:
+            "The lining is shedding. Estrogen and progesterone are at their lowest — the body is quiet on purpose today.",
+          body_note:
+            "Iron stores take a small hit. Warm food sits better than cold.",
+        },
+        B: {
+          insight:
+            "A new cycle is starting, even though it doesn't feel like a beginning. Hormones are at floor — everything else builds from here.",
+          body_note: "Slow is not lazy on day one. It's accurate.",
+        },
+        C: {
+          insight:
+            "Heaviness low in the belly, a pull toward the ground. The body asking for less, not more.",
+          body_note:
+            "The body is asking for less. That is information, not weakness.",
+        },
+        D: {
+          insight:
+            "Slowing down today isn't falling behind. It's the only day of the month the body asks this directly — the rest of the time it asks quietly and gets ignored.",
+          body_note:
+            "Estrogen and progesterone are both at floor today. The tiredness is chemistry.",
+        },
+        E: {
+          insight:
+            "A hot water bottle on the lower belly for twenty minutes does more for day-one cramps than most painkillers, and it does it faster.",
+          body_note:
+            "Heat relaxes uterine muscle directly — it's not a distraction, it's a treatment.",
+        },
+        F: {
+          insight:
+            "A tide going out. Nothing is lost — the moon will turn, and it will come back in.",
+          body_note: "The tide knows the way.",
+        },
+      },
+    },
+    {
+      phaseDay: 2,
+      variants: {
+        A: {
+          insight:
+            "Flow is usually heaviest on day one or two. Cramps come from the uterus doing real work, not from weakness.",
+          body_note:
+            "Heat on the lower belly eases prostaglandin cramps more reliably than most things.",
+        },
+        B: {
+          insight:
+            "The uterus is contracting to shed tissue. That's what cramps actually are — muscle doing work, not the body misbehaving.",
+          body_note:
+            "Magnesium-rich food sometimes takes the edge off. Sometimes only heat does.",
+        },
+        C: {
+          insight:
+            "A tightness that comes in waves. Between the waves, a kind of quiet the rest of the month doesn't have.",
+          body_note:
+            "Between contractions, there is actual rest. Catch it when you can.",
+        },
+        D: {
+          insight:
+            "Cramps aren't the body being dramatic. Prostaglandins are doing real chemistry, and you are not weak for feeling them.",
+          body_note:
+            "Prostaglandins cause real uterine contractions. This is documented, not imagined.",
+        },
+        E: {
+          insight:
+            "Warm, cooked food sits better than cold or raw today. The gut is a little slower during bleeding — meet it where it is.",
+          body_note:
+            "Digestion slows slightly during bleeding. Cooked food asks the gut to do less work.",
+        },
+        F: {
+          insight:
+            "The body is a small weather system today. Storms pass through bodies too.",
+          body_note: "Weather passes. Bodies are weather.",
+        },
+      },
+    },
+    {
+      phaseDay: 3,
+      variants: {
+        A: {
+          insight:
+            "The worst of the flow often begins to ease around now. Energy is still low — that's accurate, not avoidant.",
+          body_note:
+            "Hydration matters more than people expect during bleeding days.",
+        },
+        B: {
+          insight:
+            "Bleeding is real blood loss, even when it looks small. The tiredness today is a physiological fact, not a mood.",
+          body_note:
+            "Iron from food absorbs better alongside vitamin C than on its own.",
+        },
+        C: {
+          insight:
+            "Limbs feel a little further away than usual. That's the body running on low fuel, not detachment.",
+          body_note:
+            "Low iron shows up as distance before it shows up as tiredness.",
+        },
+        D: {
+          insight:
+            "Being tired on a bleeding day is not a productivity problem. It's a blood-loss problem. Different thing entirely.",
+          body_note:
+            "Day 2–3 bleeding can account for real iron loss. The fatigue has a cause.",
+        },
+        E: {
+          insight:
+            "Pair iron-rich food with something acidic — lemon, tomato, amla. Iron absorbs two to three times better in the presence of vitamin C.",
+          body_note:
+            "Vitamin C converts non-heme iron to a more absorbable form in the gut.",
+        },
+        F: {
+          insight:
+            "A room with the lights dimmed. Not empty, just quieter than usual.",
+          body_note: "The dimmer is not broken.",
+        },
+      },
+    },
+    {
+      phaseDay: 4,
+      variants: {
+        A: {
+          insight:
+            "FSH is starting to rise quietly in the background. A new follicle cohort is being recruited even while bleeding continues.",
+          body_note:
+            "Light movement tends to feel better than stillness by now.",
+        },
+        B: {
+          insight:
+            "The body is already looking forward. FSH is rising in the background and a new batch of follicles is waking up inside the ovaries.",
+          body_note: "The worst of the flow is usually behind you by now.",
+        },
+        C: {
+          insight:
+            "Something is loosening. The lower back begins to let go before the belly does.",
+          body_note:
+            "The back loosens first. Then the belly. Then the shoulders.",
+        },
+        D: {
+          insight:
+            "Wanting more food today isn't a failure of discipline. The body is in recovery and recovery needs fuel.",
+          body_note:
+            "Resting metabolic rate rises in both the luteal phase and during bleeding days.",
+        },
+        E: {
+          insight:
+            "A short walk today will feel disproportionately good. Ten minutes is enough — this isn't about exercise, it's about circulation.",
+          body_note:
+            "Movement increases pelvic blood flow, which is what actually eases period cramping.",
+        },
+        F: {
+          insight:
+            "Underground, roots are already moving toward the next season. The surface is the last to know.",
+          body_note: "The roots know before the leaves do.",
+        },
+      },
+    },
+    {
+      phaseDay: 5,
+      variants: {
+        A: {
+          insight:
+            "Bleeding is usually tapering. The body is turning a corner toward the follicular phase.",
+          body_note: "Appetite often shifts back toward normal today.",
+        },
+        B: {
+          insight:
+            "The menstrual phase is winding down. Estrogen has quietly begun its climb — the next phase is already underway.",
+          body_note: "Energy often returns before the bleeding fully stops.",
+        },
+        C: {
+          insight:
+            "The first day the body feels like it's facing forward again. Subtle, but real.",
+          body_note:
+            "Estrogen has started rising. The body is already turning.",
+        },
+        D: {
+          insight:
+            "Feeling flat on the last period day isn't 'still in a funk'. It's the in-between before estrogen has fully taken over.",
+          body_note:
+            "Estrogen has started climbing but has not taken over yet. It's an in-between.",
+        },
+        E: {
+          insight:
+            "If energy is returning, this is a good day to clear something small that's been sitting — one email, one errand, one drawer.",
+          body_note:
+            "Energy is coming back because estrogen is climbing. The body can handle more now.",
+        },
+        F: {
+          insight: "The hinge of the door. Not out yet, not in anymore.",
+          body_note: "Both sides of the hinge are part of the door.",
+        },
+      },
+    },
+  ],
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // MENSTRUAL PHASE (Days 1–5)
+  // FOLLICULAR PHASE (phaseDays 1–8, was absolute days 6–13)
   // ═══════════════════════════════════════════════════════════════════════════
-
-  {
-    cycleDay: 1, phase: "menstrual",
-    physical: [
-      "Energy can feel heavier here. Moving around can take more effort.",
-      "Energy has felt heavier around here. That heaviness is showing up again.",
-      "Energy dips at the start of your period for you. It's here again.",
-    ],
-    mental: [
-      "Thoughts can drift. Focus can feel harder to hold.",
-      "Focus gets harder to hold during your period. If that's here today, it's familiar.",
-      "Focus loosens for you on day 1. It does this often.",
-    ],
-    emotional: [
-      "Small things can land harder. Emotions can feel closer to the surface.",
-      "Emotions tend to sit heavier for you at the start. That weight is recognizable.",
-      "Emotions feel heavier here. This shows up often.",
-    ],
-    orientation: [
-      "Start of your period.",
-      "Day 1 of your period.",
-      "Day 1 of your period.",
-    ],
-    allowance: [
-      "Slower can feel more natural.",
-      "This part is familiar now.",
-      "You know this part.",
-    ],
-    nudge: NUDGE_ZERO.concat(NUDGE_EARLY, NUDGE_MEDIUM) as [string, string, string],
-    energyLevel: "very_low", focusLevel: "poor",
-  },
-
-  {
-    cycleDay: 2, phase: "menstrual",
-    physical: [
-      "Bleeding can feel heaviest around day 2. Energy can still feel low.",
-      "Day 2 heaviness has showed up before. It's here again.",
-      "Day 2 is often one of your heavier days. Energy follows that.",
-    ],
-    mental: [
-      "Concentration can take more effort. Shorter tasks can feel more manageable.",
-      "Thinking takes more effort around here. That fog is recognizable.",
-      "This is where focus feels most scattered for you. It passes.",
-    ],
-    emotional: [
-      "Patience can feel thinner. Things that normally roll off might stick.",
-      "Patience wears thinner during bleeding for you. If that's present, it makes sense.",
-      "Emotions are raw here. You've seen this enough to recognize it.",
-    ],
-    orientation: [
-      "Day 2 of your period.",
-      "Day 2 of your period.",
-      "Day 2 of your period.",
-    ],
-    allowance: [
-      "Less can feel enough.",
-      "Familiar territory.",
-      "You know how this goes.",
-    ],
-    nudge: NUDGE_ZERO.concat(NUDGE_EARLY, NUDGE_MEDIUM) as [string, string, string],
-    energyLevel: "very_low", focusLevel: "poor",
-  },
-
-  {
-    cycleDay: 3, phase: "menstrual",
-    physical: [
-      "Energy can still feel low, but the heaviest part can start to ease.",
-      "A slight easing has showed up around day 3 before. Energy isn't back, but the bottom can pass.",
-      "For you, day 3 is where the heaviest part starts to ease. Not recovered, but turning.",
-    ],
-    mental: [
-      "Thinking can start to feel slightly less foggy. Still not sharp, but shifting.",
-      "Focus starts returning around here. Still fragile, but present.",
-      "Focus begins to come back here for you. Often.",
-    ],
-    emotional: [
-      "Emotional intensity can begin to soften. The edge can feel less sharp.",
-      "The emotional weight begins to lift. This shift has showed up before.",
-      "The emotional rawness softens around day 3 for you. Often.",
-    ],
-    orientation: [
-      "Day 3 of your period.",
-      "Day 3 of your period.",
-      "Day 3 of your period.",
-    ],
-    allowance: [
-      "Something can be starting to ease.",
-      "Something is shifting.",
-      "The turn is starting.",
-    ],
-    nudge: NUDGE_ZERO.concat(NUDGE_EARLY, NUDGE_MEDIUM) as [string, string, string],
-    energyLevel: "low", focusLevel: "poor",
-  },
-
-  {
-    cycleDay: 4, phase: "menstrual",
-    physical: [
-      "Energy can start to creep back around day 4. Bleeding can be lighter.",
-      "Energy starts creeping back around here. That lift has showed up before.",
-      "For you, day 4 is where energy starts its return. Often.",
-    ],
-    mental: [
-      "Thoughts can start to feel less scattered. Clarity isn't fully back, but the fog lifts a little.",
-      "The mental fog is clearing. Thinking gets easier around day 4 for you.",
-      "Thinking sharpens here. This is where the fog lifts for you.",
-    ],
-    emotional: [
-      "Emotions can feel less tender. The intensity from heavier bleeding can ease here.",
-      "Emotions settle as bleeding eases. That steadying is familiar.",
-      "Emotional steadiness returns around day 4 for you.",
-    ],
-    orientation: [
-      "Day 4 of your period.",
-      "Day 4 of your period.",
-      "Day 4 of your period.",
-    ],
-    allowance: [
-      "Recovery is quiet work.",
-      "Settling in.",
-      "Coming back.",
-    ],
-    nudge: NUDGE_ZERO.concat(NUDGE_EARLY, NUDGE_MEDIUM) as [string, string, string],
-    energyLevel: "low", focusLevel: "moderate",
-  },
-
-  {
-    cycleDay: 5, phase: "menstrual",
-    physical: [
-      "Bleeding can taper off around day 5. Energy can start to feel more available.",
-      "Energy returning around day 5 has showed up before. That lift is here again.",
-      "For you, day 5 marks the shift. Energy returns here often.",
-    ],
-    mental: [
-      "Focus can return more fully here. The transition out of your period can feel mental first.",
-      "Focus is coming back. This transition happens around here for you.",
-      "Focus sharpens. You've seen this transition enough to trust it.",
-    ],
-    emotional: [
-      "Emotional intensity from the first few days can soften by now. Things feel lighter.",
-      "The heaviness eases around now. Things start feeling clearer emotionally.",
-      "Emotional clarity comes back around day 5 for you.",
-    ],
-    orientation: [
-      "Late period. Transitioning.",
-      "Late period. Transitioning.",
-      "End of period. Transition begins.",
-    ],
-    allowance: [
-      "The shift is underway.",
-      "Lighter already.",
-      "You know what's coming next.",
-    ],
-    nudge: NUDGE_ZERO.concat(NUDGE_EARLY, NUDGE_MEDIUM) as [string, string, string],
-    energyLevel: "low", focusLevel: "moderate",
-  },
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // FOLLICULAR PHASE (Days 6–13)
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  {
-    cycleDay: 6, phase: "follicular",
-    physical: [
-      "Energy can feel like it's waking up. The heaviness from your period can feel behind you.",
-      "Energy picking up around here has showed up before. That lift is arriving.",
-      "Energy wakes up here for you. Often. It's arriving again.",
-    ],
-    mental: [
-      "Thinking can feel less cloudy. Space for ideas can start to open.",
-      "Clarity starts after your period for you. It's coming in.",
-      "The fog clears in your early follicular phase for you.",
-    ],
-    emotional: [
-      "There can be a quiet lift. Not dramatic, just lighter.",
-      "Mood lightens around now. This has showed up before.",
-      "That quiet lift in mood is here. Familiar.",
-    ],
-    orientation: [
-      "Early follicular. A few days past your period.",
-      "Early follicular.",
-      "Early follicular.",
-    ],
-    allowance: [
-      "Something is waking up.",
-      "Arriving.",
-      "Waking up.",
-    ],
-    nudge: NUDGE_ZERO.concat(NUDGE_EARLY, NUDGE_MEDIUM) as [string, string, string],
-    energyLevel: "rising", focusLevel: "moderate",
-  },
-
-  {
-    cycleDay: 7, phase: "follicular",
-    physical: [
-      "Energy can feel like it's building steadily. The heaviness from last week is fading.",
-      "Energy building through this stretch has showed up before. That momentum is here.",
-      "Energy builds through here for you. Often. The momentum is real.",
-    ],
-    mental: [
-      "Thinking can feel clearer than last week. Ideas can come a little easier.",
-      "Clarity has been building through this part for you. It's continuing.",
-      "Focus sharpens through here for you.",
-    ],
-    emotional: [
-      "Mood can feel more even. The emotional weight from earlier can be lifting.",
-      "Mood stabilizing around now has showed up before. That steadiness is arriving.",
-      "Emotional stability builds here for you. Often.",
-    ],
-    orientation: [
-      "Follicular phase. A few days past your period.",
-      "Follicular phase.",
-      "Follicular phase.",
-    ],
-    allowance: [
-      "Building quietly.",
-      "Continuing.",
-      "This is your build.",
-    ],
-    nudge: NUDGE_ZERO.concat(NUDGE_EARLY, NUDGE_MEDIUM) as [string, string, string],
-    energyLevel: "rising", focusLevel: "good",
-  },
-
-  {
-    cycleDay: 8, phase: "follicular",
-    physical: [
-      "Energy can feel like it's climbing. Things can feel more physically available.",
-      "Energy climbs around here for you. This upward shift has showed up before.",
-      "For you, energy climbs steadily through your follicular phase. It's building.",
-    ],
-    mental: [
-      "Focus can start to sharpen. Things that felt effortful last week can feel easier.",
-      "Thinking has been getting clearer through this phase for you. It's continuing.",
-      "Focus sharpens here. This is where clarity grows for you.",
-    ],
-    emotional: [
-      "Mood can feel more stable and positive. There can be a sense of steadiness.",
-      "Mood is steadier now. That stability is recognizable.",
-      "Mood stabilizes here for you. Often.",
-    ],
-    orientation: [
-      "Follicular phase.",
-      "Follicular phase.",
-      "Follicular phase.",
-    ],
-    allowance: [
-      "Building.",
-      "Climbing.",
-      "On the way up.",
-    ],
-    nudge: NUDGE_ZERO.concat(NUDGE_EARLY, NUDGE_MEDIUM) as [string, string, string],
-    energyLevel: "rising", focusLevel: "good",
-  },
-
-  {
-    cycleDay: 9, phase: "follicular",
-    physical: [
-      "Energy can feel stronger. Things can feel more capable than earlier this week.",
-      "Energy getting stronger through this stretch has showed up before. It's continuing.",
-      "Energy continues to build here for you. Often stronger each day.",
-    ],
-    mental: [
-      "Thinking can feel sharper. Things that needed effort before can come easier now.",
-      "Clarity has been getting stronger around here for you. It's present.",
-      "Focus is strong here for you.",
-    ],
-    emotional: [
-      "Mood can feel more positive. Social energy can feel more available.",
-      "Mood lifting through this part has showed up before. That ease is recognizable.",
-      "Mood lifts through here for you. Familiar.",
-    ],
-    orientation: [
-      "Follicular phase.",
-      "Follicular phase.",
-      "Follicular phase.",
-    ],
-    allowance: [
-      "Things can feel easier.",
-      "Building steadily.",
-      "This is your stride.",
-    ],
-    nudge: NUDGE_ZERO.concat(NUDGE_EARLY, NUDGE_MEDIUM) as [string, string, string],
-    energyLevel: "rising", focusLevel: "good",
-  },
-
-  {
-    cycleDay: 10, phase: "follicular",
-    physical: [
-      "Energy can feel stronger around this point. Things can feel more physically capable.",
-      "Energy picks up around here for you. This has showed up before.",
-      "This is where your energy feels strongest. It's here again.",
-    ],
-    mental: [
-      "Thinking can feel sharper. Complex things can feel more approachable.",
-      "Clarity has been stronger in this part of your cycle. It's showing up again.",
-      "Clarity is at its strongest around mid-follicular for you.",
-    ],
-    emotional: [
-      "Mood can feel more even and positive. Being around people can feel easier.",
-      "Mood feels steadier around now. That ease is recognizable.",
-      "Your mood often lifts here. That brightness is familiar.",
-    ],
-    orientation: [
-      "Mid follicular phase.",
-      "Mid follicular.",
-      "Mid follicular.",
-    ],
-    allowance: [
-      "Things can feel easier.",
-      "Familiar ground.",
-      "This is your space.",
-    ],
-    nudge: NUDGE_ZERO.concat(NUDGE_EARLY, NUDGE_MEDIUM) as [string, string, string],
-    energyLevel: "high", focusLevel: "sharp",
-  },
-
-  {
-    cycleDay: 11, phase: "follicular",
-    physical: [
-      "Energy can feel at or near its strongest. Everything can feel more available.",
-      "This kind of energy has showed up before around here. It's holding strong.",
-      "For you, energy stays at its strongest through here. Often.",
-    ],
-    mental: [
-      "Thinking can feel quick and clear. New ideas can come more naturally.",
-      "Focus has been sharp around now for you. That clarity is present.",
-      "This is your sharpest mental stretch. It shows up here often.",
-    ],
-    emotional: [
-      "Confidence and social energy can feel more present.",
-      "Feeling more socially available around here has showed up before. It's here again.",
-      "Social energy and confidence are strong here for you. Often.",
-    ],
-    orientation: [
-      "Follicular phase. Approaching the middle of your cycle.",
-      "Follicular phase. Getting close.",
-      "Follicular phase. Almost there.",
-    ],
-    allowance: [
-      "Something is cresting.",
-      "Holding strong.",
-      "At your strongest.",
-    ],
-    nudge: NUDGE_ZERO.concat(NUDGE_EARLY, NUDGE_MEDIUM) as [string, string, string],
-    energyLevel: "high", focusLevel: "sharp",
-  },
-
-  {
-    cycleDay: 12, phase: "follicular",
-    physical: [
-      "Energy can feel at its strongest here. Everything can feel physically available.",
-      "Energy building toward this point has showed up before. It's nearing its strongest.",
-      "For you, this is where physical energy is fullest. Often. It's here.",
-    ],
-    mental: [
-      "Thinking can feel quick and sharp. New ideas can come more naturally.",
-      "Thinking has been sharp around here for you. That clarity is present.",
-      "Sharpest thinking for you. Right before ovulation, often.",
-    ],
-    emotional: [
-      "Confidence and social energy can feel more present. Being around people can feel easier.",
-      "Confidence tends to be higher before ovulation for you. It's showing up again.",
-      "Confidence and ease are fullest here for you. Often.",
-    ],
-    orientation: [
-      "Late follicular. Approaching ovulation.",
-      "Late follicular. Approaching ovulation.",
-      "Late follicular. Ovulation approaching.",
-    ],
-    allowance: [
-      "Something is cresting.",
-      "Nearing the top.",
-      "At the top.",
-    ],
-    nudge: NUDGE_ZERO.concat(NUDGE_EARLY, NUDGE_MEDIUM) as [string, string, string],
-    energyLevel: "high", focusLevel: "sharp",
-  },
-
-  {
-    cycleDay: 13, phase: "follicular",
-    physical: [
-      "Energy can feel at its strongest. Everything can feel fully capable.",
-      "This kind of energy has showed up before around here. It's holding.",
-      "For you, this is still the strongest point. It holds here before the shift.",
-    ],
-    mental: [
-      "Thinking can feel clear and quick. This can be one of the sharpest mental days.",
-      "Focus stays sharp on this last day before the shift for you. It's present.",
-      "Focus is still sharp here. You've seen this enough to trust it.",
-    ],
-    emotional: [
-      "Social and emotional energy can feel at their fullest.",
-      "Feeling most open and socially available around now has showed up before.",
-      "Connection energy is fullest for you. Often, right here.",
-    ],
-    orientation: [
-      "Late follicular. The middle of your cycle is arriving.",
-      "Late follicular. Almost at the middle.",
-      "Late follicular. Right before the shift.",
-    ],
-    allowance: [
-      "This can be a bright spot.",
-      "Still at the brightest.",
-      "The last bright day.",
-    ],
-    nudge: NUDGE_ZERO.concat(NUDGE_EARLY, NUDGE_MEDIUM) as [string, string, string],
-    energyLevel: "high", focusLevel: "sharp",
-  },
+  follicular: [
+    {
+      phaseDay: 1,
+      variants: {
+        A: {
+          insight:
+            "Estrogen is beginning its climb. This is the phase the body uses to rebuild, not just recover.",
+          body_note:
+            "Skin, mood, and focus often feel like they're waking up over the next few days.",
+        },
+        B: {
+          insight:
+            "Early follicular. The body is in rebuild mode — lining, mood, metabolism, all resetting under rising estrogen.",
+          body_note:
+            "Cold foods and cold weather feel less harsh from here on out.",
+        },
+        C: {
+          insight:
+            "A cleaner feeling in the chest. Breath finds a little more room.",
+          body_note: "Cortisol tends to settle earlier in the day now.",
+        },
+        D: {
+          insight:
+            "Feeling better isn't performing wellness. It's what the body does when hormones lift, and it doesn't need to be earned.",
+          body_note:
+            "Hormones do this on their own. You don't have to earn the lift.",
+        },
+        E: {
+          insight:
+            "This is a good week to start things, not finish them. Save the closing-out work for the luteal phase — it handles detail better.",
+          body_note:
+            "The follicular phase is when the brain is most receptive to novelty and initiation.",
+        },
+        F: {
+          insight: "Something green opening. Small, but unmistakably forward.",
+          body_note: "Green things don't apologize for unfolding.",
+        },
+      },
+    },
+    {
+      phaseDay: 2,
+      variants: {
+        A: {
+          insight:
+            "A dominant follicle is emerging in one ovary. The others will step back — this is how the cycle decides.",
+          body_note:
+            "Energy usually has more room today than earlier in the week.",
+        },
+        B: {
+          insight:
+            "Inside one ovary, a single follicle is beginning to outgrow the others. The cycle is narrowing down to one.",
+          body_note:
+            "Skin tends to look clearer in this part of the cycle than any other.",
+        },
+        C: {
+          insight:
+            "Skin feels closer to itself. Water goes down easier, food tastes a little sharper.",
+          body_note:
+            "The skin holds water differently in the follicular phase — it shows.",
+        },
+        D: {
+          insight:
+            "Liking your face in the mirror this week isn't vanity. Estrogen is literally changing your skin.",
+          body_note:
+            "Estrogen improves skin hydration, elasticity, and collagen. Literally.",
+        },
+        E: {
+          insight:
+            "The follicular phase is when strength training tends to feel most rewarding. If you lift, this is the week to push the numbers.",
+          body_note:
+            "Muscle protein synthesis tracks estrogen. This is when strength gains stick.",
+        },
+        F: {
+          insight:
+            "The sound of a kettle starting to sing. Warmth arriving on its own schedule.",
+          body_note: "The kettle was always going to sing.",
+        },
+      },
+    },
+    {
+      phaseDay: 3,
+      variants: {
+        A: {
+          insight:
+            "Estrogen is rising steadily. Many people notice their mood settles into something steadier around now.",
+          body_note: "Strength and stamina tend to respond well this week.",
+        },
+        B: {
+          insight:
+            "Estrogen is shaping more than reproduction right now — it also touches mood, memory, and pain tolerance.",
+          body_note:
+            "Learning and focus often come easier this week. It's not willpower, it's chemistry.",
+        },
+        C: {
+          insight:
+            "The day has more hours in it than it did last week. That's not the clock — it's the body.",
+          body_note:
+            "Verbal recall is measurably sharper under rising estrogen.",
+        },
+        D: {
+          insight:
+            "Having a sharper week isn't 'finally getting your act together'. You're not broken the rest of the month — you're just in a different phase.",
+          body_note:
+            "Verbal fluency, working memory, and mood all track estrogen. All of you is real.",
+        },
+        E: {
+          insight:
+            "Learning sticks better this week than in the luteal phase. If there's something you've been putting off studying, now is the window.",
+          body_note:
+            "Estrogen supports memory consolidation and verbal learning. The window is real.",
+        },
+        F: {
+          insight:
+            "A window thrown open after a long winter. The room is the same, the air is not.",
+          body_note: "The air was waiting for the window.",
+        },
+      },
+    },
+    {
+      phaseDay: 4,
+      variants: {
+        A: {
+          insight:
+            "The uterine lining is rebuilding under estrogen's influence. Quiet biological work, no symptoms required.",
+          body_note: "Sleep often deepens in the mid-follicular days.",
+        },
+        B: {
+          insight:
+            "The endometrium is thickening day by day. Invisible work, the kind the body does without asking permission.",
+          body_note:
+            "Hunger tends to be steadier in the mid-follicular than in any other phase.",
+        },
+        C: {
+          insight:
+            "A steadiness under the ribs. Nothing loud, nothing missing.",
+          body_note: "This is the steadiest the gut gets all month.",
+        },
+        D: {
+          insight:
+            "A good week is not evidence that other weeks were your fault. Cycles are not a moral performance.",
+          body_note: "The follicular phase is not a performance. It's a phase.",
+        },
+        E: {
+          insight:
+            "Schedule the hard conversation this week, not next. Estrogen supports both verbal fluency and a steadier nervous system.",
+          body_note:
+            "Estrogen stabilizes the amygdala's stress response. Hard conversations cost less now.",
+        },
+        F: {
+          insight:
+            "Steady light. The kind you don't notice until you try to remember what the last week felt like.",
+          body_note: "Steady is its own kind of shine.",
+        },
+      },
+    },
+    {
+      phaseDay: 5,
+      variants: {
+        A: {
+          insight:
+            "Cervical mucus is starting to shift. The body is beginning to prepare for ovulation, days in advance.",
+          body_note:
+            "Confidence and verbal fluency often peak around this window for many people.",
+        },
+        B: {
+          insight:
+            "Estrogen is high enough now to start shifting how the body feels from the inside. Lighter. More forward-leaning.",
+          body_note:
+            "Cervical mucus becomes more fertile-feeling around now — wetter, stretchier.",
+        },
+        C: {
+          insight:
+            "Something warm and curious in the lower belly. The body leaning toward, instead of away.",
+          body_note:
+            "Cervical mucus shifts wetter. The body is reading the calendar.",
+        },
+        D: {
+          insight:
+            "Higher libido this week isn't something to hide or explain. It's hormonal. It's on schedule.",
+          body_note:
+            "Testosterone rises alongside estrogen around ovulation. Libido is on schedule.",
+        },
+        E: {
+          insight:
+            "If you're planning something important — a pitch, an interview, a first date — days 10 to 13 are when the cycle is most on your side.",
+          body_note:
+            "Cognitive, verbal, and social capacities all peak in the late follicular phase.",
+        },
+        F: {
+          insight: "A pull forward. The body leaning toward whatever is next.",
+          body_note: "The body knows which direction is forward.",
+        },
+      },
+    },
+    {
+      phaseDay: 6,
+      variants: {
+        A: {
+          insight:
+            "Estrogen is approaching its pre-ovulatory peak. This is often the phase that feels most like 'yourself'.",
+          body_note:
+            "Workouts often feel easier than the effort suggests they should.",
+        },
+        B: {
+          insight:
+            "Late follicular. Testosterone also rises slightly around this window — part of why libido often climbs.",
+          body_note:
+            "Social energy tends to feel less expensive than it did last week.",
+        },
+        C: {
+          insight:
+            "Movement feels like it belongs to you today, not like you're negotiating with it.",
+          body_note:
+            "Heart rate variability is often at its cycle-high this week.",
+        },
+        D: {
+          insight:
+            "Feeling more social isn't the 'real you finally showing up'. The quieter you in the luteal phase is also real.",
+          body_note:
+            "The quieter luteal self is running on progesterone. Also real. Also you.",
+        },
+        E: {
+          insight:
+            "Social battery is highest in the late follicular. Say yes to the thing you'd usually say no to — next week will be quieter.",
+          body_note:
+            "Estrogen-driven energy is physical, not just a mood. Use it while it's here.",
+        },
+        F: {
+          insight:
+            "Bright water. Moving, reflective, carrying more light than it should.",
+          body_note: "Even water carries light.",
+        },
+      },
+    },
+    {
+      phaseDay: 7,
+      variants: {
+        A: {
+          insight:
+            "The LH surge is building. Ovulation is usually one to two days away in a 28-day cycle.",
+          body_note:
+            "Some people notice a faint one-sided pelvic twinge — mittelschmerz. It's normal.",
+        },
+        B: {
+          insight:
+            "The dominant follicle is at full size now. Everything is queued up for the LH surge.",
+          body_note:
+            "A light ache on one side of the lower belly is common and not concerning.",
+        },
+        C: {
+          insight: "A small brightness behind the eyes. The body is gathering.",
+          body_note:
+            "Mittelschmerz can feel like this — a small, one-sided twinge.",
+        },
+        D: {
+          insight:
+            "Taking up space this week isn't being too much. The body is built to take up more space in this phase.",
+          body_note:
+            "Estrogen is near its peak. The body is physically taking up more space.",
+        },
+        E: {
+          insight:
+            "High-intensity workouts land best in this window. Heart rate recovery is faster when estrogen is high.",
+          body_note:
+            "Heart rate recovery improves measurably in the late follicular. Hard workouts are easier.",
+        },
+        F: {
+          insight:
+            "A held breath, in the good way. Everything gathering for a single moment.",
+          body_note: "Gathering is not holding back.",
+        },
+      },
+    },
+    {
+      phaseDay: 8,
+      variants: {
+        A: {
+          insight:
+            "Estrogen is at or near its highest point of the cycle. The body is primed.",
+          body_note:
+            "Cervical mucus is often clearest and most stretchy around now.",
+        },
+        B: {
+          insight:
+            "The pre-ovulatory window. Estrogen is peaking — this is as 'lifted' as the cycle chemistry gets.",
+          body_note:
+            "Sleep sometimes gets lighter right before ovulation, even when the day felt good.",
+        },
+        C: {
+          insight:
+            "Alert without being wired. This is a rare setting — the cycle only holds it for a couple of days.",
+          body_note:
+            "Basal body temperature has not risen yet. That comes tomorrow.",
+        },
+        D: {
+          insight:
+            "Feeling powerful the day before ovulation isn't ego. It's estrogen at its highest point of the month.",
+          body_note:
+            "Estrogen peaks the day before ovulation. This is as high as it gets.",
+        },
+        E: {
+          insight:
+            "Drink more water than you think you need today and tomorrow. Estrogen peaks can cause subtle fluid shifts that show up as headaches if you're behind.",
+          body_note:
+            "High estrogen can cause slight water shifts — mild dehydration turns into headaches fast.",
+        },
+        F: {
+          insight:
+            "The last note before the chord resolves. All tension, no trouble.",
+          body_note: "Tension is the shape of readiness.",
+        },
+      },
+    },
+  ],
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // OVULATION PHASE (Days 14–16)
+  // OVULATION (phaseDay 1, was absolute day 14)
   // ═══════════════════════════════════════════════════════════════════════════
-
-  {
-    cycleDay: 14, phase: "ovulation",
-    physical: [
-      "Energy can feel at its highest around ovulation. A brief, bright physical lift can show up.",
-      "This energy lift around ovulation has showed up before. It's here again.",
-      "This is where your energy feels lightest. It's here again.",
-    ],
-    mental: [
-      "Thinking can feel clear. Being around people can feel easier.",
-      "Clarity tends to be strong around now for you. It's here.",
-      "Clarity is at its strongest around ovulation for you.",
-    ],
-    emotional: [
-      "Mood can feel buoyant. There can be a lightness that shows up around this time.",
-      "Mood lifting around ovulation has showed up before. That brightness is recognizable.",
-      "Your mood often lifts here. That brightness is familiar.",
-    ],
-    orientation: [
-      "Ovulation. Middle of your cycle.",
-      "Ovulation. Middle of your cycle.",
-      "Ovulation.",
-    ],
-    allowance: [
-      "A bright spot.",
-      "Recognizable brightness.",
-      "This is your space.",
-    ],
-    nudge: NUDGE_ZERO.concat(NUDGE_EARLY, NUDGE_MEDIUM) as [string, string, string],
-    energyLevel: "high", focusLevel: "sharp",
-  },
-
-  {
-    cycleDay: 15, phase: "ovulation",
-    physical: [
-      "Energy can still feel high, but a subtle shift can begin. The strongest part can be passing.",
-      "Energy starting to dip just after ovulation has showed up before. That subtle shift can be arriving.",
-      "For you, the strongest part passes right around here. The dip begins.",
-    ],
-    mental: [
-      "Thinking can still feel clear, but the sharpest edge can soften slightly.",
-      "The sharpest clarity starts to soften around here for you. Familiar.",
-      "Clarity starts to soften after ovulation for you. Often.",
-    ],
-    emotional: [
-      "Mood can still feel positive, but there can be a quiet shift beginning underneath.",
-      "Mood stays positive but something quieter starts to settle in. This has showed up before.",
-      "Mood begins its quiet shift here. You've seen this transition often.",
-    ],
-    orientation: [
-      "Just past ovulation. A transition is starting.",
-      "Post-ovulation. Transition beginning.",
-      "Post-ovulation.",
-    ],
-    allowance: [
-      "Still bright, but shifting.",
-      "The shift is starting.",
-      "The turn.",
-    ],
-    nudge: NUDGE_ZERO.concat(NUDGE_EARLY, NUDGE_MEDIUM) as [string, string, string],
-    energyLevel: "high", focusLevel: "sharp",
-  },
-
-  {
-    cycleDay: 16, phase: "ovulation",
-    physical: [
-      "Energy can start to feel less available. Things are shifting.",
-      "Energy starting to fade around here has showed up before. That shift is arriving.",
-      "Energy fades around here for you. This transition arrives often.",
-    ],
-    mental: [
-      "Focus can feel slightly harder to sustain. The ease of the last few days can fade.",
-      "Focus gets harder to hold after ovulation for you. It's starting.",
-      "Focus starts requiring more effort. You've seen this often.",
-    ],
-    emotional: [
-      "Emotions can start to feel more inward. Social energy can feel less automatic.",
-      "A quieting here has showed up before. Social energy pulls back. It's familiar.",
-      "The emotional shift inward begins here for you. Often.",
-    ],
-    orientation: [
-      "Transitioning from ovulation into the luteal phase.",
-      "Transitioning into luteal phase.",
-      "Into the luteal phase.",
-    ],
-    allowance: [
-      "Something is changing.",
-      "Shifting gears.",
-      "The quiet part begins.",
-    ],
-    nudge: NUDGE_ZERO.concat(NUDGE_EARLY, NUDGE_MEDIUM) as [string, string, string],
-    energyLevel: "high", focusLevel: "good",
-  },
+  ovulation: [
+    {
+      phaseDay: 1,
+      variants: {
+        A: {
+          insight:
+            "Ovulation day. The dominant follicle releases its egg — a 24-hour window, then the luteal phase begins.",
+          body_note:
+            "A small temperature rise follows ovulation by a day. Nothing dramatic, just a shift.",
+        },
+        B: {
+          insight:
+            "The LH surge triggers the release. Within 24 hours the egg is gone and the hormonal script rewrites itself.",
+          body_note:
+            "Basal body temperature rises by 0.3 to 0.6°C after ovulation and stays there through the luteal phase.",
+        },
+        C: {
+          insight:
+            "A tiny release somewhere low. Maybe you notice, maybe you don't. Either is normal.",
+          body_note: "A 24-hour window. Then the script changes.",
+        },
+        D: {
+          insight:
+            "Ovulation isn't only about fertility. It's a peak the body builds toward whether conception is on the table or not.",
+          body_note:
+            "Ovulation has physiological effects whether or not conception is the goal.",
+        },
+        E: {
+          insight:
+            "If you track anything about your cycle, today is the day worth logging. Temperature, cervical mucus, a one-line mood note — ovulation day is the anchor everything else references.",
+          body_note:
+            "Ovulation is the most biologically distinctive day of the cycle. One data point goes far.",
+        },
+        F: {
+          insight:
+            "A small bell ringing once in an empty room. The body keeps the echo.",
+          body_note: "One note. The room remembers.",
+        },
+      },
+    },
+  ],
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // LUTEAL PHASE (Days 17–28)
+  // LUTEAL PHASE (phaseDays 1–14, was absolute days 15–28)
   // ═══════════════════════════════════════════════════════════════════════════
-
-  {
-    cycleDay: 17, phase: "luteal",
-    physical: [
-      "Energy can feel more moderate. Not low, but the brightness from ovulation can be gone.",
-      "Energy settling into something more moderate here has showed up before. It's here again.",
-      "Energy settles into moderate for you here. Often, after ovulation, this is where things land.",
-    ],
-    mental: [
-      "Focus can feel steady but less sharp. Detail work can feel more tiring.",
-      "Focus feels steady but less effortless around now for you. Recognizable.",
-      "Focus is present but requires more effort. You've seen this often.",
-    ],
-    emotional: [
-      "Emotions can feel more present. Things that were easy to brush off might linger.",
-      "Emotions are more present in the luteal phase for you. That shift is arriving.",
-      "Emotions are closer for you in the luteal phase. Often.",
-    ],
-    orientation: [
-      "Early luteal phase.",
-      "Early luteal.",
-      "Early luteal.",
-    ],
-    allowance: [
-      "A quieter stretch.",
-      "Settling.",
-      "Familiar quiet.",
-    ],
-    nudge: NUDGE_ZERO.concat(NUDGE_EARLY, NUDGE_MEDIUM) as [string, string, string],
-    energyLevel: "moderate", focusLevel: "good",
-  },
-
-  {
-    cycleDay: 18, phase: "luteal",
-    physical: [
-      "Energy can feel steady but not strong. Mild fullness or tenderness can begin.",
-      "Some physical changes starting around here have showed up before. They're arriving again.",
-      "For you, physical changes start showing up around day 18. Recognizable.",
-    ],
-    mental: [
-      "Thinking can feel reliable but slower. Careful, steady work can feel more natural.",
-      "Focus has been steady but slower in this stretch for you. It's familiar.",
-      "Thinking slows down here for you. Often. Steady work fits best.",
-    ],
-    emotional: [
-      "Emotions can feel grounded but more present. Things can sit with you longer.",
-      "Emotions becoming more present around now has showed up before. That shift is here.",
-      "Emotional presence deepens here for you. Often, around this point.",
-    ],
-    orientation: [
-      "Early luteal phase.",
-      "Early luteal.",
-      "Early luteal.",
-    ],
-    allowance: [
-      "A steady stretch.",
-      "Grounded here.",
-      "Familiar ground.",
-    ],
-    nudge: NUDGE_ZERO.concat(NUDGE_EARLY, NUDGE_MEDIUM) as [string, string, string],
-    energyLevel: "moderate", focusLevel: "good",
-  },
-
-  {
-    cycleDay: 19, phase: "luteal",
-    physical: [
-      "Energy can feel like it's slowly declining. Not a crash, more of a gradual settling.",
-      "Energy declining through this phase has showed up before. That gradual settling is here.",
-      "For you, energy declines steadily through the luteal phase. It's doing that now.",
-    ],
-    mental: [
-      "Focus can feel present but less resilient. Interruptions can feel more disruptive.",
-      "Focus becoming more fragile around now has showed up before. It's recognizable.",
-      "Focus gets more fragile here. Often. You know this stretch.",
-    ],
-    emotional: [
-      "Emotions can feel a little closer. Sensitivity can increase without a clear reason.",
-      "Emotions are closer here for you. This shift has showed up before.",
-      "Emotional sensitivity rises here for you. Often.",
-    ],
-    orientation: [
-      "Luteal phase.",
-      "Luteal phase.",
-      "Luteal phase.",
-    ],
-    allowance: [
-      "Settling is natural here.",
-      "Gradual.",
-      "Familiar territory.",
-    ],
-    nudge: NUDGE_ZERO.concat(NUDGE_EARLY, NUDGE_MEDIUM) as [string, string, string],
-    energyLevel: "moderate", focusLevel: "moderate",
-  },
-
-  {
-    cycleDay: 20, phase: "luteal",
-    physical: [
-      "Energy can feel more limited. Things can feel heavier or more sluggish.",
-      "This kind of heaviness around here has showed up before. It's here again.",
-      "For you, energy feels more limited around day 20. Often.",
-    ],
-    mental: [
-      "Thinking can feel slower. Steady, unhurried work can feel more manageable.",
-      "Thinking slowing down around here has showed up before. That pace is familiar.",
-      "Thinking slows here for you. Often. You know how to work with it.",
-    ],
-    emotional: [
-      "Emotions can feel quieter or more muted.",
-      "A quieter emotional tone around now has showed up before. It's recognizable.",
-      "Emotional tone goes quieter here for you. Often.",
-    ],
-    orientation: [
-      "Luteal phase.",
-      "Luteal phase.",
-      "Luteal phase.",
-    ],
-    allowance: [
-      "Quieter is natural here.",
-      "Settling in.",
-      "You know this part.",
-    ],
-    nudge: NUDGE_ZERO.concat(NUDGE_EARLY, NUDGE_MEDIUM) as [string, string, string],
-    energyLevel: "moderate", focusLevel: "moderate",
-  },
-
-  {
-    cycleDay: 21, phase: "luteal",
-    physical: [
-      "Energy can feel less consistent. Some days feel okay, others feel heavier.",
-      "Energy becoming more variable around here has showed up before. It's starting.",
-      "For you, energy gets unpredictable around day 21. This has showed up before.",
-    ],
-    mental: [
-      "Focus can feel more variable. Concentration can come and go.",
-      "Thinking becoming less steady around now has showed up before. That wobble is familiar.",
-      "Focus wobbles here for you. Often. It steadies again later.",
-    ],
-    emotional: [
-      "Emotions can start to shift more. Stability can feel harder to hold.",
-      "Emotional shifts starting around here have showed up before. They're arriving.",
-      "Emotional stability starts shifting here for you. Often.",
-    ],
-    orientation: [
-      "Luteal phase. Approaching the second half.",
-      "Luteal phase.",
-      "Luteal phase.",
-    ],
-    allowance: [
-      "Things can feel more changeable here.",
-      "Variable territory.",
-      "You know this shift.",
-    ],
-    nudge: NUDGE_ZERO.concat(NUDGE_EARLY, NUDGE_MEDIUM) as [string, string, string],
-    energyLevel: "declining", focusLevel: "moderate",
-  },
-
-  {
-    cycleDay: 22, phase: "luteal",
-    physical: [
-      "Energy can feel like it's declining more noticeably. Bloating, tenderness, or fatigue can show up.",
-      "Energy dropping around mid-luteal has showed up before. That dip is arriving.",
-      "For you, mid-luteal is where energy often drops. It's here.",
-    ],
-    mental: [
-      "Focus can feel harder. Tasks that felt easy last week can feel more draining.",
-      "Thinking gets harder around here for you. The effort is noticeable.",
-      "Focus requires significantly more effort here. This arrives often.",
-    ],
-    emotional: [
-      "Emotions can start to feel more intense or reactive. Small irritations can feel bigger.",
-      "Emotions intensifying in this part of your cycle has showed up before. It's here again.",
-      "Emotional intensity is at its strongest in mid-luteal for you. Often.",
-    ],
-    orientation: [
-      "Mid luteal phase.",
-      "Mid luteal.",
-      "Mid luteal.",
-    ],
-    allowance: [
-      "Things feel heavier. That's real.",
-      "Heavier. Familiar.",
-      "You know this stretch.",
-    ],
-    nudge: NUDGE_ZERO.concat(NUDGE_EARLY, NUDGE_MEDIUM) as [string, string, string],
-    energyLevel: "declining", focusLevel: "moderate",
-  },
-
-  {
-    cycleDay: 23, phase: "luteal",
-    physical: [
-      "Physical discomfort can increase. Headaches, bloating, or aches can show up here.",
-      "This kind of physical discomfort around here has showed up before. It's arriving.",
-      "For you, physical discomfort builds around day 23. Recognizable.",
-    ],
-    mental: [
-      "Mood can feel lower or more reactive. Things that roll off can stick.",
-      "Mood dipping around here has showed up before. That heaviness is familiar.",
-      "Mood dips here for you. Often. It lifts again.",
-    ],
-    emotional: [
-      "Feelings can run closer to the surface. Small triggers can land harder.",
-      "Emotional sensitivity being strongest around here has showed up before. It's here.",
-      "Emotional sensitivity is fullest around day 23 for you. Often.",
-    ],
-    orientation: [
-      "Mid to late luteal phase.",
-      "Mid to late luteal.",
-      "Mid to late luteal.",
-    ],
-    allowance: [
-      "Heavier is natural here.",
-      "Recognizable weight.",
-      "You've been here before.",
-    ],
-    nudge: NUDGE_ZERO.concat(NUDGE_EARLY, NUDGE_MEDIUM) as [string, string, string],
-    energyLevel: "declining", focusLevel: "moderate",
-  },
-
-  {
-    cycleDay: 24, phase: "luteal",
-    physical: [
-      "Bloating, tenderness, and fatigue can feel at their strongest around now.",
-      "This kind of physical heaviness around here has showed up before. It's at its strongest.",
-      "For you, this is where physical discomfort is heaviest. Often. It's here.",
-    ],
-    mental: [
-      "Stress can feel harder to manage. Small problems can feel much larger.",
-      "Things feeling harder to manage around now has showed up before. That weight is familiar.",
-      "Mental load is at its heaviest here for you. Often. It eases soon.",
-    ],
-    emotional: [
-      "Emotional reactions can feel stronger than usual. That intensity can show up here.",
-      "Emotional reactions feeling out of proportion around here has showed up before. Familiar.",
-      "This is the most emotionally amplified stretch for you. You've seen it enough to know.",
-    ],
-    orientation: [
-      "Late luteal phase.",
-      "Late luteal.",
-      "Late luteal.",
-    ],
-    allowance: [
-      "This is a harder stretch. It passes.",
-      "The hardest part. Familiar.",
-      "You know it passes.",
-    ],
-    nudge: NUDGE_ZERO.concat(NUDGE_EARLY, NUDGE_MEDIUM) as [string, string, string],
-    energyLevel: "declining", focusLevel: "poor",
-  },
-
-  {
-    cycleDay: 25, phase: "luteal",
-    physical: [
-      "Energy can feel at its lowest before your period. Fatigue and physical discomfort can show up.",
-      "Low energy before your period has showed up before. It's arriving again.",
-      "For you, the days before your period are your lowest energy. Often. It's here.",
-    ],
-    mental: [
-      "Concentration can feel scattered. Things can feel foggy or slow.",
-      "Thinking getting foggy in late luteal has showed up before. That heaviness is here.",
-      "Focus is hardest here for you. This is where the fog is thickest. Often.",
-    ],
-    emotional: [
-      "Emotions can feel most intense in the days before your period. Irritability or sadness can surface.",
-      "Emotions intensifying before your period has showed up before. If that's present, it's recognizable.",
-      "Emotional intensity is strongest right before your period for you. You've seen this enough to know it passes.",
-    ],
-    orientation: [
-      "Late luteal. Period approaching.",
-      "Late luteal. Period approaching.",
-      "Late luteal. Period is close.",
-    ],
-    allowance: [
-      "This is a harder part. It passes.",
-      "Almost through.",
-      "The hardest part. You know it passes.",
-    ],
-    nudge: NUDGE_ZERO.concat(NUDGE_EARLY, NUDGE_MEDIUM) as [string, string, string],
-    energyLevel: "low", focusLevel: "poor",
-  },
-
-  {
-    cycleDay: 26, phase: "luteal",
-    physical: [
-      "Pre-period symptoms like cramping or heaviness can show up today.",
-      "Pre-period heaviness has showed up before. Things are getting ready to shift.",
-      "For you, this is deep in the pre-period stretch. The heaviness is familiar.",
-    ],
-    mental: [
-      "Focus can feel scattered and concentration harder to hold.",
-      "Thinking getting hardest right around here has showed up before. It's recognizable.",
-      "Focus is at its hardest for you right here. Often.",
-    ],
-    emotional: [
-      "Irritability and emotional heaviness can feel at their strongest.",
-      "This emotional weight around now has showed up before. It's familiar.",
-      "Emotional heaviness is strongest here for you. Often. It lifts soon.",
-    ],
-    orientation: [
-      "Late luteal. Period is close.",
-      "Late luteal. Almost there.",
-      "Late luteal. Period is imminent.",
-    ],
-    allowance: [
-      "Almost through.",
-      "Nearly there.",
-      "You know this ends.",
-    ],
-    nudge: NUDGE_ZERO.concat(NUDGE_EARLY, NUDGE_MEDIUM) as [string, string, string],
-    energyLevel: "low", focusLevel: "poor",
-  },
-
-  {
-    cycleDay: 27, phase: "luteal",
-    physical: [
-      "Energy can feel very depleted. Cramping or lower back discomfort can begin before bleeding starts.",
-      "Pre-period heaviness has showed up before. Things are getting ready to shift.",
-      "For you, this is the lowest point physically. Often, right before your period. It's here.",
-    ],
-    mental: [
-      "Focus can feel scattered. Simple things can require more effort.",
-      "Thinking is hardest right here for you. The fog is at its thickest.",
-      "Focus is at its hardest. Often, this is where it's heaviest for you.",
-    ],
-    emotional: [
-      "Emotions can feel raw and close. This can be the most emotionally intense time before a period.",
-      "Emotions feeling rawest just before your period has showed up before. It's here.",
-      "Emotional rawness is strongest here. You've seen this. It resets soon.",
-    ],
-    orientation: [
-      "Pre-menstrual. Period is very close.",
-      "Pre-menstrual.",
-      "Pre-menstrual. Period is imminent.",
-    ],
-    allowance: [
-      "Almost there.",
-      "Almost there.",
-      "Tomorrow starts fresh.",
-    ],
-    nudge: NUDGE_ZERO.concat(NUDGE_EARLY, NUDGE_MEDIUM) as [string, string, string],
-    energyLevel: "low", focusLevel: "poor",
-  },
-
-  {
-    cycleDay: 28, phase: "luteal",
-    physical: [
-      "Cramping or spotting can signal your period is arriving. Energy can feel very low.",
-      "These final pre-period signals have showed up before. They're here again.",
-      "For you, this is the final day before the reset. The signals are here. Familiar.",
-    ],
-    mental: [
-      "Mental load can feel heaviest right before bleeding starts.",
-      "Mental heaviness being strongest right before your period has showed up before. Recognizable.",
-      "Mental exhaustion is heaviest here for you. Often, right before the reset.",
-    ],
-    emotional: [
-      "Emotional tension can feel highest right before bleeding. Relief can come with day 1.",
-      "This emotional buildup before your period has showed up before. It releases soon.",
-      "Emotional tension is at its strongest. You've seen this. It releases when bleeding begins.",
-    ],
-    orientation: [
-      "Pre-menstrual. Period can arrive very soon.",
-      "Pre-menstrual. Period is imminent.",
-      "Pre-menstrual. The cycle is completing.",
-    ],
-    allowance: [
-      "Relief is coming.",
-      "Almost through. Relief is close.",
-      "You know what's coming. It resets.",
-    ],
-    nudge: NUDGE_ZERO.concat(NUDGE_EARLY, NUDGE_MEDIUM) as [string, string, string],
-    energyLevel: "very_low", focusLevel: "poor",
-  },
-];
+  luteal: [
+    {
+      phaseDay: 1,
+      variants: {
+        A: {
+          insight:
+            "The corpus luteum has formed and progesterone is starting to rise. The body's tempo is changing.",
+          body_note:
+            "Sleep may feel heavier over the next week — progesterone has a sedating quality.",
+        },
+        B: {
+          insight:
+            "The follicle that released the egg has become the corpus luteum. It has one job now: make progesterone.",
+          body_note:
+            "Energy for intense exercise often dips slightly from here. Volume over intensity works better.",
+        },
+        C: {
+          insight:
+            "A softer gravity. The body wants to sit a beat longer before it moves.",
+          body_note:
+            "Core temperature rises 0.3–0.6°C and stays up through the luteal.",
+        },
+        D: {
+          insight:
+            "The drop after ovulation isn't a crash. It's a gear change, and the new gear has its own kind of capability.",
+          body_note:
+            "Progesterone has different capabilities than estrogen. Different, not less.",
+        },
+        E: {
+          insight:
+            "Shift workout style from intensity to volume. Longer walks, easier runs, lighter weights with more reps — the body handles this better now than sprints or PRs.",
+          body_note:
+            "The hormonal shift post-ovulation changes which workout styles your body responds to.",
+        },
+        F: {
+          insight:
+            "Afternoon light in a quiet house. Different from morning, not less.",
+          body_note: "Afternoon is not a lesser morning.",
+        },
+      },
+    },
+    {
+      phaseDay: 2,
+      variants: {
+        A: {
+          insight:
+            "Progesterone is climbing. Appetite often rises with it — this is hormonal, not lack of discipline.",
+          body_note:
+            "Body temperature stays slightly elevated through the luteal phase.",
+        },
+        B: {
+          insight:
+            "Progesterone is warm chemistry — literally. It raises core temperature and slows things down on purpose.",
+          body_note:
+            "Sleep sometimes feels heavier but less refreshing in the early luteal.",
+        },
+        C: {
+          insight:
+            "Warmer than yesterday from the inside. Not a fever, just a different temperature to live at.",
+          body_note:
+            "Progesterone slows gut motility slightly — warmer food sits better.",
+        },
+        D: {
+          insight:
+            "Wanting more food in the luteal phase isn't overeating. Resting metabolic rate actually rises in this phase — the body needs more.",
+          body_note:
+            "Luteal-phase RMR is measurably higher. The body needs more fuel.",
+        },
+        E: {
+          insight:
+            "Eat slightly more than you did last week. Resting metabolic rate genuinely rises in the luteal phase — the extra hunger is a bill, not a craving.",
+          body_note:
+            "Studies show RMR rises 2.5–11.5% in the luteal phase. The hunger is a real bill.",
+        },
+        F: {
+          insight: "A slow river. The same water, moving at a different tempo.",
+          body_note: "Slower water is still the river.",
+        },
+      },
+    },
+    {
+      phaseDay: 3,
+      variants: {
+        A: {
+          insight:
+            "The uterine lining is maturing, preparing either for implantation or for its eventual shed.",
+          body_note: "Breast tenderness can begin around here for some people.",
+        },
+        B: {
+          insight:
+            "The uterine lining is being quietly finished — glands, blood supply, everything an embryo would need if one arrived.",
+          body_note:
+            "Breasts can feel fuller or heavier from around here. Progesterone does that.",
+        },
+        C: {
+          insight:
+            "A fullness in the chest that wasn't there last week. The body holding more of itself.",
+          body_note:
+            "Breast tissue holds more fluid under progesterone. This is that.",
+        },
+        D: {
+          insight:
+            "Not wanting to do the workout you crushed last week isn't losing fitness. It's your body running on different fuel.",
+          body_note:
+            "Performance capacity shifts with the hormonal mix. Fitness hasn't gone anywhere.",
+        },
+        E: {
+          insight:
+            "Magnesium in the evening — food or supplement — tends to help luteal-phase sleep. Pumpkin seeds, dark chocolate, and leafy greens are the easiest food routes.",
+          body_note:
+            "Magnesium supports GABA function — the same pathway progesterone was working on.",
+        },
+        F: {
+          insight:
+            "Something being kept warm. A hand around a cup, a blanket over a lamp.",
+          body_note: "Warmth kept is warmth still.",
+        },
+      },
+    },
+    {
+      phaseDay: 4,
+      variants: {
+        A: {
+          insight:
+            "Mid-luteal. Progesterone is doing most of the talking now, and it softens the edges of energy.",
+          body_note:
+            "Slower workouts often feel more sustainable than intense ones this week.",
+        },
+        B: {
+          insight:
+            "Mid-luteal. The hormonal mix is completely different from the follicular phase — more inward, more settled, less sharp.",
+          body_note:
+            "Carb cravings in this window are partly a serotonin story, not just appetite.",
+        },
+        C: {
+          insight:
+            "Sounds feel slightly louder. Light feels slightly sharper. The nervous system is running a little closer to the surface.",
+          body_note:
+            "The auditory cortex is genuinely more reactive in the luteal phase.",
+        },
+        D: {
+          insight:
+            "Feeling more sensitive isn't weakness leaking through. Progesterone shifts how the nervous system processes everything.",
+          body_note:
+            "Progesterone changes how the nervous system processes input. All input.",
+        },
+        E: {
+          insight:
+            "This is the phase where detail work outperforms big-picture work. Edit the draft, don't write a new one. Organize the spreadsheet, don't start the new project.",
+          body_note:
+            "Executive function handles detail-work well in the luteal. Big-picture work, less so.",
+        },
+        F: {
+          insight:
+            "Honey thickening in the jar as the air cools. Still sweet, just slower.",
+          body_note: "Sweetness slows but stays.",
+        },
+      },
+    },
+    {
+      phaseDay: 5,
+      variants: {
+        A: {
+          insight:
+            "Progesterone typically peaks around seven to eight days after ovulation. That's roughly now.",
+          body_note:
+            "Cravings for denser, warmer food are common and physiologically reasonable.",
+        },
+        B: {
+          insight:
+            "Progesterone is near its highest. If an embryo had implanted, this is the hormone keeping things stable.",
+          body_note:
+            "Body temperature is usually at its steady luteal elevation around now.",
+        },
+        C: {
+          insight:
+            "Heavy-eyed in the afternoon in a way that isn't about sleep. This is just the hormone's weight.",
+          body_note:
+            "Progesterone is near its peak. This is the weight you are feeling.",
+        },
+        D: {
+          insight:
+            "Needing more sleep this week isn't laziness. Progesterone acts on the same receptors as some sedatives.",
+          body_note:
+            "Progesterone is GABA-ergic — it acts on the same receptors as sedatives.",
+        },
+        E: {
+          insight:
+            "Caffeine after noon hits the late luteal harder than any other phase. If sleep is fragile this week, that cup at 3pm is probably part of the reason.",
+          body_note:
+            "Progesterone's sedation is wearing off, so caffeine's half-life matters more now.",
+        },
+        F: {
+          insight: "The hour before evening. Full light, softer angles.",
+          body_note: "Soft angles are still full light.",
+        },
+      },
+    },
+    {
+      phaseDay: 6,
+      variants: {
+        A: {
+          insight:
+            "The body is running on a hormonal mix that's different from the follicular phase. Different is not worse.",
+          body_note:
+            "Focus may feel more diffuse — estrogen's clarity has stepped back.",
+        },
+        B: {
+          insight:
+            "The body is in maintenance mode. No ramp-up, no ramp-down — just holding steady.",
+          body_note:
+            "Motivation often dips in this window. It's not apathy, it's a different hormonal tempo.",
+        },
+        C: {
+          insight:
+            "A pulled-in feeling. Less appetite for big rooms, more for small ones.",
+          body_note:
+            "Social battery is running on a different circuit this week.",
+        },
+        D: {
+          insight:
+            "The motivation dip isn't a character flaw. The follicular-phase drive was chemical too — so is its absence.",
+          body_note:
+            "The follicular drive is hormonal. Its absence now is too.",
+        },
+        E: {
+          insight:
+            "Protein at breakfast stabilizes luteal-phase mood more than carbs do. Eggs, curd, paneer, dal — whichever fits the morning.",
+          body_note:
+            "Protein stabilizes blood sugar, which stabilizes luteal mood more than carbs do.",
+        },
+        F: {
+          insight:
+            "A book you've been reading all week. You know where you are, and there's still a way to go.",
+          body_note: "The story is still moving.",
+        },
+      },
+    },
+    {
+      phaseDay: 7,
+      variants: {
+        A: {
+          insight:
+            "If no implantation has happened, the corpus luteum is beginning its slow wind-down.",
+          body_note:
+            "Mood can start to feel weightier from here. It's the hormonal shift, not a personal failing.",
+        },
+        B: {
+          insight:
+            "Without implantation, the corpus luteum has started shrinking. It was always going to — this was its design.",
+          body_note:
+            "This is usually where PMS symptoms start to surface for those who get them.",
+        },
+        C: {
+          insight:
+            "Small things feel bigger. The volume on everything has been nudged up a notch.",
+          body_note:
+            "Amygdala reactivity rises in the late luteal. Small things land harder.",
+        },
+        D: {
+          insight:
+            "PMS starting now isn't you 'letting it get to you'. It's the corpus luteum winding down exactly on schedule.",
+          body_note:
+            "The corpus luteum has a 10–14 day lifespan by design. This is it winding down.",
+        },
+        E: {
+          insight:
+            "Start protecting sleep now, not when PMS arrives. Dark room, consistent bedtime, screens away thirty minutes earlier than usual.",
+          body_note:
+            "Sleep architecture degrades in the late luteal. Early protection pays off.",
+        },
+        F: {
+          insight:
+            "Dusk arriving earlier than it did last week. Not wrong, just earlier.",
+          body_note: "Dusk has its own hour.",
+        },
+      },
+    },
+    {
+      phaseDay: 8,
+      variants: {
+        A: {
+          insight:
+            "Progesterone is starting to drop. Many of the symptoms called 'PMS' begin in this quiet decline.",
+          body_note: "Bloating and water retention often show up around now.",
+        },
+        B: {
+          insight:
+            "Progesterone is now falling. The stability it brought starts to thin — mood can feel less anchored.",
+          body_note:
+            "Water retention peaks for many people in this window. It passes.",
+        },
+        C: {
+          insight:
+            "A tightness under the collarbones. Breath sits higher than it did mid-cycle.",
+          body_note:
+            "Shallow breathing in the late luteal is common. Notice it, lengthen it.",
+        },
+        D: {
+          insight:
+            "Bloating this week isn't weight gain. It's water, and water leaves the way it came.",
+          body_note:
+            "Water retention in the late luteal is aldosterone-driven. It passes.",
+        },
+        E: {
+          insight:
+            "Reduce salt slightly this week. Bloating in the late luteal is partly sodium-sensitive — small change, noticeable difference.",
+          body_note:
+            "Aldosterone activity shifts in the late luteal, making sodium sensitivity spike.",
+        },
+        F: {
+          insight:
+            "Low clouds that haven't decided yet. The sky holding two weathers at once.",
+          body_note: "Two weathers is still weather.",
+        },
+      },
+    },
+    {
+      phaseDay: 9,
+      variants: {
+        A: {
+          insight:
+            "Late luteal. Estrogen and progesterone are both easing downward — the body can feel the change before the calendar does.",
+          body_note:
+            "Sleep quality often dips slightly in the final luteal stretch.",
+        },
+        B: {
+          insight:
+            "Late luteal. GABA receptors have been soaking in progesterone's calming effect — as it drops, the calm drops with it.",
+          body_note:
+            "Anxiety that shows up this week is often a withdrawal effect, not a new problem.",
+        },
+        C: {
+          insight:
+            "The body feels like it's bracing for something. Even the jaw holds on a little tighter.",
+          body_note:
+            "The jaw is one of the first places the body stores late-luteal tension.",
+        },
+        D: {
+          insight:
+            "The late-luteal anxiety isn't a new problem. It's a withdrawal effect. It has an end date.",
+          body_note:
+            "Anxiety in the late luteal is often progesterone withdrawal, not a new condition.",
+        },
+        E: {
+          insight:
+            "This is a bad week to make big decisions you don't have to make. Write them down, decide in the follicular phase.",
+          body_note:
+            "Risk assessment and impulse control shift in the late luteal. Future-you will be clearer.",
+        },
+        F: {
+          insight: "A tight thread. Still holding, but you can feel it.",
+          body_note: "The thread is still holding.",
+        },
+      },
+    },
+    {
+      phaseDay: 10,
+      variants: {
+        A: {
+          insight:
+            "Serotonin is sensitive to falling estrogen. Low mood in this window is chemistry, not character.",
+          body_note:
+            "Skin may feel more reactive than usual over these next few days.",
+        },
+        B: {
+          insight:
+            "Estrogen is falling alongside progesterone. Serotonin dips with it — this is the biology of premenstrual mood.",
+          body_note:
+            "Skin can break out here even if the rest of the cycle was clear.",
+        },
+        C: {
+          insight:
+            "A thin-skinned feeling. Not fragile — just more permeable to everything coming in.",
+          body_note:
+            "Pain and sensory thresholds both drop before the period starts.",
+        },
+        D: {
+          insight:
+            "Crying easier isn't being unstable. Falling estrogen directly affects serotonin — this is chemistry, not collapse.",
+          body_note:
+            "Estrogen-serotonin coupling is a measurable, documented effect.",
+        },
+        E: {
+          insight:
+            "A warm shower before bed helps more than it should in the late luteal. The body drops temperature faster afterward, which is what sleep needs.",
+          body_note:
+            "Core temperature is elevated; warm-then-cool helps the body drop into sleep faster.",
+        },
+        F: {
+          insight:
+            "Rain on a window at night. Everything slightly blurred, slightly amplified.",
+          body_note: "Blurred is not broken.",
+        },
+      },
+    },
+    {
+      phaseDay: 11,
+      variants: {
+        A: {
+          insight:
+            "Cramping signals and breast heaviness can begin now. The body is moving toward the next menses.",
+          body_note:
+            "Caffeine tends to hit harder in the late luteal — it's not your imagination.",
+        },
+        B: {
+          insight:
+            "Prostaglandins are starting to build in the endometrium. They're what will drive the cramping once bleeding begins.",
+          body_note:
+            "Sleep disturbance is common in the last few luteal days. Progesterone's sedation is wearing off.",
+        },
+        C: {
+          insight:
+            "Heaviness low again, but different from period heaviness. This one is expectant, not emptied.",
+          body_note:
+            "Prostaglandins are starting to build in the uterine lining.",
+        },
+        D: {
+          insight:
+            "Not recognizing yourself this week isn't the 'real you' showing up either. This is also a phase, and it also passes.",
+          body_note:
+            "Late-luteal mood doesn't predict anything. It passes within hours of bleeding.",
+        },
+        E: {
+          insight:
+            "Gentle movement beats no movement and rest beats hard workouts. Yoga, a walk, stretching — the body will thank you, the scale will not punish you.",
+          body_note:
+            "High-intensity workouts in the late luteal raise cortisol more than earlier phases.",
+        },
+        F: {
+          insight:
+            "The last hour before a train leaves. Too soon to relax, too late to start something new.",
+          body_note: "The train leaves on its own time.",
+        },
+      },
+    },
+    {
+      phaseDay: 12,
+      variants: {
+        A: {
+          insight:
+            "The endometrium is at its thickest. Hormones are low and still falling.",
+          body_note:
+            "Headaches in this window are often estrogen-withdrawal related.",
+        },
+        B: {
+          insight:
+            "The body is preparing to let go of the lining it spent a month building. Cycles are, above all, about release.",
+          body_note: "Cravings can spike right now — chemistry, not choice.",
+        },
+        C: {
+          insight:
+            "A kind of static under the skin. The body is almost ready to let go.",
+          body_note: "The endometrium is at its thickest. Release is close.",
+        },
+        D: {
+          insight:
+            "Feeling like everything is harder isn't weakness. Pain thresholds genuinely lower in the late luteal.",
+          body_note:
+            "Pain thresholds genuinely drop in the late luteal phase. It's not you.",
+        },
+        E: {
+          insight:
+            "Stock the things you'll want on day one — painkillers, pads or the cup, a snack that won't need thinking about. Future-you will be grateful.",
+          body_note:
+            "Day-one fatigue is predictable. Stocking ahead is not anxiety, it's planning.",
+        },
+        F: {
+          insight:
+            "A kettle nearly at the boil. So close you can hear it in the metal.",
+          body_note: "Almost is its own kind of sound.",
+        },
+      },
+    },
+    {
+      phaseDay: 13,
+      variants: {
+        A: {
+          insight:
+            "Premenstrual. The corpus luteum has nearly finished its work. One or two days to go in most 28-day cycles.",
+          body_note:
+            "Emotional intensity often peaks just before flow begins. It tends to ease within hours of bleeding.",
+        },
+        B: {
+          insight:
+            "Hormones are almost at floor. Many people feel the worst the day or two before bleeding starts, then better once it does.",
+          body_note:
+            "Headaches and breast tenderness often peak in this narrow window.",
+        },
+        C: {
+          insight:
+            "Everything feels a little closer to the edges. Tears sit higher, laughter sits higher, all of it.",
+          body_note: "Serotonin is at its cycle-low. The volume is not you.",
+        },
+        D: {
+          insight:
+            "The premenstrual spiral isn't a window into some hidden truth about your life. Tomorrow's hormones will disagree with today's.",
+          body_note:
+            "Late-luteal cognition is less reliable. Your other weeks' judgment is more real.",
+        },
+        E: {
+          insight:
+            "If you can clear tomorrow's morning — fewer meetings, softer start — do it now. It won't always be possible, but when it is, it helps.",
+          body_note:
+            "The first few hours of day 1 are often the worst. A soft morning helps more than the math suggests.",
+        },
+        F: {
+          insight:
+            "The minute before the first raindrop. The whole street can feel it coming.",
+          body_note: "The street knows before the sky does.",
+        },
+      },
+    },
+    {
+      phaseDay: 14,
+      variants: {
+        A: {
+          insight:
+            "The final day before a new cycle. Hormones are at their lowest point — the body is about to begin again.",
+          body_note: "Rest tonight lands better than pushing. Day 1 is close.",
+        },
+        B: {
+          insight:
+            "The last day of the cycle, or close to it. Something in the body already knows tomorrow is day one.",
+          body_note:
+            "Gentle is the right setting tonight. The next cycle starts on its own.",
+        },
+        C: {
+          insight:
+            "A dropping feeling in the lower belly by evening. The body starting to open its grip.",
+          body_note: "Hours away from day one. The drop is already in motion.",
+        },
+        D: {
+          insight:
+            "The worst day of the cycle isn't a verdict on anything. It's the day before the body resets — nothing more, nothing less.",
+          body_note:
+            "Hormones are about to reset. Whatever you felt today is not a verdict.",
+        },
+        E: {
+          insight:
+            "Warm bath, early night, no hard conversations. The cycle is about to reset — help it land softly.",
+          body_note:
+            "The hormonal floor is tomorrow. Landing soft tonight means an easier day 1.",
+        },
+        F: {
+          insight:
+            "A page turning. You don't hear it, but the story has already moved.",
+          body_note: "The page has already turned.",
+        },
+      },
+    },
+  ],
+};
 
 // ─── Functions ──────────────────────────────────────────────────────────────
 
-export function getCycleNumber(lastPeriodStart: Date, cycleLength: number): number {
+export function getCycleNumber(
+  lastPeriodStart: Date,
+  cycleLength: number,
+): number {
   const EPOCH = new Date("2024-01-01").getTime();
-  const daysSinceEpoch = Math.floor((lastPeriodStart.getTime() - EPOCH) / 86400000);
+  const daysSinceEpoch = Math.floor(
+    (lastPeriodStart.getTime() - EPOCH) / 86400000,
+  );
   return Math.max(0, Math.floor(daysSinceEpoch / cycleLength));
 }
 
+/**
+ * @deprecated Phase+phaseDay is already the normalized form.
+ * Kept for backward compatibility — returns phaseDay unchanged.
+ */
 export function getNormalizedDay(
-  cycleDay: number,
-  cycleLength: number,
-  phase: Phase,
+  phaseDay: number,
+  _cycleLength?: number,
+  _phase?: Phase,
 ): number {
-  if (cycleDay > cycleLength) return 28;
-  if (cycleLength === 28) return Math.max(1, Math.min(28, cycleDay));
-  if (phase === "menstrual") return Math.min(Math.max(1, cycleDay), 5);
-  if (phase === "follicular") {
-    const follicularLength = Math.max(1, cycleLength - 19);
-    const follicularDay = Math.max(1, cycleDay - 5);
-    const normalized = Math.round((follicularDay / follicularLength) * 8) + 5;
-    return Math.min(Math.max(6, normalized), 13);
-  }
-  if (phase === "ovulation") {
-    return Math.min(16, Math.max(14, cycleDay));
-  }
-  const daysFromEnd = cycleLength - cycleDay;
-  return Math.min(28, Math.max(17, 28 - daysFromEnd));
+  return phaseDay;
 }
 
 export function getDayInsight(
-  cycleDay: number,
-  variantIndex: 0 | 1 | 2 = 0,
+  phase: Phase,
+  phaseDay: number,
+  variant: VariantKey = "A",
   cycleMode: CycleMode = "natural",
 ): ResolvedDayInsight {
-  const clamped = Math.max(1, Math.min(28, cycleDay));
-  const effectiveDay =
-    cycleMode === "hormonal" && clamped >= 14 && clamped <= 16
-      ? 12
-      : clamped;
-  const day = library[effectiveDay - 1]!;
+  const phaseEntries = library[phase];
+  const maxDay = phaseEntries.length;
+  const clamped = Math.max(1, Math.min(maxDay, phaseDay));
+
+  // For hormonal mode, skip ovulation-specific content
+  let effectivePhase = phase;
+  let effectiveDay = clamped;
+  if (cycleMode === "hormonal" && phase === "ovulation") {
+    effectivePhase = "follicular";
+    effectiveDay = library.follicular.length; // last follicular day
+  }
+
+  const entries = library[effectivePhase];
+  const safeDay = Math.max(1, Math.min(entries.length, effectiveDay));
+  const entry = entries[safeDay - 1]!;
+  const content = entry.variants[variant];
+
+  const energyEntries = PHASE_ENERGY_MAP[effectivePhase];
+  const safeEnergyDay = Math.max(
+    1,
+    Math.min(energyEntries.length, effectiveDay),
+  );
+  const energy = energyEntries[safeEnergyDay - 1]!;
+
   return {
-    physical: day.physical[variantIndex],
-    mental: day.mental[variantIndex],
-    emotional: day.emotional[variantIndex],
-    orientation: day.orientation[variantIndex],
-    allowance: day.allowance[variantIndex],
-    nudge: day.nudge[variantIndex],
-    energyLevel: day.energyLevel,
-    focusLevel: day.focusLevel,
+    insight: content.insight,
+    body_note: content.body_note,
+    energyLevel: energy.energyLevel,
+    focusLevel: energy.focusLevel,
   };
+}
+
+/** Get the raw phase-day entry for direct access to all variants. */
+export function getDayEntry(phase: Phase, phaseDay: number): PhaseDayEntry {
+  const entries = library[phase];
+  const clamped = Math.max(1, Math.min(entries.length, phaseDay));
+  return entries[clamped - 1]!;
+}
+
+/** Build orientation string from cycle context. */
+export function buildOrientationLine(
+  cycleDay: number,
+  phase: Phase,
+  daysToNextPeriod: number,
+): string {
+  const phaseLabels: Record<Phase, string> = {
+    menstrual: "Menstrual",
+    follicular: "Follicular",
+    ovulation: "Ovulation",
+    luteal: "Luteal",
+  };
+  return `Day ${cycleDay} · ${phaseLabels[phase]} · ${daysToNextPeriod} day${daysToNextPeriod === 1 ? "" : "s"} to next period`;
 }

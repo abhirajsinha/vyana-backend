@@ -15,18 +15,14 @@ import type { HormoneState } from "./hormoneengine";
 /** Inlined from deleted insightCause.ts — kept for type compat */
 export type PrimaryInsightCause = "stable" | "sleep_disruption" | "stress_led" | "cycle";
 
-/** Bridge legacy-only objects to full DailyInsights by copying legacy → new fields */
-function withNewFields(legacy: Omit<DailyInsights, "physical" | "mental" | "emotional" | "orientation" | "allowance" | "nudge"> & Partial<Pick<DailyInsights, "physical" | "mental" | "emotional" | "orientation" | "allowance" | "nudge">>): DailyInsights {
-  return {
-    physical: legacy.physical ?? legacy.physicalInsight,
-    mental: legacy.mental ?? legacy.mentalInsight,
-    emotional: legacy.emotional ?? legacy.emotionalInsight,
-    orientation: legacy.orientation ?? legacy.whyThisIsHappening,
-    allowance: legacy.allowance ?? legacy.solution,
-    nudge: legacy.nudge ?? legacy.tomorrowPreview,
-    ...legacy,
-  } as DailyInsights;
-}
+/** The subset of DailyInsights that GPT rewrites */
+type GptInsightFields = Pick<DailyInsights, "layer1_insight" | "body_note" | "recommendation">;
+
+const GPT_FIELD_KEYS: (keyof GptInsightFields)[] = [
+  "layer1_insight",
+  "body_note",
+  "recommendation",
+];
 
 // ─── enforceTwoLines ──────────────────────────────────────────────────────────
 
@@ -64,13 +60,9 @@ export function enforceTwoLines(text: string): string {
 function enforceTwoLinesOnInsights(insights: DailyInsights): DailyInsights {
   return {
     ...insights,
-    physicalInsight: enforceTwoLines(insights.physicalInsight),
-    mentalInsight: enforceTwoLines(insights.mentalInsight),
-    emotionalInsight: enforceTwoLines(insights.emotionalInsight),
-    whyThisIsHappening: enforceTwoLines(insights.whyThisIsHappening),
-    solution: enforceTwoLines(insights.solution),
+    layer1_insight: enforceTwoLines(insights.layer1_insight),
+    body_note: enforceTwoLines(insights.body_note),
     recommendation: enforceTwoLines(insights.recommendation),
-    tomorrowPreview: enforceTwoLines(insights.tomorrowPreview),
   };
 }
 
@@ -97,13 +89,9 @@ function enforceMaxSentencesOnInsights(
 ): DailyInsights {
   return {
     ...insights,
-    physicalInsight: truncateToMaxSentences(insights.physicalInsight, max),
-    mentalInsight: truncateToMaxSentences(insights.mentalInsight, max),
-    emotionalInsight: truncateToMaxSentences(insights.emotionalInsight, max),
-    whyThisIsHappening: truncateToMaxSentences(insights.whyThisIsHappening, max),
-    solution: truncateToMaxSentences(insights.solution, max),
+    layer1_insight: truncateToMaxSentences(insights.layer1_insight, max),
+    body_note: truncateToMaxSentences(insights.body_note, max),
     recommendation: truncateToMaxSentences(insights.recommendation, max),
-    tomorrowPreview: truncateToMaxSentences(insights.tomorrowPreview, max),
   };
 }
 
@@ -133,8 +121,8 @@ function hasStrengthRegression(
   draft: DailyInsights,
   output: DailyInsights,
 ): boolean {
-  const draftText = Object.values(draft).join(" ").toLowerCase();
-  const outputText = Object.values(output).join(" ").toLowerCase();
+  const draftText = [draft.layer1_insight, draft.body_note, draft.orientation, draft.recommendation].join(" ").toLowerCase();
+  const outputText = [output.layer1_insight, output.body_note, output.orientation, output.recommendation].join(" ").toLowerCase();
   const missingStrongWords = STRONG_WORDS.filter(
     (w) => draftText.includes(w) && !outputText.includes(w),
   );
@@ -150,15 +138,7 @@ function hasStrengthRegression(
 }
 
 function anyFieldExceedsMaxSentences(insights: DailyInsights): boolean {
-  const fields: (keyof DailyInsights)[] = [
-    "physicalInsight",
-    "mentalInsight",
-    "emotionalInsight",
-    "whyThisIsHappening",
-    "solution",
-    "recommendation",
-    "tomorrowPreview",
-  ];
+  const fields: (keyof GptInsightFields)[] = GPT_FIELD_KEYS;
   return fields.some((k) => countSentences(insights[k]) > 3);
 }
 
@@ -168,35 +148,26 @@ export function sanitizeInsights(
 ): DailyInsights {
   if (!insights || typeof insights !== "object") return fallback;
   const o = insights as Record<string, unknown>;
-  const keys: (keyof DailyInsights)[] = [
-    "physicalInsight",
-    "mentalInsight",
-    "emotionalInsight",
-    "whyThisIsHappening",
-    "solution",
-    "recommendation",
-    "tomorrowPreview",
-  ];
-  for (const key of keys) {
+  for (const key of GPT_FIELD_KEYS) {
     if (typeof o[key] !== "string") return fallback;
   }
-  const rawStrings = keys.map((k) => o[k] as string);
+  const rawStrings = GPT_FIELD_KEYS.map((k) => o[k] as string);
   const MAX_RAW_FIELD_LEN = 400;
   if (rawStrings.some((s) => s.length > MAX_RAW_FIELD_LEN)) return fallback;
 
   const trimmed = enforceMaxSentencesOnInsights(
-    withNewFields({
-      physicalInsight: o.physicalInsight as string,
-      mentalInsight: o.mentalInsight as string,
-      emotionalInsight: o.emotionalInsight as string,
-      whyThisIsHappening: o.whyThisIsHappening as string,
-      solution: o.solution as string,
+    {
+      layer1_insight: o.layer1_insight as string,
+      body_note: o.body_note as string,
+      orientation: fallback.orientation,
       recommendation: o.recommendation as string,
-      tomorrowPreview: o.tomorrowPreview as string,
-    }),
+      layer2_wrapper: fallback.layer2_wrapper,
+      layer3_sentence: fallback.layer3_sentence,
+    },
     3,
   );
   const candidate = enforceTwoLinesOnInsights(trimmed);
+
   if (anyFieldExceedsMaxSentences(candidate)) return fallback;
   return candidate;
 }
@@ -224,7 +195,7 @@ const VAGUE_PHRASES = [
 ];
 
 function containsVagueLanguage(insights: DailyInsights): boolean {
-  const text = Object.values(insights).join(" ").toLowerCase();
+  const text = [insights.layer1_insight, insights.body_note, insights.recommendation].join(" ").toLowerCase();
   return VAGUE_PHRASES.some((p) => text.includes(p));
 }
 
@@ -262,13 +233,9 @@ function fixVagueLanguage(insights: DailyInsights): DailyInsights {
 
   return {
     ...insights,
-    physicalInsight: fix(insights.physicalInsight),
-    mentalInsight: fix(insights.mentalInsight),
-    emotionalInsight: fix(insights.emotionalInsight),
-    whyThisIsHappening: fix(insights.whyThisIsHappening),
-    solution: fix(insights.solution),
+    layer1_insight: fix(insights.layer1_insight),
+    body_note: fix(insights.body_note),
     recommendation: fix(insights.recommendation),
-    tomorrowPreview: fix(insights.tomorrowPreview),
   };
 }
 
@@ -313,13 +280,9 @@ function removeUnearnedIdentityLanguage(insights: DailyInsights): DailyInsights 
 
   return {
     ...insights,
-    physicalInsight: clean(insights.physicalInsight),
-    mentalInsight: clean(insights.mentalInsight),
-    emotionalInsight: clean(insights.emotionalInsight),
-    whyThisIsHappening: clean(insights.whyThisIsHappening),
-    solution: clean(insights.solution),
+    layer1_insight: clean(insights.layer1_insight),
+    body_note: clean(insights.body_note),
     recommendation: clean(insights.recommendation),
-    tomorrowPreview: clean(insights.tomorrowPreview),
   };
 }
 
@@ -344,13 +307,9 @@ function removeUnearnedHistoricalClaims(insights: DailyInsights): DailyInsights 
 
   return {
     ...insights,
-    physicalInsight: scrubSentence(insights.physicalInsight),
-    mentalInsight: scrubSentence(insights.mentalInsight),
-    emotionalInsight: scrubSentence(insights.emotionalInsight),
-    whyThisIsHappening: scrubSentence(insights.whyThisIsHappening),
-    solution: scrubSentence(insights.solution),
+    layer1_insight: scrubSentence(insights.layer1_insight),
+    body_note: scrubSentence(insights.body_note),
     recommendation: scrubSentence(insights.recommendation),
-    tomorrowPreview: scrubSentence(insights.tomorrowPreview),
   };
 }
 
@@ -373,13 +332,9 @@ function removeUnearnedMemoryLanguage(insights: DailyInsights): DailyInsights {
 
   return {
     ...insights,
-    physicalInsight: scrub(insights.physicalInsight),
-    mentalInsight: scrub(insights.mentalInsight),
-    emotionalInsight: scrub(insights.emotionalInsight),
-    whyThisIsHappening: scrub(insights.whyThisIsHappening),
-    solution: scrub(insights.solution),
+    layer1_insight: scrub(insights.layer1_insight),
+    body_note: scrub(insights.body_note),
     recommendation: scrub(insights.recommendation),
-    tomorrowPreview: scrub(insights.tomorrowPreview),
   };
 }
 
@@ -389,13 +344,9 @@ function fixCapitalization(insights: DailyInsights): DailyInsights {
 
   return {
     ...insights,
-    physicalInsight: fix(insights.physicalInsight),
-    mentalInsight: fix(insights.mentalInsight),
-    emotionalInsight: fix(insights.emotionalInsight),
-    whyThisIsHappening: fix(insights.whyThisIsHappening),
-    solution: fix(insights.solution),
+    layer1_insight: fix(insights.layer1_insight),
+    body_note: fix(insights.body_note),
     recommendation: fix(insights.recommendation),
-    tomorrowPreview: fix(insights.tomorrowPreview),
   };
 }
 
@@ -414,13 +365,9 @@ function sharpenHighConfidenceTone(insights: DailyInsights): DailyInsights {
 
   return {
     ...insights,
-    physicalInsight: sharpen(insights.physicalInsight),
-    mentalInsight: sharpen(insights.mentalInsight),
-    emotionalInsight: sharpen(insights.emotionalInsight),
-    whyThisIsHappening: sharpen(insights.whyThisIsHappening),
-    solution: sharpen(insights.solution),
+    layer1_insight: sharpen(insights.layer1_insight),
+    body_note: sharpen(insights.body_note),
     recommendation: sharpen(insights.recommendation),
-    tomorrowPreview: sharpen(insights.tomorrowPreview),
   };
 }
 
@@ -436,53 +383,6 @@ function stripMenstrualHedging(text: string): string {
     .replace(/\bcan lead to\b/gi, "brings")
     .replace(/\s{2,}/g, " ")
     .trim();
-}
-
-function polishOvulationPeakCopy(insights: DailyInsights): DailyInsights {
-  let mental = insights.mentalInsight;
-  if (
-    /with clarity and focus at their peak,\s*how easily/i.test(mental) ||
-    (/at their peak/i.test(mental) && /how easily/i.test(mental) && !/—/.test(mental))
-  ) {
-    mental =
-      "Clarity and focus are at their peak — ideas flow more easily and conversations feel smoother.";
-  }
-  mental = mental
-    .replace(/\bmental capacity feels expansive[^.!?]*[.!?]?/gi, "")
-    .replace(/\bexpansive and open\b/gi, "easier to think through and express")
-    .replace(/\s{2,}/g, " ")
-    .trim();
-
-  let emotional = insights.emotionalInsight
-    .replace(
-      /wonderful time to embrace the positivity[^.!?]*[.!?]?/gi,
-      "Things feel lighter and more enjoyable — it's easier to connect with people right now.",
-    )
-    .replace(/\bembrace the positivity\b/gi, "enjoy connecting")
-    .replace(/\s{2,}/g, " ")
-    .trim();
-
-  let solution = insights.solution
-    .replace(
-      /dive into social activities or projects[^.!?]*[.!?]?/gi,
-      "Lean into this momentum — it's a good time for things that need energy or presence.",
-    )
-    .replace(/\bdive into\b/gi, "lean into")
-    .trim();
-
-  let tomorrow = insights.tomorrowPreview;
-  if (/tomorrow,?\s+you notice/i.test(tomorrow)) {
-    tomorrow =
-      "You're moving into the next phase — energy will stay good, but things will start to feel a bit more grounded over the next few days.";
-  }
-
-  return {
-    ...insights,
-    mentalInsight: mental,
-    emotionalInsight: emotional,
-    solution,
-    tomorrowPreview: tomorrow,
-  };
 }
 
 function enforceMenstrualDiscipline(insights: DailyInsights, primaryDriver?: string): DailyInsights {
@@ -511,7 +411,7 @@ function enforceMenstrualDiscipline(insights: DailyInsights, primaryDriver?: str
     return "Focus may feel harder to hold today — your system is redirecting energy to recovery.";
   }
 
-  let mental = simplify(insights.mentalInsight)
+  let layer1 = simplify(insights.layer1_insight)
     .replace(
       /focus drops when sleep dips like this[^.?!]*[.?!]?/i,
       driverAwareMentalFallback(),
@@ -522,13 +422,13 @@ function enforceMenstrualDiscipline(insights: DailyInsights, primaryDriver?: str
     .trim();
 
   if (
-    /might|may|scattered|sleep at about/i.test(mental) ||
-    mental.length < 20
+    /might|may|scattered|sleep at about/i.test(layer1) ||
+    layer1.length < 20
   ) {
-    mental = driverAwareMentalFallback();
+    layer1 = driverAwareMentalFallback();
   }
 
-  let emotional = simplify(insights.emotionalInsight)
+  let bodyNote = simplify(insights.body_note)
     .replace(
       /everything feels a bit more overwhelming[^.?!]*[.?!]?/i,
       "Everything takes more effort right now.",
@@ -538,31 +438,21 @@ function enforceMenstrualDiscipline(insights: DailyInsights, primaryDriver?: str
       "Small things feel harder than it should.",
     )
     .replace(/\bstress is pulling your mood[^.?!]*[.?!]?/gi, "")
-    .trim();
-
-  if (/stress.*mood|mood.*stress|pulling/i.test(emotional)) {
-    emotional =
-      "Everything takes more effort right now — even small things feel harder than it should.";
-  }
-
-  let why = simplify(insights.whyThisIsHappening)
     .replace(/\s*,?\s*As FSH begins[^.?!]*[.?!]?/gi, "")
     .replace(/\s*preparing (?:the )?next follicle[^.?!]*[.?!]?/gi, "")
     .replace(/\s{2,}/g, " ")
     .trim();
 
+  if (/stress.*mood|mood.*stress|pulling/i.test(bodyNote)) {
+    bodyNote =
+      "Everything takes more effort right now — even small things feel harder than it should.";
+  }
+
   return {
     ...insights,
-    physicalInsight: simplify(insights.physicalInsight).replace(
-      /\bthis can lead to a sense of weakness\b/gi,
-      "it's normal to feel physically low",
-    ),
-    mentalInsight: mental,
-    emotionalInsight: emotional,
-    whyThisIsHappening: why,
-    solution: simplify(insights.solution),
+    layer1_insight: layer1,
+    body_note: bodyNote,
     recommendation: simplify(insights.recommendation),
-    tomorrowPreview: simplify(insights.tomorrowPreview),
   };
 }
 
@@ -575,30 +465,20 @@ function safeParseInsightsDetailed(
     return { insights: fallback, status: "empty_response_fallback" };
   }
   try {
-    const parsed = JSON.parse(raw) as Partial<DailyInsights>;
-    const keys: (keyof DailyInsights)[] = [
-      "physicalInsight",
-      "mentalInsight",
-      "emotionalInsight",
-      "whyThisIsHappening",
-      "solution",
-      "recommendation",
-      "tomorrowPreview",
-    ];
-    for (const key of keys) {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    for (const key of GPT_FIELD_KEYS) {
       if (typeof parsed[key] !== "string") {
         return { insights: fallback, status: "json_shape_fallback" };
       }
     }
-    const out: DailyInsights = withNewFields({
-      physicalInsight: parsed.physicalInsight!,
-      mentalInsight: parsed.mentalInsight!,
-      emotionalInsight: parsed.emotionalInsight!,
-      whyThisIsHappening: parsed.whyThisIsHappening!,
-      solution: parsed.solution!,
-      recommendation: parsed.recommendation!,
-      tomorrowPreview: parsed.tomorrowPreview!,
-    });
+    const out: DailyInsights = {
+      layer1_insight: parsed.layer1_insight as string,
+      body_note: parsed.body_note as string,
+      orientation: fallback.orientation,
+      recommendation: parsed.recommendation as string,
+      layer2_wrapper: fallback.layer2_wrapper,
+      layer3_sentence: fallback.layer3_sentence,
+    };
     const outTrimmed = enforceMaxSentencesOnInsights(out, 2);
     const draftLen = JSON.stringify(fallback).length;
     if (JSON.stringify(outTrimmed).length > Math.max(800, draftLen * 2.5))
@@ -615,9 +495,6 @@ function safeParseInsightsDetailed(
     }
     if (guardHints.phase === "menstrual") {
       enforced = enforceMenstrualDiscipline(enforced, guardHints.primaryDriver);
-    }
-    if (guardHints.phase === "ovulation") {
-      enforced = polishOvulationPeakCopy(enforced);
     }
     if (guardHints.confidence === "high") {
       enforced = sharpenHighConfidenceTone(enforced);
@@ -763,15 +640,10 @@ RULES:
 7. If you don't have data for something, don't invent it.
 
 FIELDS:
-- physicalInsight: what body feels (from their logs)
-- mentalInsight: focus/clarity (from their logs)
-- emotionalInsight: emotional experience (from their logs)
-- whyThisIsHappening: grounded context (where in cycle, not teaching)
-- solution: one thing for today (permission, not instruction)
-- recommendation: next few days guidance
-- tomorrowPreview: what to expect next
+- layer1_insight: the primary insight — what she is experiencing and why (from her logs)
+- body_note: grounded context — where in cycle, what the body is doing, what to expect
 
-Return strict JSON only.`.trim();
+Return strict JSON with keys: layer1_insight, body_note, recommendation.`.trim();
 
 // ─── generateInsightsWithGpt ──────────────────────────────────────────────────
 
@@ -830,7 +702,7 @@ export async function generateInsightsWithGpt(
 
   const emotionalMemoryInstruction =
     vyanaCtx?.emotionalMemory.hasMemory && vyanaCtx.emotionalMemory.recallNarrative
-      ? `\nEMOTIONAL MEMORY: "${vyanaCtx.emotionalMemory.recallNarrative}" — express as genuine recall in emotionalInsight or whyThisIsHappening. Show that Vyana remembers how she felt, not just what happened.`
+      ? `\nEMOTIONAL MEMORY: "${vyanaCtx.emotionalMemory.recallNarrative}" — express as genuine recall in layer1_insight or body_note. Show that Vyana remembers how she felt, not just what happened.`
       : "";
 
   const surpriseInstruction =
@@ -850,7 +722,7 @@ export async function generateInsightsWithGpt(
       ? "Hormonal contraception — do NOT reference cycle phases, ovulation, or hormone changes."
       : insightTone === "symptom-based"
         ? "Focus only on what she is logging. No cycle-phase or hormone language."
-        : "Use cycle-phase context where appropriate. Hormone context in whyThisIsHappening only.";
+        : "Use cycle-phase context where appropriate. Hormone context in body_note only.";
 
   const zeroDataInstruction =
     ctx.mode === "fallback" && ctx.recentLogsCount === 0
@@ -870,11 +742,8 @@ REQUIRED language: "can", "may", "often", "typically", "many people find", "it's
 Example: "Flow and cramping can start to ease around this time" ✅ (NOT "Flow is lighter and cramping is softer" ❌)
 
 More examples by field:
-- physicalInsight: "Day ${ctx.cycleDay} is typically when the body starts recovering — energy often begins to shift upward from here." ✅
-- mentalInsight: "Focus can still feel slower at this point in the cycle, as recovery is the body's priority over mental sharpness." ✅
-- emotionalInsight: "If things feel unsettled emotionally, that often starts stabilizing as bleeding tapers off over the next day or two." ✅
-- whyThisIsHappening: "On day ${ctx.cycleDay}, hormone levels are still low, which is what drives this phase — but they're beginning the gradual rise that leads to recovery." ✅
-- tomorrowPreview: "By day ${ctx.cycleDay + 1}, many of the heavier symptoms of this phase start to ease." ✅
+- layer1_insight: "Day ${ctx.cycleDay} is typically when the body starts recovering — energy often begins to shift upward from here." ✅
+- body_note: "On day ${ctx.cycleDay}, hormone levels are still low, which is what drives this phase — but they're beginning the gradual rise that leads to recovery." ✅
 
 Key pattern: [specific day reference] + [what typically happens] + [temporal anchor to next change]
 
@@ -884,7 +753,7 @@ NO directive tone: "resting will support" ❌ → "resting can help support" ✅
 NO deterministic predictions: "you notice a shift" ❌ → "you may start to notice" ✅
 
 Each insight field must describe a DIFFERENT aspect — do not repeat the same signal across fields.
-Keep whyThisIsHappening tied to the specific day number, not generic hormone explanation.
+Keep body_note tied to the specific day number, not generic hormone explanation.
 
 DAY-SPECIFIC ANCHORING (REQUIRED for zero-data users):
 Instead of generic body statements, anchor each insight on what day ${ctx.cycleDay} of ${ctx.phase} specifically means.
@@ -927,9 +796,7 @@ Do NOT use generic "your body" or "this phase" openings — be specific about WH
 - Do NOT frame this as recovery, strain, or limitation unless data shows strain.
 - Avoid AI-poetic or app-cheesy phrasing: "expansive", "mental capacity feels expansive", "embrace the positivity", "wonderful time to".
 - Avoid broken or abstract openers like "With clarity and focus at their peak, how easily..." — use full sentences.
-- solution: enabling ("lean into momentum") — not bossy ("dive into social activities").
-- tomorrowPreview: no "Tomorrow, you notice..." — use clear transition into next phase.
-- solution / recommendation: encourage using the window (focus, connection, momentum) — not generic "anchor habits".`
+- recommendation: enabling ("lean into momentum") — not bossy ("dive into social activities").`
           : `\nPHASE VOICE — LUTEAL:
 - Use protective and explanatory tone.
 - Emphasize sensitivity amplification and lower capacity.
@@ -970,19 +837,19 @@ Do NOT use generic "your body" or "this phase" openings — be specific about WH
     : null;
 
   let primaryDriverInstruction = primaryOpener
-    ? `\nCRITICAL — physicalInsight MUST start with: "${primaryOpener}..." (then continue describing the experience)`
+    ? `\nCRITICAL — layer1_insight MUST start with: "${primaryOpener}..." (then continue describing the experience)`
     : "";
 
   if (vyanaCtx?.primaryInsightCause === "sleep_disruption") {
-    primaryDriverInstruction = `\nCRITICAL — SLEEP-DISRUPTION PRIMARY: physicalInsight MUST open with the sharp sleep drop (use recentSleepAvg and baselineSleepAvg from HER DATA verbatim). Do NOT open with generic strain, iron, or "past cycles". whyThisIsHappening MUST attribute how she feels to sleep, not hormones. recommendation MUST keep load lighter until sleep recovers — NOT "take on harder things" or peak-phase messaging.`;
+    primaryDriverInstruction = `\nCRITICAL — SLEEP-DISRUPTION PRIMARY: layer1_insight MUST open with the sharp sleep drop (use recentSleepAvg and baselineSleepAvg from HER DATA verbatim). Do NOT open with generic strain, iron, or "past cycles". body_note MUST attribute how she feels to sleep, not hormones. recommendation MUST keep load lighter until sleep recovers — NOT "take on harder things" or peak-phase messaging.`;
   }
 
   if (vyanaCtx?.primaryInsightCause === "stress_led") {
-    primaryDriverInstruction = `\nCRITICAL — STRESS-LED PRIMARY: whyThisIsHappening MUST attribute how she feels to stress, NOT hormones or sleep. physicalInsight should NOT mention sleep dropping (sleep is fine). mentalInsight should reference focus affected by stress load.`;
+    primaryDriverInstruction = `\nCRITICAL — STRESS-LED PRIMARY: body_note MUST attribute how she feels to stress, NOT hormones or sleep. layer1_insight should NOT mention sleep dropping (sleep is fine).`;
   }
 
   if (ctx.phase === "ovulation" && ctx.stress_state === "elevated") {
-    primaryDriverInstruction += `\nCRITICAL — OVULATION BLOCKED: stress is dampening this user's peak window. physicalInsight MUST acknowledge the energy peak is being cancelled by stress. Do NOT write pure peak-phase copy when stress is active. whyThisIsHappening should mention stress dampening the ovulation window.`;
+    primaryDriverInstruction += `\nCRITICAL — OVULATION BLOCKED: stress is dampening this user's peak window. layer1_insight MUST acknowledge the energy peak is being cancelled by stress. Do NOT write pure peak-phase copy when stress is active. body_note should mention stress dampening the ovulation window.`;
   }
 
   const signalPositiveOverride =
@@ -1020,35 +887,27 @@ HER DATA (sleep values must be used EXACTLY as written below — never rephrase)
 ${contextBlock}
 
 TASK: Write her insights from scratch. GPT is primary author.
-${primaryOpener && vyanaCtx?.primaryInsightCause !== "sleep_disruption" ? `physicalInsight MUST start with the primary driver opener above (first sentence).\n` : ""}Use the sleep value from context exactly — do not round differently.
+${primaryOpener && vyanaCtx?.primaryInsightCause !== "sleep_disruption" ? `layer1_insight MUST start with the primary driver opener above (first sentence).\n` : ""}Use the sleep value from context exactly — do not round differently.
 Translate all other signals into natural language — never copy verbatim.
 Use identity language when present. Express emotional memory as recall, not data.
 Surprise insight leads with the unexpected connection. Delight is one warm sentence.
 
 CRITICAL REMINDERS:
 - Each JSON field: at most 2 sentences total (periods . ! ? count as sentence ends).
-- whyThisIsHappening: keep concise and experiential (avoid textbook biology dumps)
+- body_note: keep concise and experiential (avoid textbook biology dumps)
 ${ctx.phase === "menstrual"
-    ? `- mentalInsight: simple and non-analytical — match the primary driver. If sleep-driven: "Sleep loss is clouding your focus." If stress-driven: "Stress is scattering your focus." Otherwise: "Focus may feel harder to hold today." Do NOT chain sleep → focus or stress → mood. Do NOT use "recovery over clarity."
-- emotionalInsight: direct experience only — no system explanations ("stress pulling mood").`
+    ? `- layer1_insight: simple and non-analytical — match the primary driver. If sleep-driven: "Sleep loss is clouding your focus." If stress-driven: "Stress is scattering your focus." Otherwise: "Focus may feel harder to hold today." Do NOT chain sleep → focus or stress → mood. Do NOT use "recovery over clarity."`
     : ctx.phase === "ovulation"
-      ? `- mentalInsight: grounded sentences only — e.g. "Clarity and focus are at their peak — ideas flow more easily and conversations feel smoother." Avoid abstract fragments.
-- emotionalInsight: natural and human — e.g. "Things feel lighter and more enjoyable — it's easier to connect with people right now." No wellness-app cheerleading.
-- solution: e.g. "Lean into this momentum — it's a good time for things that need energy or presence." Not "dive into" lists.`
-      : `- mentalInsight: cause → effect ("focus drops when sleep dips like this") — NOT "feels like a challenge"`}
-- solution: match phase — ovulation: momentum / presence; luteal: lighter load — NOT generic "anchor habits" unless appropriate
-- tomorrowPreview: MUST include timing (days until period/next phase from data) and what shifts
+      ? `- layer1_insight: grounded sentences only — e.g. "Clarity and focus are at their peak — ideas flow more easily and conversations feel smoother." Avoid abstract fragments.`
+      : `- layer1_insight: cause → effect ("focus drops when sleep dips like this") — NOT "feels like a challenge"`}
+- recommendation: match phase — ovulation: momentum / presence; luteal: lighter load — NOT generic "anchor habits" unless appropriate
 
 DRAFT (quality floor — use ONLY if you cannot write something more specific):
-Physical: ${draft.physicalInsight}
-Mental: ${draft.mentalInsight}
-Emotional: ${draft.emotionalInsight}
-Why: ${draft.whyThisIsHappening}
-Action: ${draft.solution}
+Layer1: ${draft.layer1_insight}
+BodyNote: ${draft.body_note}
 Recommendation: ${draft.recommendation}
-Tomorrow: ${draft.tomorrowPreview}
 
-Return strict JSON only.
+Return strict JSON only with keys: layer1_insight, body_note, recommendation.
 `.trim();
 
   try {
