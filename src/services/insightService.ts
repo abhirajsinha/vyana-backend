@@ -485,7 +485,7 @@ export function buildInsightContext(
     recentLogs.length >= 5 ? "high" : recentLogs.length >= 3 ? "medium" : "low";
   // Variant is now selected externally via selectVariant() and passed via cycleNumber param
   // For backward compat, default to "A" here — the controller overrides this
-  const variant: VariantKey = "A";
+  const variant: VariantKey = 0;
   const trendCount = trendList.length;
   const signalStrength =
     (signals.physicalState === "high_strain" ? 1 : 0) +
